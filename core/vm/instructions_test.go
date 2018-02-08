@@ -367,3 +367,22 @@ func BenchmarkOpMulmod(b *testing.B) {
 
 	opBenchmark(b, opMulmod, x, y, z)
 }
+
+func BenchmarkOpSHL(b *testing.B) {
+	x := "FBCDEF090807060504030201ffffffffFBCDEF090807060504030201ffffffff"
+	y := "ff"
+
+	opBenchmark(b, opSHL, x, y)
+}
+func BenchmarkOpSHR(b *testing.B) {
+	x := "FBCDEF090807060504030201ffffffffFBCDEF090807060504030201ffffffff"
+	y := "ff"
+
+	opBenchmark(b, opSHR, x, y)
+}
+func BenchmarkOpSAR(b *testing.B) {
+	x := "FBCDEF090807060504030201ffffffffFBCDEF090807060504030201ffffffff"
+	y := "ff"
+
+	opBenchmark(b, opSAR, x, y)
+}
