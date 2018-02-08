@@ -302,6 +302,52 @@ func opMulmod(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *S
 	return nil, nil
 }
 
+// opSHL implements Shift Left
+// The SHL instruction (shift left) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the left by arg1 number of bits.
+func opSHL(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stack) ([]byte, error) {
+	// Note, y is left in the stack; accumulate result init, and no need to push it afterwards
+	x, y := math.U256(stack.pop()), math.U256(stack.peek())
+	if y.Cmp(common.Big256) >= 0{
+		y.SetUint64(0)
+		return nil, nil
+	}
+	n := uint( y.Uint64() )
+	math.U256(y.Lsh(x, n))
+	evm.interpreter.intPool.put(x)
+
+	return nil, nil
+}
+
+// opSHR implements Logical Shift Right
+// The SHR instruction (logical shift right) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the right by arg1 number of bits with zero fill.
+func opSHR(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stack) ([]byte, error) {
+	// Note, y is left in the stack; accumulate result init, and no need to push it afterwards
+	x, y := stack.pop(), stack.peek()
+
+	//TODO jwasinger: replace this with something else
+	math.U256(y.Add(x, y))
+
+	evm.interpreter.intPool.put(x)
+
+	return nil, nil
+}
+
+// opSAR implements Arithmetic Shift Right
+// The SAR instruction (arithmetic shift right) pops 2 values from the stack, first arg1 and then arg2,
+// and pushes on the stack arg2 shifted to the right by arg1 number of bits with sign extension.
+func opSAR(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stack) ([]byte, error) {
+	// Note, y is left in the stack; accumulate result init, and no need to push it afterwards
+	x, y := stack.pop(), stack.peek()
+	//TODO jwasinger: replace this with something else
+	math.U256(y.Add(x, y))
+
+	evm.interpreter.intPool.put(x)
+
+	return nil, nil
+}
+
 func opSha3(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stack) ([]byte, error) {
 	offset, size := stack.pop(), stack.pop()
 	data := memory.Get(offset.Int64(), size.Int64())
