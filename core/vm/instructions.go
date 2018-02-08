@@ -323,15 +323,20 @@ func opSHL(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stac
 // The SHR instruction (logical shift right) pops 2 values from the stack, first arg1 and then arg2,
 // and pushes on the stack arg2 shifted to the right by arg1 number of bits with zero fill.
 func opSHR(pc *uint64, evm *EVM, contract *Contract, memory *Memory, stack *Stack) ([]byte, error) {
-	// Note, y is left in the stack; accumulate result init, and no need to push it afterwards
-	x, y := stack.pop(), stack.peek()
+  // Note, y is left in the stack; accumulate result init, and no need to push it afterwards
+  x, y := math.U256(stack.pop()), math.U256(stack.pop())
+  if y.Cmp(common.Big256) >= 0{
+    y.SetUint64(0)
+    stack.push(y)
+    return nil, nil
+  }
 
-	//TODO jwasinger: replace this with something else
-	math.U256(y.Add(x, y))
+  two := big.NewInt(2)
+  two.Exp(two, y, nil)
+  x.Div(x, two)
+  stack.push(x)
 
-	evm.interpreter.intPool.put(x)
-
-	return nil, nil
+  return nil, nil
 }
 
 // opSAR implements Arithmetic Shift Right
