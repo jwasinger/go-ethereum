@@ -111,8 +111,8 @@ func TestSHR(t *testing.T) {
 		x := new(big.Int).SetBytes(common.Hex2Bytes(test.x))
 		y := new(big.Int).SetBytes(common.Hex2Bytes(test.y))
 		expected := new(big.Int).SetBytes(common.Hex2Bytes(test.expected))
-		stack.push(x)
 		stack.push(y)
+		stack.push(x)
 		opSHR(&pc, env, nil, nil, stack)
 		actual := stack.pop()
 		if actual.Cmp(expected) != 0 {
@@ -156,8 +156,8 @@ func TestSAR(t *testing.T) {
 		x := new(big.Int).SetBytes(common.Hex2Bytes(test.x))
 		y := new(big.Int).SetBytes(common.Hex2Bytes(test.y))
 		expected := new(big.Int).SetBytes(common.Hex2Bytes(test.expected))
-		stack.push(x)
 		stack.push(y)
+		stack.push(x)
 		opSAR(&pc, env, nil, nil, stack)
 		actual := stack.pop()
 		if actual.Cmp(expected) != 0 {
