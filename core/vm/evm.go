@@ -139,7 +139,7 @@ func NewEVM(ctx Context, statedb StateDB, chainConfig *params.ChainConfig, vmCon
 		interpreters: make([]Interpreter, 1),
 	}
 
-	evm.interpreters[0] = NewEVMInterpreter(evm, vmConfig)
+	evm.interpreters[0] = NewEVMC(evm, vmConfig)
 	evm.interpreter = evm.interpreters[0]
 
 	return evm
