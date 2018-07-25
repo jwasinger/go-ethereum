@@ -270,3 +270,13 @@ func (evm *EVMC) Run(contract *Contract, input []byte) (ret []byte, err error) {
 
 	return output, err
 }
+
+func (evm *EVMC) CanRun([]byte) bool {
+	return true
+}
+
+func (evm *EVMC) IsReadOnly() bool {
+	return false
+}
+
+func (evm *EVMC) SetReadOnly(bool) {}
