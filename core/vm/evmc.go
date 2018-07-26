@@ -43,16 +43,14 @@ var (
 	evmcInstance *evmc.Instance
 )
 
-func createVM(vmPath string) *evmc.Instance {
+func createVM() *evmc.Instance {
 	createMu.Lock()
 	defer createMu.Unlock()
 
 	if evmcInstance == nil {
+		vmPath := os.Getenv("EVMC_PATH")
 		if len(vmPath) == 0 {
-			vmPath = os.Getenv("EVMC_PATH")
-			if len(vmPath) == 0 {
-				panic("EVMC vmPath not provided, use --vm flag or set EVMC_PATH")
-			}
+			panic("EVMC VM path not provided, set EVMC_PATH environment variable")
 		}
 
 		var err error
@@ -78,8 +76,8 @@ func createVM(vmPath string) *evmc.Instance {
 	return evmcInstance
 }
 
-func NewEVMC(env *EVM, cfg Config) *EVMC {
-	return &EVMC{createVM(cfg.EVMCPath), env, nil, false, nil}
+func NewEVMC(env *EVM) *EVMC {
+	return &EVMC{createVM(), env, nil, false, nil}
 }
 
 // Implements evmc.HostContext interface.
