@@ -34,7 +34,7 @@ type EVMC struct {
 	instance   *evmc.Instance
 	env        *EVM
 	intPool    *intPool
-	readOnly   bool
+	readOnly   bool   // TODO: The readOnly flag should not be here.
 	returnData []byte // Last CALL's return data for subsequent reuse
 }
 
@@ -274,7 +274,9 @@ func (evm *EVMC) CanRun([]byte) bool {
 }
 
 func (evm *EVMC) IsReadOnly() bool {
-	return false
+	return evm.readOnly
 }
 
-func (evm *EVMC) SetReadOnly(bool) {}
+func (evm *EVMC) SetReadOnly(readOnly bool) {
+	evm.readOnly = readOnly
+}
