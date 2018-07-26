@@ -105,6 +105,18 @@
 			"revisionTime": "2018-01-22T22:25:45Z"
 		},
 		{
+			"checksumSHA1": "p9wepwObm+/q+Ahgwl6hHoKc+Qc=",
+			"path": "github.com/ethereum/evmc",
+			"revision": "",
+			"tree": true
+		},
+		{
+			"checksumSHA1": "AjFrWieIsm7QIBhrqbIyQRxsBr8=",
+			"path": "github.com/ethereum/evmc/bindings/go/evmc",
+			"revision": "",
+			"tree": true
+		},
+		{
 			"checksumSHA1": "7oFpbmDfGobwKsFLIf6wMUvVoKw=",
 			"path": "github.com/fatih/color",
 			"revision": "5ec5d9d3c2cf82e9688b34e9bc27a94d616a7193",
