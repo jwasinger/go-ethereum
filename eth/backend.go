@@ -143,7 +143,7 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 		rawdb.WriteDatabaseVersion(chainDb, core.BlockChainVersion)
 	}
 	var (
-		vmConfig    = vm.Config{EnablePreimageRecording: config.EnablePreimageRecording, EVMCPath: config.EVMCPath}
+		vmConfig    = vm.Config{EnablePreimageRecording: config.EnablePreimageRecording}
 		cacheConfig = &core.CacheConfig{Disabled: config.NoPruning, TrieNodeLimit: config.TrieCache, TrieTimeLimit: config.TrieTimeout}
 	)
 	eth.blockchain, err = core.NewBlockChain(chainDb, cacheConfig, eth.chainConfig, eth.engine, vmConfig)

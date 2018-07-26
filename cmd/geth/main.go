@@ -117,7 +117,6 @@ var (
 		utils.TestnetFlag,
 		utils.RinkebyFlag,
 		utils.VMEnableDebugFlag,
-		utils.EVMCPathFlag,
 		utils.NetworkIdFlag,
 		utils.RPCCORSDomainFlag,
 		utils.RPCVirtualHostsFlag,
