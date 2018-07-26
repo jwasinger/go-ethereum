@@ -33,9 +33,7 @@ import (
 type EVMC struct {
 	instance   *evmc.Instance
 	env        *EVM
-	intPool    *intPool
 	readOnly   bool   // TODO: The readOnly flag should not be here.
-	returnData []byte // Last CALL's return data for subsequent reuse
 }
 
 var (
@@ -77,7 +75,7 @@ func createVM() *evmc.Instance {
 }
 
 func NewEVMC(env *EVM) *EVMC {
-	return &EVMC{createVM(), env, nil, false, nil}
+	return &EVMC{createVM(), env, false}
 }
 
 // Implements evmc.HostContext interface.
