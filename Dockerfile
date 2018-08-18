@@ -2,7 +2,7 @@ FROM ethereum/cpp-build-env
 USER root
 
 RUN git clone --recursive https://github.com/ewasm/hera
-RUN cd hera && cd evmc && git pull origin master && cd .. && cmake -DHERA_DEBUGGING=ON -DBUILD_SHARED_LIBS=ON . && make -j8 && mv src/libhera.so /
+# RUN cd hera && cd evmc && git pull origin master && cd .. && cmake -DHERA_DEBUGGING=ON -DBUILD_SHARED_LIBS=ON . && make -j8 && mv src/libhera.so /
 
 ARG NODEID
 
@@ -33,7 +33,7 @@ RUN geth init /genesis.json
 # RUN geth account import /faucet-priv.txt --password /pass.txt
 
 ENV NODEID=$NODEID
-ENV EVMC_PATH=/libhera.so
+# ENV EVMC_PATH=/libhera.so
 
 EXPOSE 8545 8546 30303 30303/udp
 ENTRYPOINT ["/usr/local/bin/geth"]
