@@ -3,6 +3,7 @@
  * Licensed under the Apache License, Version 2.0. See the LICENSE file.
  */
 
+#include <stdio.h>
 #include <evmc/loader.h>
 
 #include <evmc/evmc.h>
@@ -40,7 +41,6 @@ static void strcpy_s(char* dest, size_t destsz, const char* src)
 }
 #endif
 
-
 evmc_create_fn evmc_load(const char* filename, enum evmc_loader_error_code* error_code)
 {
     enum evmc_loader_error_code ec = EVMC_LOADER_SUCCESS;
@@ -62,6 +62,8 @@ evmc_create_fn evmc_load(const char* filename, enum evmc_loader_error_code* erro
     DLL_HANDLE handle = DLL_OPEN(filename);
     if (!handle)
     {
+        char* err_res = dlerror();
+        printf("error %s", err_res);
         ec = EVMC_LOADER_CANNOT_OPEN;
         goto exit;
     }
