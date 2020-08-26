@@ -208,6 +208,13 @@ const (
 	SWAP
 )
 
+// 0xc0, 0xc1, 0xc2 - evm384
+const (
+	ADDMOD384 = 0xc0 + iota
+    SUBMOD384
+    MULMODMONT384
+)
+
 // 0xf0 range - closures.
 const (
 	CREATE OpCode = 0xf0 + iota
