@@ -17,7 +17,7 @@
 package vm
 
 import (
-	"fmt"
+	// "fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -866,7 +866,7 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	// make sure there are no modulus-specific optimizations
 	// use mod parameter
 
-	fmt.Println(out.MontString())
+	// fmt.Println(out.MontString())
 
 	// set out in memory
 
@@ -914,7 +914,7 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	// make sure there are no modulus-specific optimizations
 	// use mod parameter
 
-	fmt.Println(out.MontString())
+	//fmt.Println(out.MontString())
 	return nil, nil
 }
 
@@ -961,7 +961,7 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	// make sure there are no modulus-specific optimizations
 	// use mod parameter
 
-	fmt.Println(out.MontString())
+	//fmt.Println(out.MontString())
 
 	// set out in memory
 	return nil, nil
