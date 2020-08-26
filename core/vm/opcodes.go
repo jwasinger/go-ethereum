@@ -208,7 +208,7 @@ const (
 	SWAP
 )
 
-// 0xc0, 0xc1, 0xc2 - evm384
+// 0xc0, 0xc1, 0xc2 - EVM384 instructions
 const (
 	ADDMOD384 = 0xc0 + iota
     SUBMOD384

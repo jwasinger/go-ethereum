@@ -822,6 +822,18 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	return nil, nil
 }
 
+func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    return nil, nil
+}
+
+func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    return nil, nil
+}
+
+func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    return nil, nil
+}
+
 // following functions are used by the instruction jump  table
 
 // make log instruction function
