@@ -135,7 +135,6 @@ func runCmd(ctx *cli.Context) error {
 	if ctx.GlobalString(GenesisFlag.Name) != "" {
 		gen := readGenesis(ctx.GlobalString(GenesisFlag.Name))
 		genesisConfig = gen
-		genesisConfig.extraEips = append(genesisConfig.extraEips, 9000)
 		db := rawdb.NewMemoryDatabase()
 		genesis := gen.ToBlock(db)
 		statedb, _ = state.New(genesis.Root(), state.NewDatabase(db), nil)
@@ -215,6 +214,7 @@ func runCmd(ctx *cli.Context) error {
 			Tracer:         tracer,
 			Debug:          ctx.GlobalBool(DebugFlag.Name) || ctx.GlobalBool(MachineFlag.Name),
 			EVMInterpreter: ctx.GlobalString(EVMInterpreterFlag.Name),
+            ExtraEips: []int{9000},
 		},
 	}
 
