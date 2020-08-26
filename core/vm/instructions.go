@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
+    "fmt"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -823,14 +824,37 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    // stack - out, x, y, mod
+    out_offset, x_offset, y_offset, mod_offset := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
+
+    var evm384_f_size int64
+    evm384_f_size = 48
+
+    out := callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
+    x := callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
+    y := callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
+    m := callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
+    _ = m // suppress unused error for m
+    _ = y
+    _ = out
+
+    // TODO the goff code generated from template is generated using the modulus
+    // make sure there are no modulus-specific optimizations
+    // use mod parameter
+
+    fmt.Println(x)
+    // mod = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
+
     return nil, nil
 }
 
 func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    // stack - out, x, y, mod
     return nil, nil
 }
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    // stack - out, x, y, mod, r_inv
     return nil, nil
 }
 
