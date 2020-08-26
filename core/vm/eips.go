@@ -29,7 +29,7 @@ var activators = map[int]func(*JumpTable){
 	1884: enable1884,
 	1344: enable1344,
 	2315: enable2315,
-    9999: enableEVM384,
+	9999: enableEVM384,
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -109,21 +109,21 @@ func enable2200(jt *JumpTable) {
 }
 
 func enableEVM384(jt *JumpTable) {
-    jt[ADDMOD384] = &operation{
+	jt[ADDMOD384] = &operation{
 		execute:     opAddMod384,
 		constantGas: GasQuickStep,
 		minStack:    minStack(4, 0),
 		maxStack:    maxStack(4, 0),
 	}
 
-    jt[SUBMOD384] = &operation{
+	jt[SUBMOD384] = &operation{
 		execute:     opSubMod384,
 		constantGas: GasQuickStep,
 		minStack:    minStack(4, 0),
 		maxStack:    maxStack(4, 0),
 	}
 
-    jt[MULMODMONT384] = &operation{
+	jt[MULMODMONT384] = &operation{
 		execute:     opMulModMont384,
 		constantGas: GasQuickStep,
 		minStack:    minStack(5, 0),
