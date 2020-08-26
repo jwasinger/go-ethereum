@@ -135,7 +135,7 @@ func runCmd(ctx *cli.Context) error {
 	if ctx.GlobalString(GenesisFlag.Name) != "" {
 		gen := readGenesis(ctx.GlobalString(GenesisFlag.Name))
 		genesisConfig = gen
-        genesisConfig.extraEips = append(genesisConfig.extraEips, 9000)
+		genesisConfig.extraEips = append(genesisConfig.extraEips, 9000)
 		db := rawdb.NewMemoryDatabase()
 		genesis := gen.ToBlock(db)
 		statedb, _ = state.New(genesis.Root(), state.NewDatabase(db), nil)

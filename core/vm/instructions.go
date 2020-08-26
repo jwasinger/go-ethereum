@@ -17,13 +17,13 @@
 package vm
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-    "github.com/jwasinger/goff_bls12381"
 	"github.com/holiman/uint256"
+	"github.com/jwasinger/goff_bls12381"
 	"golang.org/x/crypto/sha3"
-    "fmt"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -825,146 +825,146 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    // stack - out, x, y, mod
-    out_offset, x_offset, y_offset, mod_offset := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
+	// stack - out, x, y, mod
+	out_offset, x_offset, y_offset, mod_offset := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
 
-    var evm384_f_size int64
-    evm384_f_size = 48
+	var evm384_f_size int64
+	evm384_f_size = 48
 
-    // TODO look into pre-allocating all this (if it matters?)
+	// TODO look into pre-allocating all this (if it matters?)
 
-    var x_bytes []byte
-    var y_bytes []byte
-    var mod_bytes []byte
-    var out_bytes []byte
+	var x_bytes []byte
+	var y_bytes []byte
+	var mod_bytes []byte
+	var out_bytes []byte
 
-    var x bls12_381.Element
-    var y bls12_381.Element
-    var mod bls12_381.Element
-    var out bls12_381.Element
+	var x bls12_381.Element
+	var y bls12_381.Element
+	var mod bls12_381.Element
+	var out bls12_381.Element
 
-    x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
-    y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
-    mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
-    out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
+	x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
+	y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
+	mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
+	out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
 
-    if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
-        // TODO out of gas here
-        panic("bad memory offset")
-        // return nil, nil
-    }
+	if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
+		// TODO out of gas here
+		panic("bad memory offset")
+		// return nil, nil
+	}
 
-    x.SetBytes(x_bytes)
-    y.SetBytes(y_bytes)
-    mod.SetBytes(mod_bytes)
+	x.SetBytes(x_bytes)
+	y.SetBytes(y_bytes)
+	mod.SetBytes(mod_bytes)
 
-    _ = mod // suppress unused error for m
+	_ = mod // suppress unused error for m
 
-    x.Add(&y, &out)
+	x.Add(&y, &out)
 
-    // TODO the goff code generated from template is generated using the modulus
-    // make sure there are no modulus-specific optimizations
-    // use mod parameter
+	// TODO the goff code generated from template is generated using the modulus
+	// make sure there are no modulus-specific optimizations
+	// use mod parameter
 
-    fmt.Println(out.MontString())
+	fmt.Println(out.MontString())
 
-    // set out in memory
+	// set out in memory
 
-    return nil, nil
+	return nil, nil
 }
 
 func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out_offset, x_offset, y_offset, mod_offset := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
+	out_offset, x_offset, y_offset, mod_offset := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
 
-    var evm384_f_size int64
-    evm384_f_size = 48
+	var evm384_f_size int64
+	evm384_f_size = 48
 
-    // TODO look into pre-allocating all this (if it matters?)
+	// TODO look into pre-allocating all this (if it matters?)
 
-    var x_bytes []byte
-    var y_bytes []byte
-    var mod_bytes []byte
-    var out_bytes []byte
+	var x_bytes []byte
+	var y_bytes []byte
+	var mod_bytes []byte
+	var out_bytes []byte
 
-    var x bls12_381.Element
-    var y bls12_381.Element
-    var mod bls12_381.Element
-    var out bls12_381.Element
+	var x bls12_381.Element
+	var y bls12_381.Element
+	var mod bls12_381.Element
+	var out bls12_381.Element
 
-    x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
-    y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
-    mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
-    out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
+	x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
+	y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
+	mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
+	out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
 
-    if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
-        // TODO out of gas here
-        panic("bad memory offset")
-        // return nil, nil
-    }
+	if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
+		// TODO out of gas here
+		panic("bad memory offset")
+		// return nil, nil
+	}
 
-    x.SetBytes(x_bytes)
-    y.SetBytes(y_bytes)
-    mod.SetBytes(mod_bytes)
+	x.SetBytes(x_bytes)
+	y.SetBytes(y_bytes)
+	mod.SetBytes(mod_bytes)
 
-    _ = mod // suppress unused error for m
+	_ = mod // suppress unused error for m
 
-    x.Sub(&y, &out)
+	x.Sub(&y, &out)
 
-    // TODO the goff code generated from template is generated using the modulus
-    // make sure there are no modulus-specific optimizations
-    // use mod parameter
+	// TODO the goff code generated from template is generated using the modulus
+	// make sure there are no modulus-specific optimizations
+	// use mod parameter
 
-    fmt.Println(out.MontString())
-    return nil, nil
+	fmt.Println(out.MontString())
+	return nil, nil
 }
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    // stack - out, x, y, mod, r_inv
-    out_offset, x_offset, y_offset, mod_offset, r_inv := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
+	// stack - out, x, y, mod, r_inv
+	out_offset, x_offset, y_offset, mod_offset, r_inv := callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop(), callContext.stack.pop()
 
-    var evm384_f_size int64
-    evm384_f_size = 48
+	var evm384_f_size int64
+	evm384_f_size = 48
 
-    // TODO look into pre-allocating all this (if it matters?)
+	// TODO look into pre-allocating all this (if it matters?)
 
-    var x_bytes []byte
-    var y_bytes []byte
-    var mod_bytes []byte
-    var out_bytes []byte
+	var x_bytes []byte
+	var y_bytes []byte
+	var mod_bytes []byte
+	var out_bytes []byte
 
-    var x bls12_381.Element
-    var y bls12_381.Element
-    var mod bls12_381.Element
-    var out bls12_381.Element
+	var x bls12_381.Element
+	var y bls12_381.Element
+	var mod bls12_381.Element
+	var out bls12_381.Element
 
-    x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
-    y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
-    mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
-    out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
+	x_bytes = callContext.memory.GetPtr(int64(x_offset.Uint64()), evm384_f_size)
+	y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
+	mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
+	out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
 
-    if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
-        // TODO out of gas here
-        panic("bad memory offset")
-        // return nil, nil
-    }
+	if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
+		// TODO out of gas here
+		panic("bad memory offset")
+		// return nil, nil
+	}
 
-    x.SetBytes(x_bytes)
-    y.SetBytes(y_bytes)
-    mod.SetBytes(mod_bytes)
+	x.SetBytes(x_bytes)
+	y.SetBytes(y_bytes)
+	mod.SetBytes(mod_bytes)
 
-    _ = mod // suppress unused error for m
-    _ = r_inv
+	_ = mod // suppress unused error for m
+	_ = r_inv
 
-    x.Mul(&y, &out)
+	x.Mul(&y, &out)
 
-    // TODO the goff code generated from template is generated using the modulus
-    // make sure there are no modulus-specific optimizations
-    // use mod parameter
+	// TODO the goff code generated from template is generated using the modulus
+	// make sure there are no modulus-specific optimizations
+	// use mod parameter
 
-    fmt.Println(out.MontString())
+	fmt.Println(out.MontString())
 
-    // set out in memory
-    return nil, nil
+	// set out in memory
+	return nil, nil
 }
 
 // following functions are used by the instruction jump  table
