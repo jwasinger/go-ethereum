@@ -17,7 +17,7 @@
 package vm
 
 import (
-	"fmt"
+	// "fmt"
 	"reflect"
 	"unsafe"
 	//"encoding/hex"
@@ -891,9 +891,11 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	// x.Add(x, y, mod)
 
+	/*
 	fmt.Println("submod")
 	fmt.Println("x_offset is", x_offset)
 	fmt.Println("y_offset is", y_offset)
+	*/
 
 
 
@@ -910,14 +912,14 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-	x = (*bls12_381.Element)(unsafe.Pointer(&x_bytes))
-	y = (*bls12_381.Element)(unsafe.Pointer(&y_bytes))
-	out = (*bls12_381.Element)(unsafe.Pointer(&out_bytes))
-	mod = (*bls12_381.Element)(unsafe.Pointer(&mod_bytes))
+	x = reflectVal(x_bytes)
+	y = reflectVal(y_bytes)
+	out = reflectVal(out_bytes)
+	mod = reflectVal(mod_bytes)
 
 	_ = mod
 
-	(*x).Add(y, out)
+	(*out).Add(x, y)
 
 	/*
 	y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
@@ -996,8 +998,6 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 		panic("memcheck failed")
 	}
 
-	fmt.Println("submod")
-
 	// ...
 
 	// check the mem offsets ...
@@ -1030,14 +1030,21 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
+	/*
 	x = (*bls12_381.Element)(unsafe.Pointer(&x_bytes))
 	y = (*bls12_381.Element)(unsafe.Pointer(&y_bytes))
 	out = (*bls12_381.Element)(unsafe.Pointer(&out_bytes))
 	mod = (*bls12_381.Element)(unsafe.Pointer(&mod_bytes))
+	*/
+
+	x = reflectVal(x_bytes)
+	y = reflectVal(y_bytes)
+	out = reflectVal(out_bytes)
+	mod = reflectVal(mod_bytes)
 
 	_ = mod
 
-	(*x).Sub(y, out)
+	(*out).Sub(x, y)
 
 	return nil, nil
 }
@@ -1054,8 +1061,10 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
+	/*
 	fmt.Println("mulmod")
 	fmt.Println("params_offsets", params_offsets)
+	*/
 
 	modinv_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
 	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
@@ -1093,27 +1102,6 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 		panic("memcheck failed")
 	}
 
-	fmt.Printf("x_offset = %d\ny_offset = %d\nmod_offset = %d\nout_offset = %d\n", x_offset, y_offset, modinv_offset, out_offset)
-
-	// ...
-
-	// check the mem offsets ...
-
-	// x_bytes = &mem[x_offset]
-	// ...
-
-	// x = (bls12_381.Element*) &mem[x_offset]
-	// ...
-
-	// x.Add(x, y, mod)
-
-	/*
-	fmt.Println("x_offset is", x_offset)
-	fmt.Println("y_offset is", y_offset)
-	*/
-
-	// TODO look into pre-allocating all this (if it matters?)
-
 	var x *bls12_381.Element
 	var y *bls12_381.Element
 	var mod *bls12_381.Element
@@ -1121,41 +1109,25 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-
-
-	// todo invocorporate inv/mod, for now they are hardcoded by goff
-
-/*
-	x = (*bls12_381.Element)(unsafe.Pointer(&x_bytes))
-	y = (*bls12_381.Element)(unsafe.Pointer(&y_bytes))
-	out = (*bls12_381.Element)(unsafe.Pointer(&out_bytes))
-*/
+	// TODO invocorporate inv/mod, for now they are hardcoded by goff
 	x = reflectVal(x_bytes)
 	y = reflectVal(y_bytes)
 	out = reflectVal(out_bytes)
-	//mod = (*bls12_381.Element)(unsafe.Pointer(&modinv_bytes))
 	mod = reflectVal(modinv_bytes)
 
-/*
-	fmt.Printf("out_bytes are %x\n", out_bytes)
-	fmt.Printf("x_bytes are %x\n", x_bytes)
-	fmt.Printf("y_bytes are %x\n", y_bytes)
-*/
+	/*
 	fmt.Printf("mod_bytes are %x\n", modinv_bytes)
-
 	fmt.Printf("x is %x\n", *x)
 	fmt.Printf("y is %x\n", *y)
 	fmt.Printf("mod is %x\n", *mod)
+	*/
 
 	_ = mod
 
-	(*x).Mul(y, out)
-
-	fmt.Printf("result is %x\n", *out)
+	(*out).Mul(x, y)
 
 	return nil, nil
 }
