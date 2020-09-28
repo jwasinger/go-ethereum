@@ -857,50 +857,11 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	// TODO handle cases when offsets overlap
 
-	// want max of x_offset + 48 , y_offset + 48 and modinv_offset + 56
+	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
-	var max uint32 = max(max(x_offset + 48, y_offset + 48), max(mod_offset + 48, out_offset + 48))
-
-	if x_offset > y_offset {
-		if mod_offset + 48 > x_offset + 48 {
-			max = mod_offset + 48 
-		} else {
-			max = x_offset + 48
-		}
-	} else {
-		if mod_offset + 48 > y_offset + 48 {
-			max = mod_offset + 48 
-		} else {
-			max = y_offset + 48
-		}
-	}
-
-	if !checkMem(callContext.memory, (int)(max), 0) {
+	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
-
-	// ...
-
-	// check the mem offsets ...
-
-	// x_bytes = &mem[x_offset]
-	// ...
-
-	// x = (bls12_381.Element*) &mem[x_offset]
-	// ...
-
-	// x.Add(x, y, mod)
-
-	/*
-	fmt.Println("submod")
-	fmt.Println("x_offset is", x_offset)
-	fmt.Println("y_offset is", y_offset)
-	*/
-
-
-
-
-	// TODO look into pre-allocating all this (if it matters?)
 
 	var x *bls12_381.Element
 	var y *bls12_381.Element
@@ -921,44 +882,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	(*out).Add(x, y)
 
-	/*
-	y_bytes = callContext.memory.GetPtr(int64(y_offset.Uint64()), evm384_f_size)
-	mod_bytes = callContext.memory.GetPtr(int64(mod_offset.Uint64()), evm384_f_size)
-	out_bytes = callContext.memory.GetPtr(int64(out_offset.Uint64()), evm384_f_size)
-
-	fmt.Println("x bytes are ", x_bytes)
-	fmt.Println("y bytes are ", y_bytes)
-	fmt.Println("mod bytes are ", mod_bytes)
-
-	if x_bytes == nil || y_bytes == nil || mod_bytes == nil || out_bytes == nil {
-		// TODO out of gas here
-		panic("bad memory offset")
-		// return nil, nil
-	}
-
-	fmt.Println("x is ", x.MontString())
-	fmt.Println("y is ", y.MontString())
-
-	x.SetBytes(x_bytes)
-	y.SetBytes(y_bytes)
-	mod.SetBytes(mod_bytes)
-
-	_ = mod // suppress unused error for m
-
-	x.Add(&y, &out)
-
-
-	// TODO the goff code generated from template is generated using the modulus
-	// make sure there are no modulus-specific optimizations
-	// use mod parameter
-
-	fmt.Println("result of addmod: ")
-	fmt.Println(out.MontString())
-
-	panic("fuck")
-
-	// set out in memory
-	*/
 
 	return nil, nil
 }
@@ -978,44 +901,11 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	// want max of x_offset + 48 , y_offset + 48 and modinv_offset + 56
 
-	var max uint32 = max(max(x_offset + 48, y_offset + 48), max(mod_offset + 48, out_offset + 48))
+	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
-	if x_offset > y_offset {
-		if mod_offset + 48 > x_offset + 48 {
-			max = mod_offset + 48 
-		} else {
-			max = x_offset + 48
-		}
-	} else {
-		if mod_offset + 48 > y_offset + 48 {
-			max = mod_offset + 48 
-		} else {
-			max = y_offset + 48
-		}
-	}
-
-	if !checkMem(callContext.memory, (int)(max), 0) {
+	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
-
-	// ...
-
-	// check the mem offsets ...
-
-	// x_bytes = &mem[x_offset]
-	// ...
-
-	// x = (bls12_381.Element*) &mem[x_offset]
-	// ...
-
-	// x.Add(x, y, mod)
-
-	/*
-	fmt.Println("x_offset is", x_offset)
-	fmt.Println("y_offset is", y_offset)
-	*/
-
-
 
 
 	// TODO look into pre-allocating all this (if it matters?)
@@ -1029,13 +919,6 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
-
-	/*
-	x = (*bls12_381.Element)(unsafe.Pointer(&x_bytes))
-	y = (*bls12_381.Element)(unsafe.Pointer(&y_bytes))
-	out = (*bls12_381.Element)(unsafe.Pointer(&out_bytes))
-	mod = (*bls12_381.Element)(unsafe.Pointer(&mod_bytes))
-	*/
 
 	x = reflectVal(x_bytes)
 	y = reflectVal(y_bytes)
@@ -1061,44 +944,18 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	/*
-	fmt.Println("mulmod")
-	fmt.Println("params_offsets", params_offsets)
-	*/
-
 	modinv_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
 	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
 	x_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
 
-	/*
-	out_offset := uint32(params_offsets[0])
-	modinv_offset := uint32(params_offsets[0] >> 32)
-	y_offset := uint32(params_offsets[1])
-	x_offset := uint32(params_offsets[1] >> 32)
-	*/
-
 	// TODO handle cases when offsets overlap
 
 	// want max of x_offset + 48 , y_offset + 48 and modinv_offset + 56
 
-	var max uint32 = max(max(x_offset + 48, y_offset + 48), max(modinv_offset + 56, out_offset + 48))
+	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
 
-	if x_offset > y_offset {
-		if modinv_offset + 56 > x_offset + 48 {
-			max = modinv_offset + 56 
-		} else {
-			max = x_offset + 48
-		}
-	} else {
-		if modinv_offset + 56 > y_offset + 48 {
-			max = modinv_offset + 56
-		} else {
-			max = y_offset + 48
-		}
-	}
-
-	if !checkMem(callContext.memory, (int)(max), 0) {
+	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
 
@@ -1117,13 +974,6 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	y = reflectVal(y_bytes)
 	out = reflectVal(out_bytes)
 	mod = reflectVal(modinv_bytes)
-
-	/*
-	fmt.Printf("mod_bytes are %x\n", modinv_bytes)
-	fmt.Printf("x is %x\n", *x)
-	fmt.Printf("y is %x\n", *y)
-	fmt.Printf("mod is %x\n", *mod)
-	*/
 
 	_ = mod
 
