@@ -17,10 +17,7 @@
 package vm
 
 import (
-	// "fmt"
-	"reflect"
 	"unsafe"
-	//"encoding/hex"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -882,7 +879,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	(*out).Add(x, y)
 
-
 	return nil, nil
 }
 
@@ -899,14 +895,11 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	// TODO handle cases when offsets overlap
 
-	// want max of x_offset + 48 , y_offset + 48 and modinv_offset + 56
-
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
-
 
 	// TODO look into pre-allocating all this (if it matters?)
 
@@ -933,9 +926,7 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 }
 
 func reflectVal(b []byte) (*bls12_381.Element) {
-	rv := reflect.ValueOf(b)
-	ptr := rv.Pointer()
-	return (*bls12_381.Element) (unsafe.Pointer(ptr))
+	return (*bls12_381.Element) (unsafe.Pointer(&b[0]))
 }
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
