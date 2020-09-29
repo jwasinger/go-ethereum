@@ -17,6 +17,7 @@
 package vm
 
 import (
+	//"fmt"
 	"unsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -848,9 +849,9 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	params_offsets := callContext.stack.pop()
 
 	x_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
-	y_offset := uint32(params_offsets[0] << 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
+	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
 	mod_offset := uint32(params_offsets[1])
-	out_offset := uint32(params_offsets[1] << 32)
+	out_offset := uint32(params_offsets[1] >> 32)
 
 	// TODO handle cases when offsets overlap
 
@@ -877,7 +878,17 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	_ = mod
 
+	/*
+	fmt.Println("addmod")
+	fmt.Printf("x is %x\n", x_bytes)
+	fmt.Printf("y is %x\n", y_bytes)
+	*/
+
 	(*out).Add(x, y)
+
+	/*
+	fmt.Printf("out is %x\n", out_bytes)
+	*/
 
 	return nil, nil
 }
@@ -889,9 +900,9 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	params_offsets := callContext.stack.pop()
 
 	x_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
-	y_offset := uint32(params_offsets[0] << 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
+	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
 	mod_offset := uint32(params_offsets[1])
-	out_offset := uint32(params_offsets[1] << 32)
+	out_offset := uint32(params_offsets[1] >> 32)
 
 	// TODO handle cases when offsets overlap
 
@@ -920,7 +931,17 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	_ = mod
 
+	/*
+	fmt.Println("submod")
+	fmt.Printf("x is %x\n", x_bytes)
+	fmt.Printf("y is %x\n", y_bytes)
+	*/
+
 	(*out).Sub(x, y)
+
+	/*
+	fmt.Printf("out is %x\n", out_bytes)
+	*/
 
 	return nil, nil
 }
@@ -968,7 +989,17 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 
 	_ = mod
 
+	/*
+	fmt.Println("mulmod")
+	fmt.Printf("x is %x\n", x_bytes)
+	fmt.Printf("y is %x\n", y_bytes)
+	*/
+
 	(*out).Mul(x, y)
+
+	/*
+	fmt.Printf("out is %x\n", out_bytes)
+	*/
 
 	return nil, nil
 }
