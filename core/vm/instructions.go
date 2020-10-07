@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/jwasinger/goff_bls12381"
+	"github.com/jwasinger/go-evm384"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -861,10 +861,10 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 		panic("memcheck failed")
 	}
 
-	var x *bls12_381.Element
-	var y *bls12_381.Element
-	var mod *bls12_381.Element
-	var out *bls12_381.Element
+	var x *go_evm384.Element
+	var y *go_evm384.Element
+	var mod *go_evm384.Element
+	var out *go_evm384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
@@ -876,7 +876,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out = reflectVal(out_bytes)
 	mod = reflectVal(mod_bytes)
 
-	_ = mod
 
 	/*
 	fmt.Println("addmod")
@@ -884,7 +883,8 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	fmt.Printf("y is %x\n", y_bytes)
 	*/
 
-	(*out).Add(x, y)
+	//(*out).Add(x, y)
+	go_evm384.AddMod(out, x, y, mod)
 
 	/*
 	fmt.Printf("out is %x\n", out_bytes)
@@ -914,10 +914,10 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	// TODO look into pre-allocating all this (if it matters?)
 
-	var x *bls12_381.Element
-	var y *bls12_381.Element
-	var mod *bls12_381.Element
-	var out *bls12_381.Element
+	var x *go_evm384.Element
+	var y *go_evm384.Element
+	var mod *go_evm384.Element
+	var out *go_evm384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
@@ -929,7 +929,6 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out = reflectVal(out_bytes)
 	mod = reflectVal(mod_bytes)
 
-	_ = mod
 
 	/*
 	fmt.Println("submod")
@@ -937,7 +936,7 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	fmt.Printf("y is %x\n", y_bytes)
 	*/
 
-	(*out).Sub(x, y)
+	go_evm384.SubMod(out, x, y, mod)
 
 	/*
 	fmt.Printf("out is %x\n", out_bytes)
@@ -946,8 +945,8 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
-func reflectVal(b []byte) (*bls12_381.Element) {
-	return (*bls12_381.Element) (unsafe.Pointer(&b[0]))
+func reflectVal(b []byte) (*go_evm384.Element) {
+	return (*go_evm384.Element) (unsafe.Pointer(&b[0]))
 }
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -971,23 +970,24 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 		panic("memcheck failed")
 	}
 
-	var x *bls12_381.Element
-	var y *bls12_381.Element
-	var mod *bls12_381.Element
-	var out *bls12_381.Element
+	var x *go_evm384.Element
+	var y *go_evm384.Element
+	var mod *go_evm384.Element
+	var out *go_evm384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-	// TODO invocorporate inv/mod, for now they are hardcoded by goff
 	x = reflectVal(x_bytes)
 	y = reflectVal(y_bytes)
 	out = reflectVal(out_bytes)
 	mod = reflectVal(modinv_bytes)
 
-	_ = mod
+	// TODO don't hardcode inv
+	var inv uint64
+	inv = 0x89f3fffcfffcfffd
 
 	/*
 	fmt.Println("mulmod")
@@ -995,7 +995,8 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	fmt.Printf("y is %x\n", y_bytes)
 	*/
 
-	(*out).Mul(x, y)
+	//(*out).Mul(x, y)
+	go_evm384.MulMod(out, x, y, mod, inv)
 
 	/*
 	fmt.Printf("out is %x\n", out_bytes)
