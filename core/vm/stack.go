@@ -25,7 +25,7 @@ import (
 
 var stackPool = sync.Pool{
 	New: func() interface{} {
-		return &Stack{data: make([]uint256.Int, 0, 16)}
+		return &Stack{data: make([]uint256.Int, 1024, 1024), top: 0}
 	},
 }
 
@@ -34,6 +34,7 @@ var stackPool = sync.Pool{
 // initialised objects.
 type Stack struct {
 	data []uint256.Int
+	top int
 }
 
 func newstack() *Stack {
@@ -41,7 +42,7 @@ func newstack() *Stack {
 }
 
 func returnStack(s *Stack) {
-	s.data = s.data[:0]
+	//s.data = s.data[:0]
 	stackPool.Put(s)
 }
 
@@ -52,44 +53,58 @@ func (st *Stack) Data() []uint256.Int {
 
 func (st *Stack) push(d *uint256.Int) {
 	// NOTE push limit (1024) is checked in baseCheck
-	st.data = append(st.data, *d)
+
+	//st.data = append(st.data, *d)
+
+	/*
+	fmt.Printf("top is %d\n", st.top)
+	fmt.Printf("len is %d\n", len(st.data))
+	*/
+
+	st.data[st.top] = *d
+	st.top++
 }
 func (st *Stack) pushN(ds ...uint256.Int) {
-	// FIXME: Is there a way to pass args by pointers.
-	st.data = append(st.data, ds...)
+	// TODO make sure we don't go over the stack
+	for i := 0; i < len(ds); i++ {
+		st.data[st.top + i] = ds[i]
+	}
+
+	st.top += len(ds)
 }
 
 func (st *Stack) pop() (ret uint256.Int) {
-	ret = st.data[len(st.data)-1]
-	st.data = st.data[:len(st.data)-1]
+	ret = st.data[st.top-1]
+	st.data[st.top-1] = uint256.Int{0,0,0,0} // do I need to do this?
+	st.top--
 	return
 }
 
 func (st *Stack) len() int {
-	return len(st.data)
+	return st.top
 }
 
 func (st *Stack) swap(n int) {
-	st.data[st.len()-n], st.data[st.len()-1] = st.data[st.len()-1], st.data[st.len()-n]
+	st.data[st.top-n], st.data[st.top-1] = st.data[st.top-1], st.data[st.top-n]
 }
 
 func (st *Stack) dup(n int) {
-	st.push(&st.data[st.len()-n])
+	st.push(&st.data[st.top-n])
 }
 
 func (st *Stack) peek() *uint256.Int {
-	return &st.data[st.len()-1]
+	return &st.data[st.top-1]
 }
 
 // Back returns the n'th item in stack
 func (st *Stack) Back(n int) *uint256.Int {
-	return &st.data[st.len()-n-1]
+	return &st.data[st.top-n-1]
 }
 
 // Print dumps the content of the stack
 func (st *Stack) Print() {
 	fmt.Println("### stack ###")
-	if len(st.data) > 0 {
+	if st.top > 0 {
 		for i, val := range st.data {
 			fmt.Printf("%-3d  %v\n", i, val)
 		}
