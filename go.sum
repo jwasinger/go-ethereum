@@ -105,11 +105,8 @@ github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af h1:pmfjZENx5i
 github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af/go.mod h1:Nht3zPeWKUH0NzdCt2Blrr5ys8VGpn0CEB0cQHVjt7k=
 github.com/julienschmidt/httprouter v1.1.1-0.20170430222011-975b5c4c7c21 h1:F/iKcka0K2LgnKy/fgSBf235AETtm1n1TvBzqu40LE0=
 github.com/julienschmidt/httprouter v1.1.1-0.20170430222011-975b5c4c7c21/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
-github.com/jwasinger/go-evm384 v0.0.0-20201006234505-d00b8575eb54 h1:7wWPqAcNeUGepvT6S64d51lo7tgHDDE35nsgw8utG0I=
-github.com/jwasinger/go-evm384 v0.0.0-20201006234505-d00b8575eb54/go.mod h1:8SI1KVqUlfxzrY+oUXRXTLGQipX1mr/npdGgmFq0c54=
-github.com/jwasinger/go_evm384 v0.0.0-20200930211224-c557d57b254c h1:rjcbjVFDDZvXVFxrCmaYF34uiqZYW4Gh+UPotMSqziI=
-github.com/jwasinger/uint128 v1.0.1-0.20201001043151-a8dabf9d0bc8 h1:WkWvP61bPC/WR0jw/MiSkZRM3oMOTKT3Xxk7BBCrPac=
-github.com/jwasinger/uint128 v1.0.1-0.20201001043151-a8dabf9d0bc8/go.mod h1:xYEyGcluzkdV3w68xd/XiXHG7ZOGtu6DaHwa/l831bo=
+github.com/jwasinger/uint128 v1.0.1-0.20201007033633-ebe1c13de682 h1:GmQDZr1eUrcHQAjVpeoGUw+G6P7T2D0r7f1YsTw7IkM=
+github.com/jwasinger/uint128 v1.0.1-0.20201007033633-ebe1c13de682/go.mod h1:xYEyGcluzkdV3w68xd/XiXHG7ZOGtu6DaHwa/l831bo=
 github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 h1:I/yrLt2WilKxlQKCM52clh5rGzTKpVctGT1lH4Dc8Jw=
 github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356/go.mod h1:Od972xHfMJowv7NGVDiWVxk2zxnWgjLlJzE+F4F7AGU=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=

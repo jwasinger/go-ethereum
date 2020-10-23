@@ -17,14 +17,14 @@
 package vm
 
 import (
-	//"fmt"
+	// "fmt"
 	"unsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/jwasinger/go-evm384"
 	"golang.org/x/crypto/sha3"
+	"github.com/ethereum/go-ethereum/core/vm/arith384"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -843,17 +843,16 @@ func max(x uint32, y uint32) uint32 {
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	// stack - out, x, y, mod
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	x_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
-	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
+	x_offset := uint32(params_offsets[0])
+	y_offset := uint32(params_offsets[0] >> 32)
 	mod_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
 
-	// TODO handle cases when offsets overlap
+	// TODO explore edge cases around overlapping offsets
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -861,40 +860,27 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 		panic("memcheck failed")
 	}
 
-	var x *go_evm384.Element
-	var y *go_evm384.Element
-	var mod *go_evm384.Element
-	var out *go_evm384.Element
+	var x *arith384.Element
+	var y *arith384.Element
+	var mod *arith384.Element
+	var out *arith384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-	x = reflectVal(x_bytes)
-	y = reflectVal(y_bytes)
-	out = reflectVal(out_bytes)
-	mod = reflectVal(mod_bytes)
+	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
 
-
-	/*
-	fmt.Println("addmod")
-	fmt.Printf("x is %x\n", x_bytes)
-	fmt.Printf("y is %x\n", y_bytes)
-	*/
-
-	//(*out).Add(x, y)
-	go_evm384.AddMod(out, x, y, mod)
-
-	/*
-	fmt.Printf("out is %x\n", out_bytes)
-	*/
+	arith384.AddMod(out, x, y, mod)
 
 	return nil, nil
 }
 
 func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	// stack - out, x, y, mod
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
@@ -904,53 +890,33 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	mod_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
 
-	// TODO handle cases when offsets overlap
-
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
 
-	// TODO look into pre-allocating all this (if it matters?)
-
-	var x *go_evm384.Element
-	var y *go_evm384.Element
-	var mod *go_evm384.Element
-	var out *go_evm384.Element
+	var x *arith384.Element
+	var y *arith384.Element
+	var mod *arith384.Element
+	var out *arith384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-	x = reflectVal(x_bytes)
-	y = reflectVal(y_bytes)
-	out = reflectVal(out_bytes)
-	mod = reflectVal(mod_bytes)
+	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
 
-
-	/*
-	fmt.Println("submod")
-	fmt.Printf("x is %x\n", x_bytes)
-	fmt.Printf("y is %x\n", y_bytes)
-	*/
-
-	go_evm384.SubMod(out, x, y, mod)
-
-	/*
-	fmt.Printf("out is %x\n", out_bytes)
-	*/
+	arith384.SubMod(out, x, y, mod)
 
 	return nil, nil
 }
 
-func reflectVal(b []byte) (*go_evm384.Element) {
-	return (*go_evm384.Element) (unsafe.Pointer(&b[0]))
-}
-
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	// stack - out, x, y, mod
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
@@ -960,47 +926,31 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	x_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
 
-	// TODO handle cases when offsets overlap
-
-	// want max of x_offset + 48 , y_offset + 48 and modinv_offset + 56
-
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 48) {
 		panic("memcheck failed")
 	}
 
-	var x *go_evm384.Element
-	var y *go_evm384.Element
-	var mod *go_evm384.Element
-	var out *go_evm384.Element
+	var x *arith384.Element
+	var y *arith384.Element
+	var mod *arith384.Element
+	var out *arith384.Element
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-	x = reflectVal(x_bytes)
-	y = reflectVal(y_bytes)
-	out = reflectVal(out_bytes)
-	mod = reflectVal(modinv_bytes)
+	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
 
-	// TODO don't hardcode inv
 	var inv uint64
 	inv = 0x89f3fffcfffcfffd
 
-	/*
-	fmt.Println("mulmod")
-	fmt.Printf("x is %x\n", x_bytes)
-	fmt.Printf("y is %x\n", y_bytes)
-	*/
-
-	//(*out).Mul(x, y)
-	go_evm384.MulMod(out, x, y, mod, inv)
-
-	/*
-	fmt.Printf("out is %x\n", out_bytes)
-	*/
+	arith384.MulMod(out, x, y, mod, inv)
 
 	return nil, nil
 }
