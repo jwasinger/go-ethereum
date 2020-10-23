@@ -2,7 +2,6 @@ package arith384
 
 import (
 	"math/bits"
-	"github.com/jwasinger/uint128"
 )
 
 const NUM_LIMBS = 6
@@ -81,12 +80,14 @@ func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
 */
 func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 	var A [NUM_LIMBS * 2 + 1]uint64
-	var xiyj, uimj, partial_sum, sum uint128.Uint128
+	var xiyj_lo, xiyj_hi uint64 = 0, 0
+	var uimj_lo, uimj_hi uint64 = 0, 0
+	var partial_sum_lo, partial_sum_hi uint64 = 0, 0
+	var sum_lo, sum_hi uint64 = 0, 0
+
+	// var xiyj, uimj, partial_sum, sum uint128.Uint128
 	var ui, carry uint64
 	var c uint64
-
-	xiyj = uint128.New(0, 0)
-	uimj = uint128.New(0, 0)
 
 	for i := 0; i < NUM_LIMBS; i++ {
 		ui = (A[i] + x[i] * y[0]) * inv
@@ -94,23 +95,23 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 		carry = 0
 		for j := 0; j < NUM_LIMBS; j++ {
 
-			xiyj.Hi, xiyj.Lo = bits.Mul64(x[i], y[j])
+			xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[j])
 
-			uimj.Hi, uimj.Lo = bits.Mul64(ui, mod[j])
+			uimj_hi, uimj_lo = bits.Mul64(ui, mod[j])
 
-			partial_sum.Lo, c = bits.Add64(xiyj.Lo, carry, 0)
-			partial_sum.Hi = xiyj.Hi + c
+			partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+			partial_sum_hi = xiyj_hi + c
 
-			sum.Lo, c = bits.Add64(uimj.Lo, A[i + j], 0)
-			sum.Hi = uimj.Hi + c
+			sum_lo, c = bits.Add64(uimj_lo, A[i + j], 0)
+			sum_hi = uimj_hi + c
 
-			sum.Lo, c = bits.Add64(partial_sum.Lo, sum.Lo, 0)
-			sum.Hi, _ = bits.Add64(partial_sum.Hi, sum.Hi, c)
+			sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+			sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-			A[i + j] = sum.Lo
-			carry = sum.Hi
+			A[i + j] = sum_lo
+			carry = sum_hi
 
-			if lt(sum.Hi, sum.Lo, partial_sum.Hi, partial_sum.Lo) {
+			if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 				var k int
 				k = 2
 				for ; i + j + k < NUM_LIMBS * 2 && A[i + j + k] == ^uint64(0); {
