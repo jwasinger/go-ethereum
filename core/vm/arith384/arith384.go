@@ -90,196 +90,1140 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 	var ui, carry uint64
 	var c uint64
 
-	for i := 0; i < NUM_LIMBS; i++ {
-		ui = (A[i] + x[i] * y[0]) * inv
+
+		ui = (A[0] + x[0] * y[0]) * inv
 
 		carry = 0
 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[0])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[0])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 0], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 0], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 0] = sum_lo
+		A[0 + 0] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 0 + k < NUM_LIMBS * 2 && A[i + 0 + k] == ^uint64(0); {
-				A[i + 0 + k] = 0
+			for ; 0 + 0 + k < NUM_LIMBS * 2 && A[0 + 0 + k] == ^uint64(0); {
+				A[0 + 0 + k] = 0
 				k++
 			}
 
-			if (i + 0 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 0 + k] += 1
+			if (0 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 0 + k] += 1
 			}
 		}
 		
 		// 2 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[1])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[1])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 1], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 1], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 1] = sum_lo
+		A[0 + 1] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 1 + k < NUM_LIMBS * 2 && A[i + 1 + k] == ^uint64(0); {
-				A[i + 1 + k] = 0
+			for ; 0 + 1 + k < NUM_LIMBS * 2 && A[0 + 1 + k] == ^uint64(0); {
+				A[0 + 1 + k] = 0
 				k++
 			}
 
-			if (i + 1 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 1 + k] += 1
+			if (0 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 1 + k] += 1
 			}
 		}
 		
 		// 3
 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[2])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[2])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 2], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 2], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 2] = sum_lo
+		A[0 + 2] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 2 + k < NUM_LIMBS * 2 && A[i + 2 + k] == ^uint64(0); {
-				A[i + 2 + k] = 0
+			for ; 0 + 2 + k < NUM_LIMBS * 2 && A[0 + 2 + k] == ^uint64(0); {
+				A[0 + 2 + k] = 0
 				k++
 			}
 
-			if (i + 2 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 2 + k] += 1
+			if (0 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 2 + k] += 1
 			}
 		}
 
 		// 4
 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[3])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[3])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 3], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 3], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 3] = sum_lo
+		A[0 + 3] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 3 + k < NUM_LIMBS * 2 && A[i + 3 + k] == ^uint64(0); {
-				A[i + 3 + k] = 0
+			for ; 0 + 3 + k < NUM_LIMBS * 2 && A[0 + 3 + k] == ^uint64(0); {
+				A[0 + 3 + k] = 0
 				k++
 			}
 
-			if (i + 3 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 3 + k] += 1
+			if (0 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 3 + k] += 1
 			}
 		}
 
 		// 5
 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[4])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[4])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 4], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 4], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 4] = sum_lo
+		A[0 + 4] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 4 + k < NUM_LIMBS * 2 && A[i + 4 + k] == ^uint64(0); {
-				A[i + 4 + k] = 0
+			for ; 0 + 4 + k < NUM_LIMBS * 2 && A[0 + 4 + k] == ^uint64(0); {
+				A[0 + 4 + k] = 0
 				k++
 			}
 
-			if (i + 4 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 4 + k] += 1
+			if (0 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 4 + k] += 1
 			}
 		}
 
 		// 6
 
-		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[5])
+		xiyj_hi, xiyj_lo = bits.Mul64(x[0], y[5])
 
 		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
 
 		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
 		partial_sum_hi = xiyj_hi + c
 
-		sum_lo, c = bits.Add64(uimj_lo, A[i + 5], 0)
+		sum_lo, c = bits.Add64(uimj_lo, A[0 + 5], 0)
 		sum_hi = uimj_hi + c
 
 		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
 		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
 
-		A[i + 5] = sum_lo
+		A[0 + 5] = sum_lo
 		carry = sum_hi
 
 		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
 			var k int
 			k = 2
-			for ; i + 5 + k < NUM_LIMBS * 2 && A[i + 5 + k] == ^uint64(0); {
-				A[i + 5 + k] = 0
+			for ; 0 + 5 + k < NUM_LIMBS * 2 && A[0 + 5 + k] == ^uint64(0); {
+				A[0 + 5 + k] = 0
 				k++
 			}
 
-			if (i + 5 + k < NUM_LIMBS * 2 + 1) {
-				A[i + 5 + k] += 1
+			if (0 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[0 + 5 + k] += 1
 			}
 		}
 
-		A[i + NUM_LIMBS] += carry
-	}
+		A[0 + NUM_LIMBS] += carry
+
+		ui = (A[1] + x[1] * y[0]) * inv
+
+		carry = 0
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[0])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 0], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 0] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 0 + k < NUM_LIMBS * 2 && A[1 + 0 + k] == ^uint64(0); {
+				A[1 + 0 + k] = 0
+				k++
+			}
+
+			if (1 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 0 + k] += 1
+			}
+		}
+		
+		// 2 
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[1])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 1], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 1] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 1 + k < NUM_LIMBS * 2 && A[1 + 1 + k] == ^uint64(0); {
+				A[1 + 1 + k] = 0
+				k++
+			}
+
+			if (1 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 1 + k] += 1
+			}
+		}
+		
+		// 3
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[2])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 2], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 2] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 2 + k < NUM_LIMBS * 2 && A[1 + 2 + k] == ^uint64(0); {
+				A[1 + 2 + k] = 0
+				k++
+			}
+
+			if (1 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 2 + k] += 1
+			}
+		}
+
+		// 4
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[3])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 3], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 3] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 3 + k < NUM_LIMBS * 2 && A[1 + 3 + k] == ^uint64(0); {
+				A[1 + 3 + k] = 0
+				k++
+			}
+
+			if (1 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 3 + k] += 1
+			}
+		}
+
+		// 5
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[4])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 4], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 4] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 4 + k < NUM_LIMBS * 2 && A[1 + 4 + k] == ^uint64(0); {
+				A[1 + 4 + k] = 0
+				k++
+			}
+
+			if (1 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 4 + k] += 1
+			}
+		}
+
+		// 6
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[1], y[5])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[1 + 5], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[1 + 5] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 1 + 5 + k < NUM_LIMBS * 2 && A[1 + 5 + k] == ^uint64(0); {
+				A[1 + 5 + k] = 0
+				k++
+			}
+
+			if (1 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[1 + 5 + k] += 1
+			}
+		}
+
+		A[1 + NUM_LIMBS] += carry
+
+		ui = (A[2] + x[2] * y[0]) * inv
+
+		carry = 0
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[0])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 0], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 0] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 0 + k < NUM_LIMBS * 2 && A[2 + 0 + k] == ^uint64(0); {
+				A[2 + 0 + k] = 0
+				k++
+			}
+
+			if (2 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 0 + k] += 1
+			}
+		}
+		
+		// 2 
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[1])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 1], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 1] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 1 + k < NUM_LIMBS * 2 && A[2 + 1 + k] == ^uint64(0); {
+				A[2 + 1 + k] = 0
+				k++
+			}
+
+			if (2 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 1 + k] += 1
+			}
+		}
+		
+		// 3
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[2])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 2], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 2] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 2 + k < NUM_LIMBS * 2 && A[2 + 2 + k] == ^uint64(0); {
+				A[2 + 2 + k] = 0
+				k++
+			}
+
+			if (2 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 2 + k] += 1
+			}
+		}
+
+		// 4
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[3])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 3], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 3] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 3 + k < NUM_LIMBS * 2 && A[2 + 3 + k] == ^uint64(0); {
+				A[2 + 3 + k] = 0
+				k++
+			}
+
+			if (2 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 3 + k] += 1
+			}
+		}
+
+		// 5
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[4])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 4], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 4] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 4 + k < NUM_LIMBS * 2 && A[2 + 4 + k] == ^uint64(0); {
+				A[2 + 4 + k] = 0
+				k++
+			}
+
+			if (2 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 4 + k] += 1
+			}
+		}
+
+		// 6
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[2], y[5])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[2 + 5], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[2 + 5] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 2 + 5 + k < NUM_LIMBS * 2 && A[2 + 5 + k] == ^uint64(0); {
+				A[2 + 5 + k] = 0
+				k++
+			}
+
+			if (2 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[2 + 5 + k] += 1
+			}
+		}
+
+		A[2 + NUM_LIMBS] += carry
+
+		ui = (A[3] + x[3] * y[0]) * inv
+
+		carry = 0
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[0])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 0], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 0] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 0 + k < NUM_LIMBS * 2 && A[3 + 0 + k] == ^uint64(0); {
+				A[3 + 0 + k] = 0
+				k++
+			}
+
+			if (3 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 0 + k] += 1
+			}
+		}
+		
+		// 2 
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[1])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 1], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 1] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 1 + k < NUM_LIMBS * 2 && A[3 + 1 + k] == ^uint64(0); {
+				A[3 + 1 + k] = 0
+				k++
+			}
+
+			if (3 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 1 + k] += 1
+			}
+		}
+		
+		// 3
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[2])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 2], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 2] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 2 + k < NUM_LIMBS * 2 && A[3 + 2 + k] == ^uint64(0); {
+				A[3 + 2 + k] = 0
+				k++
+			}
+
+			if (3 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 2 + k] += 1
+			}
+		}
+
+		// 4
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[3])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 3], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 3] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 3 + k < NUM_LIMBS * 2 && A[3 + 3 + k] == ^uint64(0); {
+				A[3 + 3 + k] = 0
+				k++
+			}
+
+			if (3 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 3 + k] += 1
+			}
+		}
+
+		// 5
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[4])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 4], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 4] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 4 + k < NUM_LIMBS * 2 && A[3 + 4 + k] == ^uint64(0); {
+				A[3 + 4 + k] = 0
+				k++
+			}
+
+			if (3 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 4 + k] += 1
+			}
+		}
+
+		// 6
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[3], y[5])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[3 + 5], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[3 + 5] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 3 + 5 + k < NUM_LIMBS * 2 && A[3 + 5 + k] == ^uint64(0); {
+				A[3 + 5 + k] = 0
+				k++
+			}
+
+			if (3 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[3 + 5 + k] += 1
+			}
+		}
+
+		A[3 + NUM_LIMBS] += carry
+
+		ui = (A[4] + x[4] * y[0]) * inv
+
+		carry = 0
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[0])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 0], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 0] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 0 + k < NUM_LIMBS * 2 && A[4 + 0 + k] == ^uint64(0); {
+				A[4 + 0 + k] = 0
+				k++
+			}
+
+			if (4 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 0 + k] += 1
+			}
+		}
+		
+		// 2 
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[1])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 1], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 1] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 1 + k < NUM_LIMBS * 2 && A[4 + 1 + k] == ^uint64(0); {
+				A[4 + 1 + k] = 0
+				k++
+			}
+
+			if (4 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 1 + k] += 1
+			}
+		}
+		
+		// 3
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[2])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 2], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 2] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 2 + k < NUM_LIMBS * 2 && A[4 + 2 + k] == ^uint64(0); {
+				A[4 + 2 + k] = 0
+				k++
+			}
+
+			if (4 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 2 + k] += 1
+			}
+		}
+
+		// 4
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[3])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 3], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 3] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 3 + k < NUM_LIMBS * 2 && A[4 + 3 + k] == ^uint64(0); {
+				A[4 + 3 + k] = 0
+				k++
+			}
+
+			if (4 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 3 + k] += 1
+			}
+		}
+
+		// 5
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[4])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 4], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 4] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 4 + k < NUM_LIMBS * 2 && A[4 + 4 + k] == ^uint64(0); {
+				A[4 + 4 + k] = 0
+				k++
+			}
+
+			if (4 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 4 + k] += 1
+			}
+		}
+
+		// 6
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[4], y[5])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[4 + 5], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[4 + 5] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 4 + 5 + k < NUM_LIMBS * 2 && A[4 + 5 + k] == ^uint64(0); {
+				A[4 + 5 + k] = 0
+				k++
+			}
+
+			if (4 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[4 + 5 + k] += 1
+			}
+		}
+
+		A[4 + NUM_LIMBS] += carry
+
+		ui = (A[5] + x[5] * y[0]) * inv
+
+		carry = 0
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[0])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[0])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 0], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 0] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 0 + k < NUM_LIMBS * 2 && A[5 + 0 + k] == ^uint64(0); {
+				A[5 + 0 + k] = 0
+				k++
+			}
+
+			if (5 + 0 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 0 + k] += 1
+			}
+		}
+		
+		// 2 
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[1])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[1])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 1], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 1] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 1 + k < NUM_LIMBS * 2 && A[5 + 1 + k] == ^uint64(0); {
+				A[5 + 1 + k] = 0
+				k++
+			}
+
+			if (5 + 1 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 1 + k] += 1
+			}
+		}
+		
+		// 3
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[2])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[2])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 2], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 2] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 2 + k < NUM_LIMBS * 2 && A[5 + 2 + k] == ^uint64(0); {
+				A[5 + 2 + k] = 0
+				k++
+			}
+
+			if (5 + 2 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 2 + k] += 1
+			}
+		}
+
+		// 4
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[3])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[3])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 3], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 3] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 3 + k < NUM_LIMBS * 2 && A[5 + 3 + k] == ^uint64(0); {
+				A[5 + 3 + k] = 0
+				k++
+			}
+
+			if (5 + 3 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 3 + k] += 1
+			}
+		}
+
+		// 5
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[4])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[4])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 4], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 4] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 4 + k < NUM_LIMBS * 2 && A[5 + 4 + k] == ^uint64(0); {
+				A[5 + 4 + k] = 0
+				k++
+			}
+
+			if (5 + 4 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 4 + k] += 1
+			}
+		}
+
+		// 6
+
+		xiyj_hi, xiyj_lo = bits.Mul64(x[5], y[5])
+
+		uimj_hi, uimj_lo = bits.Mul64(ui, mod[5])
+
+		partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
+		partial_sum_hi = xiyj_hi + c
+
+		sum_lo, c = bits.Add64(uimj_lo, A[5 + 5], 0)
+		sum_hi = uimj_hi + c
+
+		sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
+		sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
+
+		A[5 + 5] = sum_lo
+		carry = sum_hi
+
+		if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
+			var k int
+			k = 2
+			for ; 5 + 5 + k < NUM_LIMBS * 2 && A[5 + 5 + k] == ^uint64(0); {
+				A[5 + 5 + k] = 0
+				k++
+			}
+
+			if (5 + 5 + k < NUM_LIMBS * 2 + 1) {
+				A[5 + 5 + k] += 1
+			}
+		}
+
+		A[5 + NUM_LIMBS] += carry
 
 	for i := 0; i < NUM_LIMBS; i++ {
 		out[i] = A[i + NUM_LIMBS]
