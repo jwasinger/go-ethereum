@@ -25,9 +25,12 @@ func Sub(out *Element, x *Element, y *Element) (uint64){
 	var c uint64
 	c = 0
 
-	for i := 0; i < NUM_LIMBS; i++ {
-		out[i], c = bits.Sub64(x[i], y[i], c)
-	}
+	out[0], c = bits.Sub64(x[0], y[0], c)
+	out[1], c = bits.Sub64(x[1], y[1], c)
+	out[2], c = bits.Sub64(x[2], y[2], c)
+	out[3], c = bits.Sub64(x[3], y[3], c)
+	out[4], c = bits.Sub64(x[4], y[4], c)
+	out[5], c = bits.Sub64(x[5], y[5], c)
 
 	return c
 }
