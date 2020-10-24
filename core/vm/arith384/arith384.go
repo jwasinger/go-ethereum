@@ -35,24 +35,13 @@ func Sub(out *Element, x *Element, y *Element) (uint64){
 	return c
 }
 
-// return x <= y
-func lte(x *Element, y *Element) bool {
-	for i := 0; i < NUM_LIMBS; i++ {
-		if x[i] > y[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
 /*
 	Modular Addition
 */
 func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 	Add(out, x, y)
 
-	if lte(mod, out) {
+	if lt384(mod, out) {
 		Sub(out, out, mod)
 	}
 }
@@ -70,13 +59,33 @@ func SubMod(out *Element, x *Element, y *Element, mod *Element) {
 	}
 }
 
+// returns True if x < y
+func lt384(x *Element, y *Element) bool {
+	_, carry := bits.Sub64(x[0], y[0], 0)
+	_, carry = bits.Sub64(x[1], y[1], carry)
+	_, carry = bits.Sub64(x[2], y[2], carry)
+	_, carry = bits.Sub64(x[3], y[3], carry)
+	_, carry = bits.Sub64(x[4], y[4], carry)
+	_, carry = bits.Sub64(x[5], y[5], carry)
+	return carry != 0
+}
+
 // return True if a < b, else False
 func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
+
 	if a_hi < b_hi || (a_hi == b_hi && a_lo < b_lo) {
 		return true
 	} else {
 		return false
 	}
+
+	/*
+	// TODO this should be faster... but it slows down the MulModMont benchmark by ~15%
+	_, carry := bits.Sub64(a_lo, b_lo, 0)
+	_, carry = bits.Sub64(a_hi, b_hi, carry)
+
+	return carry != 0
+	*/
 }
 
 /*
@@ -288,7 +297,7 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 		out[i] = A[i + NUM_LIMBS]
 	}
 
-	if lte(mod, out) {
+	if lt384(mod, out) {
 		Sub(out, out, mod)
 	}
 }
