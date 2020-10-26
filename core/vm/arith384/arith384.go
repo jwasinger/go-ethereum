@@ -39,11 +39,23 @@ func sub(out *Element, x *Element, y *Element) (uint64){
 	Modular Addition
 */
 func AddMod(out *Element, x *Element, y *Element, mod *Element) {
-	add(out, x, y)
+	var c uint64
+
+	out[0], c = bits.Add64(x[0], y[0], 0)
+	out[1], c = bits.Add64(x[1], y[1], c)
+	out[2], c = bits.Add64(x[2], y[2], c)
+	out[3], c = bits.Add64(x[3], y[3], c)
+	out[4], c = bits.Add64(x[4], y[4], c)
+	out[5], c = bits.Add64(x[5], y[5], c)
 
 	// mod <= out <-> !(mod > out)
 	if !lt384(out, mod) {
-		sub(out, out, mod)
+		out[0], c = bits.Sub64(out[0], mod[0], 0)
+		out[1], c = bits.Sub64(out[1], mod[1], c)
+		out[2], c = bits.Sub64(out[2], mod[2], c)
+		out[3], c = bits.Sub64(out[3], mod[3], c)
+		out[4], c = bits.Sub64(out[4], mod[4], c)
+		out[5], c = bits.Sub64(out[5], mod[5], c)
 	}
 }
 
