@@ -49,7 +49,7 @@ func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 	out[5], c = bits.Add64(x[5], y[5], c)
 
 	// mod <= out <-> !(mod > out)
-	if !lt384(out, mod) {
+	if lte(mod, out) {
 		out[0], c = bits.Sub64(out[0], mod[0], 0)
 		out[1], c = bits.Sub64(out[1], mod[1], c)
 		out[2], c = bits.Sub64(out[2], mod[2], c)
@@ -70,6 +70,16 @@ func SubMod(out *Element, x *Element, y *Element, mod *Element) {
 	if c != 0 {
 		add(out, out, mod)
 	}
+}
+
+func lte(x *Element, y *Element) bool {
+	for i := 0; i < NUM_LIMBS; i++ {
+		if x[i] > y[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // returns True if x < y
