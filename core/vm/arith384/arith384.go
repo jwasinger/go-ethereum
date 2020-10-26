@@ -56,6 +56,7 @@ func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 	out[4], c = bits.Sub64(tmp[4], mod[4], c)
 	out[5], c = bits.Sub64(tmp[5], mod[5], c)
 
+	// TODO shouldn't check for carry here use carry from before Sub64s ?
 	if c != 0 { // unnecessary sub
 		*out = tmp
 	}
@@ -65,12 +66,25 @@ func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 	Modular Subtraction
 */
 func SubMod(out *Element, x *Element, y *Element, mod *Element) {
-	var c uint64
-	c = sub(out, x, y)
+	var c, c1 uint64
+	var tmp Element
 
-	// if result < 0 -> result += mod
-	if c != 0 {
-		add(out, out, mod)
+	tmp[0], c1 = bits.Sub64(x[0], y[0], 0)
+	tmp[1], c1 = bits.Sub64(x[1], y[1], c1)
+	tmp[2], c1 = bits.Sub64(x[2], y[2], c1)
+	tmp[3], c1 = bits.Sub64(x[3], y[3], c1)
+	tmp[4], c1 = bits.Sub64(x[4], y[4], c1)
+	tmp[5], c1 = bits.Sub64(x[5], y[5], c1)
+
+	out[0], c = bits.Add64(tmp[0], mod[0], 0)
+	out[1], c = bits.Add64(tmp[1], mod[1], c)
+	out[2], c = bits.Add64(tmp[2], mod[2], c)
+	out[3], c = bits.Add64(tmp[3], mod[3], c)
+	out[4], c = bits.Add64(tmp[4], mod[4], c)
+	out[5], c = bits.Add64(tmp[5], mod[5], c)
+
+	if c1 == 0 { // unnecessary add
+		*out = tmp
 	}
 }
 
