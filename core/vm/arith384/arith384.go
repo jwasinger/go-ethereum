@@ -41,7 +41,8 @@ func Sub(out *Element, x *Element, y *Element) (uint64){
 func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 	Add(out, x, y)
 
-	if lt384(mod, out) {
+	// mod <= out <-> !(mod > out)
+	if !lt384(out, mod) {
 		Sub(out, out, mod)
 	}
 }
@@ -72,15 +73,10 @@ func lt384(x *Element, y *Element) bool {
 
 // return True if a < b, else False
 func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
-
-	if a_hi < b_hi || (a_hi == b_hi && a_lo < b_lo) {
-		return true
-	} else {
-		return false
-	}
+	return a_hi < b_hi || (a_hi == b_hi && a_lo < b_lo)
 
 	/*
-	// TODO this should be faster... but it slows down the MulModMont benchmark by ~15%
+	// the below should be faster... but it slows down the MulModMont benchmark by ~15%
 	_, carry := bits.Sub64(a_lo, b_lo, 0)
 	_, carry = bits.Sub64(a_hi, b_hi, carry)
 
@@ -98,7 +94,6 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 	var partial_sum_lo, partial_sum_hi uint64 = 0, 0
 	var sum_lo, sum_hi uint64 = 0, 0
 
-	// var xiyj, uimj, partial_sum, sum uint128.Uint128
 	var ui, carry uint64
 	var c uint64
 
@@ -135,7 +130,7 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 				A[i + 0 + k] += 1
 			}
 		}
-		
+
 		// 2 
 		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[1])
 
@@ -165,7 +160,7 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 				A[i + 1 + k] += 1
 			}
 		}
-		
+
 		// 3
 
 		xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[2])
