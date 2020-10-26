@@ -8,7 +8,7 @@ const NUM_LIMBS = 6
 type Element [NUM_LIMBS]uint64
 
 // out <- x + y
-func Add(out *Element, x *Element, y *Element) {
+func add(out *Element, x *Element, y *Element) {
 	var c uint64
 	c = 0
 
@@ -21,7 +21,7 @@ func Add(out *Element, x *Element, y *Element) {
 }
 
 // out <- x - y
-func Sub(out *Element, x *Element, y *Element) (uint64){
+func sub(out *Element, x *Element, y *Element) (uint64){
 	var c uint64
 	c = 0
 
@@ -39,11 +39,11 @@ func Sub(out *Element, x *Element, y *Element) (uint64){
 	Modular Addition
 */
 func AddMod(out *Element, x *Element, y *Element, mod *Element) {
-	Add(out, x, y)
+	add(out, x, y)
 
 	// mod <= out <-> !(mod > out)
 	if !lt384(out, mod) {
-		Sub(out, out, mod)
+		sub(out, out, mod)
 	}
 }
 
@@ -52,11 +52,11 @@ func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 */
 func SubMod(out *Element, x *Element, y *Element, mod *Element) {
 	var c uint64
-	c = Sub(out, x, y)
+	c = sub(out, x, y)
 
 	// if result < 0 -> result += mod
 	if c != 0 {
-		Add(out, out, mod)
+		add(out, out, mod)
 	}
 }
 
@@ -293,6 +293,6 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
 	}
 
 	if lt384(mod, out) {
-		Sub(out, out, mod)
+		sub(out, out, mod)
 	}
 }
