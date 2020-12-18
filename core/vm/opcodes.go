@@ -213,6 +213,7 @@ const (
 	ADDMOD384 = 0xc0 + iota
 	SUBMOD384
 	MULMODMONT384
+    TRACEMEM
 )
 
 // 0xf0 range - closures.

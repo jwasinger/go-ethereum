@@ -17,7 +17,8 @@
 package vm
 
 import (
-	// "fmt"
+	"fmt"
+    "encoding/hex"
 	"unsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -840,6 +841,19 @@ func max(x uint32, y uint32) uint32 {
 	} else {
 		return y
 	}
+}
+
+func opTraceMem(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+	v := callContext.stack.pop()
+    s := callContext.stack.pop()
+
+	offset := int64(v.Uint64())
+	size := int64(s.Uint64())
+
+	slice := callContext.memory.GetPtr(offset, size)
+
+    fmt.Printf("TRACEMEM: %d\n%x", offset, hex.EncodeToString(slice))
+	return nil, nil
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
