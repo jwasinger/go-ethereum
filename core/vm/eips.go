@@ -129,6 +129,13 @@ func enableEVM384(jt *JumpTable) {
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
 	}
+
+	jt[LOGF] = &operation{
+		execute:     opLogF,
+		constantGas: GasQuickStep,
+		minStack:    minStack(3, 0),
+		maxStack:    maxStack(3, 0),
+	}
 }
 
 // enable2315 applies EIP-2315 (Simple Subroutines)
