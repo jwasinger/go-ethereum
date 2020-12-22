@@ -17,7 +17,7 @@
 package vm
 
 import (
-	// "fmt"
+	"fmt"
 	"unsafe"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -840,6 +840,28 @@ func max(x uint32, y uint32) uint32 {
 	} else {
 		return y
 	}
+}
+
+// logf - offset size num
+func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    num_elems := int(callContext.stack.pop()[0])
+    field_size := int(callContext.stack.pop()[0])
+    offset := int64(callContext.stack.pop()[0])
+
+    if !checkMem(callContext.memory, int(offset), field_size * num_elems) {
+        panic("logf: memory bounds exceeded")
+    }
+
+    elem_bytes := callContext.memory.GetPtr(offset, int64(field_size) * int64(num_elems))
+    // TODO reverse and print in little endian?
+
+    fmt.Printf("LOGF%d\n", num_elems)
+    for i := 0; i < num_elems; i++ {
+        fmt.Printf("%d: %x\n", offset + int64(i) * int64(field_size), elem_bytes[i * field_size: (i + 1) * field_size])
+    }
+    fmt.Println()
+
+    return nil, nil
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
