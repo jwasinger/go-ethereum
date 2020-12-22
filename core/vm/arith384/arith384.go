@@ -35,6 +35,16 @@ func sub(out *Element, x *Element, y *Element) (uint64){
 	return c
 }
 
+func Eq(x *Element, y *Element) bool {
+    for i := 0; i < NUM_LIMBS; i++ {
+        if x[i] != y[i] {
+            return false
+        }
+    }
+
+    return true
+}
+
 /*
 	Modular Addition
 */
