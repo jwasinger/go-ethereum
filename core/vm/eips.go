@@ -125,7 +125,7 @@ func enableEVM384(jt *JumpTable) {
 
 	jt[MULMODMONT384] = &operation{
 		execute:     opMulModMont384,
-		constantGas: GasQuickStep,
+		constantGas: 3,
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
 	}
