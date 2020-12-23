@@ -10,6 +10,14 @@ import (
 // TODO move these constants out of testing and into implementation
 const field_size = 48
 const limb_size = 8
+const num_limbs = 6
+
+
+// bls12-381 modulus (montgomery form)
+const bls12381_mod_str = "abaafffffffffeb9ffff53b1feffab1e24f6b0f6a0d23067bf1285f3844b7764d7ac4b43b6a71b4b9ae67f39ea11011a"
+
+// 1 (montgomery form)
+const one_str = "fdff02000000097602000cc40b00f4ebba58c7535798485f455752705358ce776dec56a2971a075c93e480fac35ef615"
 
 // decode a little endian string repr of a field element
 func element_from_string(s string) (*Element, error) {
@@ -19,18 +27,19 @@ func element_from_string(s string) (*Element, error) {
 
     result := Element{0, 0, 0, 0, 0, 0}
 
-    for i := 0; i < 6; i++ {
-        str_bytes, err := hex.DecodeString(s[i * limb_size:(i + 1) * limb_size])
+    for i := 0; i < num_limbs; i++ {
+        limb_bytes, err := hex.DecodeString(s[(i * limb_size) * 2:((i + 1) * limb_size) * 2])
         if err != nil {
             return nil, err
         }
 
-        result[i] = binary.LittleEndian.Uint64(str_bytes)
-        //fmt.Println(result[i])
+        result[i] = binary.LittleEndian.Uint64(limb_bytes)
     }
 
     return &result, nil
 }
+
+// TODO test for TestFromString(TestToString(item)) == item
 
 func TestFromString(t *testing.T) {
 	mod := Element{0xb9feffffffffaaab, 0x1eabfffeb153ffff, 0x6730d2a0f6b0f624, 0x64774b84f38512bf, 0x4b1ba7b6434bacd7, 0x1a0111ea397fe69a}
@@ -41,22 +50,36 @@ func TestFromString(t *testing.T) {
         t.Fatal(err)
     }
 
-    if !Eq(&mod, result) {
+    if !Eq(result, &mod) {
         t.Fatal()
     }
 }
 
-/*
-func TestSquare(t *testing.T) {
-    one_str := ""
-	mod := Element{0xb9feffffffffaaab, 0x1eabfffeb153ffff, 0x6730d2a0f6b0f624, 0x64774b84f38512bf, 0x4b1ba7b6434bacd7, 0x1a0111ea397fe69a}
-
-    one, err := element_from_string(one_str)
+func TestAddMod_OverlappingOffsets(t *testing.T) {
+    mod, err := element_from_string(bls12381_mod_str)
     if err != nil {
         t.Fatal(err)
     }
-}
+
+    elem_str := "9eca346c391f457153777549b1326a94a4bb76b62ce856dc9b3b7af6af14181401d852045f7b0122ef56c8380cd01619"
+    one, err := element_from_string(elem_str)
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    result := Element{one[0],one[1],one[2],one[3],one[4],one[5]}
+
+    AddMod(&result, &result, &result, mod)
+    // SubMod(&result, &result, one, mod)
+
+    fmt.Printf("%x", result)
+
+/*
+    if !Eq(&result, one) {
+        t.Fatal()
+    }
 */
+}
 
 func TestMulMod_BLS12381(t *testing.T) {
 	x := Element{0xb1f598e5f390298f, 0x6b3088c3a380f4b8, 0x4d10c051c1fa23c0, 0x2945981a13aec13, 0x3bcea128c5c8d172, 0xdaa35e7a880a2ca}

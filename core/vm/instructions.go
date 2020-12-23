@@ -869,12 +869,10 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	x_offset := uint32(params_offsets[0])
-	y_offset := uint32(params_offsets[0] >> 32)
-	mod_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
-
-	// TODO explore edge cases around overlapping offsets
+	x_offset := uint32(params_offsets[0] >> 32)
+	y_offset := uint32(params_offsets[1])
+	mod_offset:= uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -892,6 +890,7 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
+
 	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
 	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
 	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
@@ -907,10 +906,10 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	x_offset := uint32(params_offsets[0]) // (*uint32)(unsafe.Pointer(&params_offsets[0]))
-	y_offset := uint32(params_offsets[0] >> 32) //(*uint32)(unsafe.Pointer(&params_offsets[0]) << 32)
-	mod_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
+	x_offset := uint32(params_offsets[0] >> 32)
+	y_offset := uint32(params_offsets[1])
+	mod_offset := uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -943,10 +942,10 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	modinv_offset := uint32(params_offsets[0])
-	y_offset := uint32(params_offsets[0] >> 32)
-	x_offset := uint32(params_offsets[1])
 	out_offset := uint32(params_offsets[1] >> 32)
+	x_offset := uint32(params_offsets[0] >> 32)
+	y_offset := uint32(params_offsets[1])
+	modinv_offset := uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
 
