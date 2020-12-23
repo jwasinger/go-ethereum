@@ -870,8 +870,8 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[0] >> 32)
-	y_offset := uint32(params_offsets[1])
+	x_offset := uint32(params_offsets[1])
+	y_offset := uint32(params_offsets[0] >> 32)
 	mod_offset:= uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
@@ -907,8 +907,8 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[0] >> 32)
-	y_offset := uint32(params_offsets[1])
+	x_offset := uint32(params_offsets[1])
+	y_offset := uint32(params_offsets[0] >> 32)
 	mod_offset := uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
@@ -943,8 +943,8 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[0] >> 32)
-	y_offset := uint32(params_offsets[1])
+	x_offset := uint32(params_offsets[1])
+	y_offset := uint32(params_offsets[0] >> 32)
 	modinv_offset := uint32(params_offsets[0])
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
