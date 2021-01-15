@@ -938,6 +938,13 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
+func reverse_bytes(out []byte, s []byte) {
+    copy(out, s)
+    for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+        out[i], out[j] = out[j], out[i]
+    }
+}
+
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var evm384_f_size int64
 	evm384_f_size = 48
@@ -967,6 +974,18 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size + 8)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
+    // have to reverse them cuz they bigInt.SetBytes expects them in bigendian
+
+    //fmt.Printf("x is %x\n", x_bytes)
+    x_bytes_reversed := make([]byte, len(x_bytes))
+    reverse_bytes(x_bytes_reversed, x_bytes)
+    //fmt.Printf("x_reversed is %x\n", x_bytes_reversed)
+    y_bytes_reversed := make([]byte, len(y_bytes))
+    reverse_bytes(y_bytes_reversed, y_bytes)
+/*
+    reverse_bytes(&modinv_bytes_reversed, &modinv_bytes)
+*/
+
     _ = modinv_bytes
     _ = out_bytes
 
@@ -980,9 +999,21 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     x := new(big.Int)
     y := new(big.Int)
     out := new(big.Int)
-    x.SetBytes(x_bytes)
-    y.SetBytes(y_bytes)
+    x.SetBytes(x_bytes_reversed)
+    y.SetBytes(y_bytes_reversed)
     arith384.MulModNaive(out, x, y)
+
+/*
+    if len(out.Bytes()) != 32 {
+        panic("shite")
+    }
+*/
+
+    // copy(out_bytes, out.Bytes())
+    reversed_result := make([]byte, len(out.Bytes()))
+    reverse_bytes(reversed_result, out.Bytes())
+    copy(out_bytes, reversed_result)
+    //fmt.Printf("result is %d\n", out.Bytes())
 
 	//arith384.MulMod(out, x, y, mod, inv)
 
