@@ -2,6 +2,8 @@ package arith384
 
 import (
 	"math/bits"
+    "math/big"
+    "fmt"
 )
 
 const NUM_LIMBS = 6
@@ -132,6 +134,18 @@ func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
 	*/
 }
 
+func MulModNaive(out *big.Int, x *big.Int, y *big.Int) {
+    // hardcode to bn128 Fr parameters
+	r_inv := new(big.Int)
+	mod := new(big.Int)
+
+	mod.SetString("21888242871839275222246405745257275088548364400416034343698204186575808495617", 10)
+	r_inv.SetString("9915499612839321149637521777990102151350674507940716049588462388200839649614", 10)
+
+	out.Mul(x, y)
+	out.Mul(out, r_inv)
+	out.Mod(out, mod)
+}
 
 /*
     Montgomery Modular Multiplication: algorithm 14.36, Handbook of Applied Cryptography, http://cacr.uwaterloo.ca/hac/about/chap14.pdf
@@ -186,6 +200,7 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
         A[i + NUM_LIMBS] += carry
     }
 
+    fmt.Printf("%x\n", A)
     for i := 0; i < NUM_LIMBS; i++ {
         out[i] = A[i + NUM_LIMBS]
     }

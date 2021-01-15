@@ -19,6 +19,7 @@ package vm
 import (
 	"fmt"
 	"unsafe"
+    "math/big"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -953,24 +954,37 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 		panic("memcheck failed")
 	}
 
+/*
 	var x *arith384.Element
 	var y *arith384.Element
 	var mod *arith384.Element
 	var out *arith384.Element
     var inv uint64
+*/
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size + 8)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
+    _ = modinv_bytes
+    _ = out_bytes
+
+/*
 	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
 	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
 	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
 	mod = (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
     inv = *((*uint64) (unsafe.Pointer(&modinv_bytes[evm384_f_size])))
+*/
+    x := new(big.Int)
+    y := new(big.Int)
+    out := new(big.Int)
+    x.SetBytes(x_bytes)
+    y.SetBytes(y_bytes)
+    arith384.MulModNaive(out, x, y)
 
-	arith384.MulMod(out, x, y, mod, inv)
+	//arith384.MulMod(out, x, y, mod, inv)
 
 	return nil, nil
 }
