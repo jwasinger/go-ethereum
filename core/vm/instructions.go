@@ -881,10 +881,12 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 		panic("memcheck failed")
 	}
 
+/*
 	var x *arith384.Element
 	var y *arith384.Element
 	var mod *arith384.Element
 	var out *arith384.Element
+*/
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
@@ -892,12 +894,38 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
 
+/*
 	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
 	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
 	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
 	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
+    _ = mod
+*/
 
-	arith384.AddMod(out, x, y, mod)
+    x_bytes_reversed := make([]byte, len(x_bytes))
+    reverse_bytes(x_bytes_reversed, x_bytes)
+    //fmt.Printf("x_reversed is %x\n", x_bytes_reversed)
+    y_bytes_reversed := make([]byte, len(y_bytes))
+    reverse_bytes(y_bytes_reversed, y_bytes)
+    _ = mod_bytes
+
+    x := new(big.Int)
+    y := new(big.Int)
+    out := new(big.Int)
+    x.SetBytes(x_bytes_reversed)
+    y.SetBytes(y_bytes_reversed)
+
+	arith384.AddModNaive(out, x, y)
+
+    reversed_result := make([]byte, len(out.Bytes()))
+    reverse_bytes(reversed_result, out.Bytes())
+
+    // if the result is less than 48 bytes, there can be leftover data from previous value unless we clear it
+    for i := 0; i < len(out_bytes); i++ {
+        out_bytes[i] = 0
+    }
+
+    copy(out_bytes, reversed_result)
 
 	return nil, nil
 }
@@ -1001,6 +1029,8 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     out := new(big.Int)
     x.SetBytes(x_bytes_reversed)
     y.SetBytes(y_bytes_reversed)
+
+    // fmt.Printf("mulmodmont: x is %x, y is %x\n", x.Bytes(), y.Bytes())
     arith384.MulModNaive(out, x, y)
 
 /*
@@ -1012,6 +1042,11 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     // copy(out_bytes, out.Bytes())
     reversed_result := make([]byte, len(out.Bytes()))
     reverse_bytes(reversed_result, out.Bytes())
+
+    for i := 0; i < len(out_bytes); i++ {
+        out_bytes[i] = 0
+    }
+
     copy(out_bytes, reversed_result)
     //fmt.Printf("result is %d\n", out.Bytes())
 
