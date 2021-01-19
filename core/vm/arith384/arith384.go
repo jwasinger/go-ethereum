@@ -3,7 +3,6 @@ package arith384
 import (
 	"math/bits"
     "math/big"
-    "fmt"
 )
 
 const NUM_LIMBS = 6
@@ -137,10 +136,8 @@ func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
 func AddModNaive(out *big.Int, x *big.Int, y *big.Int) {
 	mod := new(big.Int)
 	mod.SetString("21888242871839275222246405745257275088548364400416034343698204186575808495617", 10)
-    fmt.Printf("addmod: %x + %x = ", x.Bytes(), y.Bytes())
 	out.Add(x, y)
 	out.Mod(out, mod)
-    fmt.Printf("%x\n", out.Bytes())
 }
 
 func MulModNaive(out *big.Int, x *big.Int, y *big.Int) {
@@ -155,11 +152,9 @@ func MulModNaive(out *big.Int, x *big.Int, y *big.Int) {
     fmt.Printf("xnum is %d\n", x.Bytes())
     fmt.Printf("xnum is %s\n", x.String())
 */
-    fmt.Printf("mulmodmont:\n   %x * %x = ", x.Bytes(), y.String())
 	out.Mul(x, y)
 	out.Mul(out, r_inv)
 	out.Mod(out, mod)
-    fmt.Printf("%x\n", out)
 
     // fmt.Printf("result is %s\n", out.String())
 }
@@ -217,7 +212,6 @@ func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
         A[i + NUM_LIMBS] += carry
     }
 
-    fmt.Printf("%x\n", A)
     for i := 0; i < NUM_LIMBS; i++ {
         out[i] = A[i + NUM_LIMBS]
     }
