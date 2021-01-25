@@ -880,9 +880,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
     var x_offset uint32 = 48 * uint32(x_offset_16)
     var out_offset uint32 = 48 * uint32(out_offset_16)
 
-    fmt.Printf("%x\n", params_offsets)
-    fmt.Printf("addmod384: out, x, y, mod\n    %d %d %d %d\n", out_offset, x_offset, y_offset, mod_offset)
-
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -902,9 +899,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-    fmt.Printf("    %x + %x  mod %x  = ", x_bytes, y_bytes, mod_bytes)
-
-    fmt.Printf("\n x bytes are %x, %x\n", x_bytes, y_bytes)
 
 
 /*
@@ -939,7 +933,6 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
     }
 
     copy(out_bytes, reversed_result)
-    fmt.Printf("%x\n", out_bytes)
 
 	return nil, nil
 }
@@ -980,7 +973,6 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
 	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
 
-    fmt.Printf("submod384: %d %d %d %d\n", out_offset, x_offset, y_offset, mod_offset)
 	arith384.SubMod(out, x, y, mod)
 
 	return nil, nil
@@ -1008,7 +1000,6 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     var x_offset uint32 = 48 * uint32(x_offset_16)
     var out_offset uint32 = 48 * uint32(out_offset_16)
 
-    fmt.Printf("mulmodmont384: out, x, y, modinv\n    %d %d %d %d\n", out_offset, x_offset, y_offset, modinv_offset)
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 48) {
@@ -1028,7 +1019,6 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size + 8)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
 
-    fmt.Printf("    %x %x %x %x\n", out_bytes, x_bytes, y_bytes, modinv_bytes)
     // have to reverse them cuz they bigInt.SetBytes expects them in bigendian
 
     //fmt.Printf("x is %x\n", x_bytes)
