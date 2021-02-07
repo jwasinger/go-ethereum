@@ -864,30 +864,7 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, _, err := loadEVM384Params(callCtx, true)
-
-    // TODO check/use err
-    _ = err
-
-	arith384.AddMod(out, x, y, mod)
-
-	return nil, nil
-}
-
-func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, _, err := loadEVM384Params(callCtx, true)
-
-    // TODO check/use err
-    _ = err
-
-	arith384.SubMod(out, x, y, mod)
-
-	return nil, nil
-}
-
-func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Element, *arith384.Element, *arith384.Element, *arith384.Element, *uint64, error) {
-    var inv uint64
+func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Element, *arith384.Element, *arith384.Element, *arith384.Element, uint64, error) {
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
@@ -896,21 +873,21 @@ func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Eleme
 	field_params_offset := uint32(params_offsets[0])
 
     // validation of "num_limbs"
-    if !checkMem(callContext.memory, field_params_offset, 1) {
+    if !checkMem(callContext.memory, int(field_params_offset), 1) {
         panic("offset for num_limbs out of memory bounds")
     }
 
-    num_limbs := callContext.memory.GetPtr(int64(field_params_offset), 1)
+    num_limbs := callContext.memory.GetPtr(int64(field_params_offset), 1)[0]
 
     if num_limbs == 0 || num_limbs > 6 {
         panic("num_limbs must be between 1 and 6 (inclusive)")
     }
 
     // expected size known, make sure the other parameters fit within memory bounds
-    word_size := uint32(num_limbs) * 8
+    word_size := int(num_limbs) * 8
 
     // **TODO** really bad naming.  it's not actually the expected start offset for field_params
-    expected_field_params_offset = field_params_offset
+    expected_field_params_offset := field_params_offset
     if is_mulmodmont {
         expected_field_params_offset += 8 // accounting for montgomery parameter which is ignored/unused for addmod384 and submod384
     }
@@ -921,26 +898,49 @@ func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Eleme
 		panic("evm384 inputs out of memory bounds")
 	}
 
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), word_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), word_size)
-	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), word_size + 8)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), word_size)
+	x_bytes := callContext.memory.GetPtr(int64(x_offset), int64(word_size))
+	y_bytes := callContext.memory.GetPtr(int64(y_offset), int64(word_size))
+	modinv_bytes := callContext.memory.GetPtr(int64(field_params_offset + 1), int64(word_size) + 8)
+	out_bytes := callContext.memory.GetPtr(int64(out_offset), int64(word_size))
 
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
-    inv = ((*uint64) (unsafe.Pointer(&modinv_bytes[evm384_f_size])))
+	x := (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
+	y := (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
+	out := (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod := (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
+    inv := *((*uint64) (unsafe.Pointer(&modinv_bytes[word_size])))
 
     if is_mulmodmont {
         return out, x, y, mod, inv, nil
     } else {
-        return out, x, y, mod, nil, nil
+        return out, x, y, mod, 0, nil
     }
 }
 
+func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    out, x, y, mod, _, err := loadEVM384Params(callContext, true)
+
+    // TODO check/use err
+    _ = err
+
+	arith384.AddMod(out, x, y, mod)
+
+	return nil, nil
+}
+
+func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    out, x, y, mod, _, err := loadEVM384Params(callContext, true)
+
+    // TODO check/use err
+    _ = err
+
+	arith384.SubMod(out, x, y, mod)
+
+	return nil, nil
+}
+
+
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, inv, err := loadEVM384Params(callCtx, true)
+    out, x, y, mod, inv, err := loadEVM384Params(callContext, true)
 
     // TODO check/use err
     _ = err
