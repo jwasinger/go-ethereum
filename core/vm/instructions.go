@@ -18,7 +18,7 @@ package vm
 
 import (
 	"fmt"
-	"unsafe"
+    "encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -864,7 +864,17 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Element, *arith384.Element, *arith384.Element, *arith384.Element, uint64, error) {
+func elementFromBytes(bytes []byte) arith384.Element {
+    result := arith384.Element{0,0,0,0,0,0}
+
+    for i := 0; i < 6; i++ {
+        result[i] = binary.LittleEndian.Uint64(bytes[(i * 8):(i + 1) * 8])
+    }
+
+    return result
+}
+
+func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (int, []byte, *arith384.Element, *arith384.Element, *arith384.Element, uint64, error) {
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
@@ -903,49 +913,69 @@ func loadEVM384Params(callContext *callCtx, is_mulmodmont bool) (*arith384.Eleme
 	modinv_bytes := callContext.memory.GetPtr(int64(field_params_offset + 1), int64(word_size) + 8)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), int64(word_size))
 
+/*
 	x := (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
 	y := (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
 	out := (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
 	mod := (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
     inv := *((*uint64) (unsafe.Pointer(&modinv_bytes[word_size])))
+*/
+
+    x := elementFromBytes(x_bytes)
+    y := elementFromBytes(y_bytes)
+    mod := elementFromBytes(modinv_bytes[:word_size])
+    inv := binary.LittleEndian.Uint64(modinv_bytes[word_size:word_size + 8])
 
     if is_mulmodmont {
-        return out, x, y, mod, inv, nil
+        return int(num_limbs), out_bytes, &x, &y, &mod, inv, nil
     } else {
-        return out, x, y, mod, 0, nil
+        return int(num_limbs), out_bytes, &x, &y, &mod, 0, nil
+    }
+}
+
+func copyElementToSlice(result []byte, src arith384.Element) {
+    for i := 0; i < len(src); i++ {
+        binary.LittleEndian.PutUint64(result[i*8:(i+1)*8], src[i])
     }
 }
 
 func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, _, err := loadEVM384Params(callContext, true)
+    num_limbs, out_bytes, x, y, mod, _, err := loadEVM384Params(callContext, true)
 
     // TODO check/use err
     _ = err
 
-	arith384.AddMod(out, x, y, mod)
+    out := make(arith384.Element, num_limbs, num_limbs)
+	arith384.AddMod(&out, x, y, mod, num_limbs)
+
+    copyElementToSlice(out_bytes, out)
 
 	return nil, nil
 }
 
 func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, _, err := loadEVM384Params(callContext, true)
+    num_limbs, out_bytes, x, y, mod, _, err := loadEVM384Params(callContext, true)
 
     // TODO check/use err
     _ = err
 
-	arith384.SubMod(out, x, y, mod)
+    out := make(arith384.Element, num_limbs, num_limbs)
+	arith384.SubMod(&out, x, y, mod, num_limbs)
+    copyElementToSlice(out_bytes, out)
 
 	return nil, nil
 }
 
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out, x, y, mod, inv, err := loadEVM384Params(callContext, true)
+    num_limbs, out_bytes, x, y, mod, inv, err := loadEVM384Params(callContext, true)
 
     // TODO check/use err
     _ = err
 
-	arith384.MulMod(out, x, y, mod, inv)
+    out := make(arith384.Element, num_limbs, num_limbs)
+	arith384.MulMod(&out, x, y, mod, inv, num_limbs)
+    copyElementToSlice(out_bytes, out)
 
 	return nil, nil
 }
