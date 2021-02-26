@@ -45,6 +45,129 @@ func Eq(x *Element, y *Element) bool {
     return true
 }
 
+func MulMod(z, x, y, mod *Element, modinv uint64) {
+
+	var t [6]uint64
+	var c [3]uint64
+	{
+		// round 0
+		v := x[0]
+		c[1], c[0] = bits.Mul64(v, y[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd1(v, y[1], c[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd1(v, y[2], c[1])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd1(v, y[3], c[1])
+		c[2], t[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd1(v, y[4], c[1])
+		c[2], t[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd1(v, y[5], c[1])
+		t[5], t[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+	{
+		// round 1
+		v := x[1]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		c[2], t[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd2(v, y[4], c[1], t[4])
+		c[2], t[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd2(v, y[5], c[1], t[5])
+		t[5], t[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+	{
+		// round 2
+		v := x[2]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		c[2], t[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd2(v, y[4], c[1], t[4])
+		c[2], t[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd2(v, y[5], c[1], t[5])
+		t[5], t[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+	{
+		// round 3
+		v := x[3]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		c[2], t[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd2(v, y[4], c[1], t[4])
+		c[2], t[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd2(v, y[5], c[1], t[5])
+		t[5], t[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+	{
+		// round 4
+		v := x[4]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		c[2], t[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd2(v, y[4], c[1], t[4])
+		c[2], t[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd2(v, y[5], c[1], t[5])
+		t[5], t[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+	{
+		// round 5
+		v := x[5]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], z[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], z[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		c[2], z[2] = madd2(m, mod[3], c[2], c[0])
+		c[1], c[0] = madd2(v, y[4], c[1], t[4])
+		c[2], z[3] = madd2(m, mod[4], c[2], c[0])
+		c[1], c[0] = madd2(v, y[5], c[1], t[5])
+		z[5], z[4] = madd3(m, mod[5], c[0], c[2], c[1])
+	}
+
+	// TODO can make the following faster and constant time
+
+	// if z > q --> z -= q
+	// note: this is NOT constant time
+	if !(z[5] < mod[5] || (z[5] == mod[5] && (z[4] < mod[4] || (z[4] == mod[4] && (z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))))))) {
+		var b uint64
+		z[0], b = bits.Sub64(z[0], mod[0], 0)
+		z[0], b = bits.Sub64(z[0], mod[0], b)
+		z[1], b = bits.Sub64(z[1], mod[1], b)
+		z[2], b = bits.Sub64(z[2], mod[2], b)
+		z[3], b = bits.Sub64(z[3], mod[3], b)
+		z[4], b = bits.Sub64(z[4], mod[4], b)
+		z[5], _ = bits.Sub64(z[5], mod[5], b)
+	}
+}
+
 /*
 	Modular Addition
 */
@@ -130,67 +253,4 @@ func lt(a_hi, a_lo, b_hi, b_lo uint64) bool {
 
 	return carry != 0
 	*/
-}
-
-
-/*
-    Montgomery Modular Multiplication: algorithm 14.36, Handbook of Applied Cryptography, http://cacr.uwaterloo.ca/hac/about/chap14.pdf
-*/
-func MulMod(out *Element, x *Element, y *Element, mod *Element, inv uint64) {
-    var A [NUM_LIMBS * 2 + 1]uint64
-    var xiyj_lo, xiyj_hi uint64 = 0, 0
-    var uimj_lo, uimj_hi uint64 = 0, 0
-    var partial_sum_lo, partial_sum_hi uint64 = 0, 0
-    var sum_lo, sum_hi uint64 = 0, 0
-
-    // var xiyj, uimj, partial_sum, sum uint128.Uint128
-    var ui, carry uint64
-    var c uint64
-
-    for i := 0; i < NUM_LIMBS; i++ {
-        ui = (A[i] + x[i] * y[0]) * inv
-
-        carry = 0
-        for j := 0; j < NUM_LIMBS; j++ {
-
-            xiyj_hi, xiyj_lo = bits.Mul64(x[i], y[j])
-
-            uimj_hi, uimj_lo = bits.Mul64(ui, mod[j])
-
-            partial_sum_lo, c = bits.Add64(xiyj_lo, carry, 0)
-            partial_sum_hi = xiyj_hi + c
-
-            sum_lo, c = bits.Add64(uimj_lo, A[i + j], 0)
-            sum_hi = uimj_hi + c
-
-            sum_lo, c = bits.Add64(partial_sum_lo, sum_lo, 0)
-            sum_hi, _ = bits.Add64(partial_sum_hi, sum_hi, c)
-
-            A[i + j] = sum_lo
-            carry = sum_hi
-
-            if lt(sum_hi, sum_lo, partial_sum_hi, partial_sum_lo) {
-                var k int
-                k = 2
-                for ; i + j + k < NUM_LIMBS * 2 && A[i + j + k] == ^uint64(0); {
-                    A[i + j + k] = 0
-                    k++
-                }
-
-                if (i + j + k < NUM_LIMBS * 2 + 1) {
-                    A[i + j + k] += 1
-                }
-            }
-        }
-
-        A[i + NUM_LIMBS] += carry
-    }
-
-    for i := 0; i < NUM_LIMBS; i++ {
-        out[i] = A[i + NUM_LIMBS]
-    }
-
-    if lte(mod, out) {
-        sub(out, out, mod)
-    }
 }
