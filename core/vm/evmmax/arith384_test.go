@@ -1,4 +1,4 @@
-package max
+package evmmax
 
 import (
 	"testing"

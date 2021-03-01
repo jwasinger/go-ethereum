@@ -1,10 +1,10 @@
-package max
+package evmmax
 
 import (
     "unsafe"
 )
 
-func MulMod(limb_count int64, out []byte, x []byte, y []byte, mod []byte, modinv uint64) {
+func MulMod(limb_count int, out []byte, x []byte, y []byte, mod []byte, modinv uint64) {
     switch limb_count {
         case 4:
             MulMod256(
@@ -25,7 +25,7 @@ func MulMod(limb_count int64, out []byte, x []byte, y []byte, mod []byte, modinv
     }
 }
 
-func AddMod(limb_count int64, out []byte, x []byte, y []byte, mod []byte) {
+func AddMod(limb_count int, out []byte, x []byte, y []byte, mod []byte) {
     switch limb_count {
         case 4:
             AddMod256(
@@ -44,7 +44,7 @@ func AddMod(limb_count int64, out []byte, x []byte, y []byte, mod []byte) {
     }
 }
 
-func SubMod(limb_count int64, out []byte, x []byte, y []byte, mod []byte) {
+func SubMod(limb_count int, out []byte, x []byte, y []byte, mod []byte) {
     switch limb_count {
         case 4:
             SubMod256(

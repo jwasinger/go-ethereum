@@ -19,12 +19,13 @@ package vm
 import (
 	"fmt"
 	"unsafe"
+    "errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
-	"github.com/ethereum/go-ethereum/core/vm/arith384"
+	"github.com/ethereum/go-ethereum/core/vm/evmmax"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -864,80 +865,80 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func loadEVMMAXInputs(callContext *callCtx, isMulMod bool) ([]byte, []byte, []byte, []byte, uint64, error) {
+func loadEVMMAXInputs(callContext *callCtx, isMulMod bool) (int, []byte, []byte, []byte, []byte, uint64, error) {
 
 	params := callContext.stack.pop()
 
-    var int limb_count, element_size
-	out_offset := uint16(params[0])
-	x_offset := uint16(params[0] << 16)
-	y_offset := uint16(params[0] << 32)
-	params_offset := uint16(params[0]  << 48)
+    var limb_count, element_size int64
+	out_offset := int64(uint16(params[0]))
+	x_offset := int64(uint16(params[0] << 16))
+	y_offset := int64(uint16(params[0] << 32))
+	params_offset := int64(uint16(params[0]  << 48))
 
-    if (!checkMem(callContext.memory, int(params_offset), 1) {
-        return nil, nil, nil, nil, 0, errors.New("offset for limb_count out of bounds")
+    if !checkMem(callContext.memory, int(params_offset), 1) {
+        return 0, nil, nil, nil, nil, 0, errors.New("offset for limb_count out of bounds")
     }
 
-    limb_count = int(callContext.memory.GetPtr(int64(params_offset[0] << 48), 1)[0])
+    limb_count = int64(callContext.memory.GetPtr(int64(params[0] << 48), 1)[0])
     if limb_count != 4 || limb_count != 6 {
-        return nil, nil, nil, nil, 0, errors.New("limb count must be 4 or 6")
+        return 0, nil, nil, nil, nil, 0, errors.New("limb count must be 4 or 6")
     }
 
     element_size = 8 * limb_count
     var max_mem_offset uint32
     if isMulMod {
-	    max_mem_offset = max(max(x_offset + element_size, y_offset + element_size), max(params_offset + element_size + 8, out_offset + element_size))
+	    max_mem_offset = max(max(uint32(x_offset + element_size), uint32(y_offset + element_size)), max(uint32(params_offset + element_size + 8), uint32(out_offset + element_size)))
     } else {
-	    max_mem_offset = max(max(x_offset + element_size, y_offset + element_size), max(params_offset + element_size, out_offset + element_size))
+	    max_mem_offset = max(max(uint32(x_offset + element_size), uint32(y_offset + element_size)), max(uint32(params_offset + element_size), uint32(out_offset + element_size)))
 
     }
 
-	if !checkMem(callContext.memory, (int)(max_mem_offset), element_size) {
-        return nil, nil, nil, nil, 0, errors.New("specified element offsets at specified limb count exceed memory bounds")
+	if !checkMem(callContext.memory, (int)(max_mem_offset), int(element_size)) {
+        return 0, nil, nil, nil, nil, 0, errors.New("specified element offsets at specified limb count exceed memory bounds")
 	}
 
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), element_size)
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), element_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), element_size)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), element_size)
+	mod_bytes := callContext.memory.GetPtr(int64(params_offset), element_size)
 
     if !isMulMod {
-        return out_bytes, x_bytes, y_bytes, mod_bytes, 0, nil
+        return int(limb_count), out_bytes, x_bytes, y_bytes, mod_bytes, 0, nil
     } else {
-        modinv := * ((*uint64) (unsafe.Pointer(callContext.memory.GetPtr(int64(mod_offset + element_size), 8)
-        return out_bytes, x_bytes, y_bytes, mod_bytes, out_bytes, modinv, nil
+        modinv := * ((*uint64) (unsafe.Pointer(&(callContext.memory.GetPtr(int64(params_offset + element_size), 8)[0]))))
+        return int(limb_count), out_bytes, x_bytes, y_bytes, mod_bytes, modinv, nil
     }
 }
 
 func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadAddModSubModInputs(callCtx, false)
-    if err {
+    limb_count, out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadEVMMAXInputs(callContext, false)
+    if err != nil {
         panic("should oog here actually")
     }
 
-	AddModMAX(out_bytes, x_bytes, y_bytes, mod_bytes)
+	evmmax.AddMod(limb_count, out_bytes, x_bytes, y_bytes, mod_bytes)
 
 	return nil, nil
 }
 
 func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadAddModSubModInputs(callCtx, false)
-    if err {
+    limb_count, out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadEVMMAXInputs(callContext, false)
+    if err != nil {
         panic("should oog here actually")
     }
 
-	SubModMAX(out_bytes, x_bytes, y_bytes, mod_bytes)
+	evmmax.SubMod(limb_count, out_bytes, x_bytes, y_bytes, mod_bytes)
 
 	return nil, nil
 }
 
 func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    out_bytes, x_bytes, y_bytes, mod_bytes, modinv, err := loadAddModSubModInputs(callCtx, true)
-    if err {
+    limb_count, out_bytes, x_bytes, y_bytes, mod_bytes, modinv, err := loadEVMMAXInputs(callContext, true)
+    if err != nil {
         panic("should oog here actually")
     }
 
-	SubModMAX(out_bytes, x_bytes, y_bytes, mod_bytes, modinv)
+	evmmax.MulMod(limb_count, out_bytes, x_bytes, y_bytes, mod_bytes, modinv)
 
 	return nil, nil
 }
