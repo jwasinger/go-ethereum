@@ -1,4 +1,4 @@
-package arith384
+package max
 
 import (
 	"math/bits"
@@ -63,8 +63,6 @@ func MulMod256(z, x, y, mod *Element256, modinv uint64) {
         z[3], z[2] = madd3(m, mod[3], c[0], c[2], c[1])
     }
 
-    // TODO can make the following faster and constant time
-
     // if z > q --> z -= q
     // note: this is NOT constant time
     if !(z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))) {
@@ -80,7 +78,7 @@ func MulMod256(z, x, y, mod *Element256, modinv uint64) {
 /*
 	Modular Addition
 */
-func AddMod256(out *Element256, x *Element256, y *Element256, mod *Element256) {
+func AddMod256(z *Element256, x *Element256, y *Element256, mod *Element256) {
     var carry uint64
 
     z[0], carry = bits.Add64(x[0], y[0], 0)
@@ -103,7 +101,7 @@ func AddMod256(out *Element256, x *Element256, y *Element256, mod *Element256) {
 /*
 	Modular Subtraction
 */
-func SubMod256(out *Element256, x *Element256, y *Element256, mod *Element256) {
+func SubMod256(z *Element256, x *Element256, y *Element256, mod *Element256) {
     var b uint64
     z[0], b = bits.Sub64(x[0], y[0], 0)
     z[0], b = bits.Sub64(x[0], y[0], b)
