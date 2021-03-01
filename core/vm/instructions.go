@@ -864,7 +864,7 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
@@ -901,7 +901,7 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
-func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
@@ -937,7 +937,7 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
-func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var evm384_f_size int64
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()

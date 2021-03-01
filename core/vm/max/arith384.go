@@ -4,11 +4,11 @@ import (
 	"math/bits"
 )
 
-const NUM_LIMBS = 6
-type Element [NUM_LIMBS]uint64
+type Element384 [6]uint64
+
 
 // out <- x + y
-func add(out *Element, x *Element, y *Element) {
+func add(out *Element384, x *Element384, y *Element384) {
 	var c uint64
 	c = 0
 
@@ -21,7 +21,7 @@ func add(out *Element, x *Element, y *Element) {
 }
 
 // out <- x - y
-func sub(out *Element, x *Element, y *Element) (uint64){
+func sub(out *Element384, x *Element384, y *Element384) (uint64){
 	var c uint64
 	c = 0
 
@@ -35,7 +35,7 @@ func sub(out *Element, x *Element, y *Element) (uint64){
 	return c
 }
 
-func Eq(x *Element, y *Element) bool {
+func Eq(x *Element384, y *Element384) bool {
     for i := 0; i < NUM_LIMBS; i++ {
         if x[i] != y[i] {
             return false
@@ -45,7 +45,7 @@ func Eq(x *Element, y *Element) bool {
     return true
 }
 
-func MulMod(z, x, y, mod *Element, modinv uint64) {
+func MulMod(z, x, y, mod *Element384, modinv uint64) {
 
 	var t [6]uint64
 	var c [3]uint64
@@ -156,6 +156,8 @@ func MulMod(z, x, y, mod *Element, modinv uint64) {
 
 	// if z > q --> z -= q
 	// note: this is NOT constant time
+
+    // TODO test with lte384
 	if !(z[5] < mod[5] || (z[5] == mod[5] && (z[4] < mod[4] || (z[4] == mod[4] && (z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))))))) {
 		var b uint64
 		z[0], b = bits.Sub64(z[0], mod[0], 0)
@@ -171,9 +173,9 @@ func MulMod(z, x, y, mod *Element, modinv uint64) {
 /*
 	Modular Addition
 */
-func AddMod(out *Element, x *Element, y *Element, mod *Element) {
+func AddMod(out *Element384, x *Element384, y *Element384, mod *Element384) {
 	var c uint64
-	var tmp Element
+	var tmp Element384
 
 	tmp[0], c = bits.Add64(x[0], y[0], 0)
 	tmp[1], c = bits.Add64(x[1], y[1], c)
@@ -198,9 +200,9 @@ func AddMod(out *Element, x *Element, y *Element, mod *Element) {
 /*
 	Modular Subtraction
 */
-func SubMod(out *Element, x *Element, y *Element, mod *Element) {
+func SubMod(out *Element384, x *Element384, y *Element384, mod *Element384) {
 	var c, c1 uint64
-	var tmp Element
+	var tmp Element384
 
 	tmp[0], c1 = bits.Sub64(x[0], y[0], 0)
 	tmp[1], c1 = bits.Sub64(x[1], y[1], c1)
@@ -221,7 +223,7 @@ func SubMod(out *Element, x *Element, y *Element, mod *Element) {
 	}
 }
 
-func lte(x *Element, y *Element) bool {
+func lte(x *Element384, y *Element384) bool {
 	for i := 0; i < NUM_LIMBS; i++ {
 		if x[i] > y[i] {
 			return false
@@ -232,7 +234,7 @@ func lte(x *Element, y *Element) bool {
 }
 
 // returns True if x < y
-func lt384(x *Element, y *Element) bool {
+func lt384(x *Element384, y *Element384) bool {
 	_, carry := bits.Sub64(x[0], y[0], 0)
 	_, carry = bits.Sub64(x[1], y[1], carry)
 	_, carry = bits.Sub64(x[2], y[2], carry)
