@@ -864,7 +864,7 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func loadMulModMontInputs(interpreter *EVMInterpreter, callContext *callCtx) ([]byte, []byte, []byte, []byte, uint64, error) {
+func loadEVMMAXInputs(callContext *callCtx, isMulMod bool) ([]byte, []byte, []byte, []byte, uint64, error) {
 
 	params := callContext.stack.pop()
 
@@ -884,7 +884,14 @@ func loadMulModMontInputs(interpreter *EVMInterpreter, callContext *callCtx) ([]
     }
 
     element_size = 8 * limb_count
-	var max_mem_offset uint32 = max(max(x_offset + element_size, y_offset + element_size), max(params_offset + element_size + 8, out_offset + element_size))
+    var max_mem_offset uint32
+    if isMulMod {
+	    max_mem_offset = max(max(x_offset + element_size, y_offset + element_size), max(params_offset + element_size + 8, out_offset + element_size))
+    } else {
+	    max_mem_offset = max(max(x_offset + element_size, y_offset + element_size), max(params_offset + element_size, out_offset + element_size))
+
+    }
+
 	if !checkMem(callContext.memory, (int)(max_mem_offset), element_size) {
         return nil, nil, nil, nil, 0, errors.New("specified element offsets at specified limb count exceed memory bounds")
 	}
@@ -893,108 +900,44 @@ func loadMulModMontInputs(interpreter *EVMInterpreter, callContext *callCtx) ([]
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), element_size)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), element_size)
 	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), element_size)
-    modinv := * ((*uint64) (unsafe.Pointer(callContext.memory.GetPtr(int64(mod_offset + element_size), 8)
 
-    return out_bytes, x_bytes, y_bytes, mod_bytes, out_bytes, modinv
+    if !isMulMod {
+        return out_bytes, x_bytes, y_bytes, mod_bytes, 0, nil
+    } else {
+        modinv := * ((*uint64) (unsafe.Pointer(callContext.memory.GetPtr(int64(mod_offset + element_size), 8)
+        return out_bytes, x_bytes, y_bytes, mod_bytes, out_bytes, modinv, nil
+    }
 }
 
 func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	params := callContext.stack.pop()
+    out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadAddModSubModInputs(callCtx, false)
+    if err {
+        panic("should oog here actually")
+    }
 
-    limb_count := int64(params[0] & 0xff)
-	out_offset := uint16(params_offsets[0] << 8)
-	x_offset := uint16(params_offsets[0] << 24)
-	y_offset := uint16(params_offsets[0] << 40)
-	mod_offset := uint16(params_offsets[0] << 56) + uint16(params_offsets[1] >> 56)
-
-    var element_size = limb_count * 8
-	var max_mem_offset uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
-
-	if !checkMem(callContext.memory, (int)(max_mem_offset), element_size) {
-		panic("memcheck failed")
-	}
-
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), element_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), element_size)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), element_size)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), element_sizse)
-    modinv := * ((*uint64) (unsafe.Pointer(callContext.memory.GetPtr(int64(mod_offset + 48), 8)
-
-	AddModMAX(out_bytes, x_bytes, y_bytes, mod_bytes, modinv)
+	AddModMAX(out_bytes, x_bytes, y_bytes, mod_bytes)
 
 	return nil, nil
 }
 
 func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	var evm384_f_size int64
-	evm384_f_size = 48
-	params_offsets := callContext.stack.pop()
+    out_bytes, x_bytes, y_bytes, mod_bytes, _, err := loadAddModSubModInputs(callCtx, false)
+    if err {
+        panic("should oog here actually")
+    }
 
-	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[1])
-	y_offset := uint32(params_offsets[0] >> 32)
-	mod_offset := uint32(params_offsets[0])
-
-	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
-
-	if !checkMem(callContext.memory, (int)(max), 48) {
-		panic("memcheck failed")
-	}
-
-	var x *arith384.Element
-	var y *arith384.Element
-	var mod *arith384.Element
-	var out *arith384.Element
-
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
-
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
-
-	arith384.SubMod(out, x, y, mod)
+	SubModMAX(out_bytes, x_bytes, y_bytes, mod_bytes)
 
 	return nil, nil
 }
 
 func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	var evm384_f_size int64
-	evm384_f_size = 48
-	params_offsets := callContext.stack.pop()
+    out_bytes, x_bytes, y_bytes, mod_bytes, modinv, err := loadAddModSubModInputs(callCtx, true)
+    if err {
+        panic("should oog here actually")
+    }
 
-	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[1])
-	y_offset := uint32(params_offsets[0] >> 32)
-	modinv_offset := uint32(params_offsets[0])
-
-	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
-
-	if !checkMem(callContext.memory, (int)(max), 48) {
-		panic("memcheck failed")
-	}
-
-	var x *arith384.Element
-	var y *arith384.Element
-	var mod *arith384.Element
-	var out *arith384.Element
-    var inv uint64
-
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size + 8)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
-
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
-    inv = *((*uint64) (unsafe.Pointer(&modinv_bytes[evm384_f_size])))
-
-	arith384.MulMod(out, x, y, mod, inv)
+	SubModMAX(out_bytes, x_bytes, y_bytes, mod_bytes, modinv)
 
 	return nil, nil
 }
