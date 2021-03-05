@@ -939,7 +939,7 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var evm384_f_size int64
-	evm384_f_size = 48
+	evm384_f_size = 32
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32(params_offsets[1] >> 32)
@@ -947,9 +947,9 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	y_offset := uint32(params_offsets[0] >> 32)
 	modinv_offset := uint32(params_offsets[0])
 
-	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset, out_offset))
+	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset + 8, out_offset))
 
-	if !checkMem(callContext.memory, (int)(max), 48) {
+	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
 
