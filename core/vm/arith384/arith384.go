@@ -7,7 +7,6 @@ package arith384
 // /!\ WARNING /!\
 
 import (
-    "fmt"
     "math/bits"
     "unsafe"
     "math/big"
@@ -53,7 +52,12 @@ func ElementFromString(s string) *Element {
 	var fill_len int = 32 - len(val_bytes)
 	if fill_len > 0 {
 		fill_bytes := make([]byte, fill_len, fill_len)
-		val_bytes = append(val_bytes, fill_bytes...)
+		val_bytes = append(fill_bytes, val_bytes...)
+	}
+
+	// reverse so that elements are little endian
+	for i, j := 0, len(val_bytes)-1; i < j; i, j = i+1, j-1 {
+		val_bytes[i], val_bytes[j] = val_bytes[j], val_bytes[i]
 	}
 
 	return (*Element) (unsafe.Pointer(&val_bytes[0]))
@@ -62,9 +66,7 @@ func ElementFromString(s string) *Element {
 // Mul z = x * y mod q
 // see https://hackmd.io/@zkteam/modular_multiplication
 func MulMod(z, x, y, mod *Element, modinv uint64) {
-    fmt.Printf("mulmodmont:    %s %s %s %d ->", x.String(), y.String(), mod.String(), modinv)
     _mulGeneric(z, x, y, mod, modinv)
-    fmt.Printf("%s\n\n", z.String())
 }
 
 func (e *Element) MulModMont(x, y, mod *Element, inv uint64) {
