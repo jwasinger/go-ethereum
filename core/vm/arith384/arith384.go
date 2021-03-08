@@ -9,6 +9,7 @@ package arith384
 import (
     "fmt"
     "math/bits"
+    "unsafe"
     "math/big"
 )
 
@@ -40,12 +41,55 @@ func (e *Element) String() string {
     return result.String()
 }
 
+func ElementFromString(s string) *Element {
+	// hacky
+	val := new(big.Int)
+	val.SetString(s, 10)
+	val_bytes := val.Bytes()
+	if len(val_bytes) > 32 {
+		panic("val must fit in 6 x 64bit limbs")
+	}
+
+	var fill_len int = 32 - len(val_bytes)
+	if fill_len > 0 {
+		fill_bytes := make([]byte, fill_len, fill_len)
+		val_bytes = append(val_bytes, fill_bytes...)
+	}
+
+	return (*Element) (unsafe.Pointer(&val_bytes[0]))
+}
+
 // Mul z = x * y mod q
 // see https://hackmd.io/@zkteam/modular_multiplication
 func MulMod(z, x, y, mod *Element, modinv uint64) {
     fmt.Printf("mulmodmont:    %s %s %s %d ->", x.String(), y.String(), mod.String(), modinv)
     _mulGeneric(z, x, y, mod, modinv)
     fmt.Printf("%s\n\n", z.String())
+}
+
+func (e *Element) MulModMont(x, y, mod *Element, inv uint64) {
+	MulMod(e, x, y, mod, inv)
+}
+
+func (e *Element) ToMont(mod, r *Element, inv uint64) {
+	// e.MulModMont(r_inv, mod, inv)
+	// TODO calculate r using modulus: ( 1 << (limb_size * 8) ) % mod
+	e.MulModMont(e, r, mod, inv)
+}
+
+func (e *Element) ToNorm(mod *Element, inv uint64) {
+	one := ElementFromString("1")
+	e.MulModMont(e, one, mod, inv)
+}
+
+func (e *Element) Eq(other *Element) bool {
+	for i := 0; i < 4; i++ {
+		if e[i] != other[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Add z = x + y mod q

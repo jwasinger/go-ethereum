@@ -39,3 +39,34 @@ func BenchmarkMulMod_4limbs(b *testing.B) {
 		MulMod(&x, &x, &y, &mod, inv)
 	}
 }
+
+func TestStringConversion(t *testing.T) {
+	x := *ElementFromString("21888242871839275222246405745257275088696311157297823662689037894645226208583")
+	if x.String() != "21888242871839275222246405745257275088696311157297823662689037894645226208583" {
+		t.Fatalf("%s bad", x.String())
+	}
+}
+
+func TestMulModMont(t *testing.T) {
+	var x, y, r, expected, mod Element
+	var modinv uint64
+
+	// modulus = BN128 curve order, r = 1<<256 % modulus
+	mod = *ElementFromString("21888242871839275222246405745257275088696311157297823662689037894645226208583")
+	r = *ElementFromString("6350874878119819312338956282401532409788428879151445726012394534686998597021")
+	modinv = 9786893198990664585
+
+	x = *ElementFromString("3")
+	y = *ElementFromString("2")
+	expected = *ElementFromString("6")
+
+	x.ToMont(&mod, &r, modinv)
+	y.ToMont(&mod, &r, modinv)
+
+	x.MulModMont(&x, &y, &mod, modinv)
+	x.ToNorm(&mod, modinv)
+
+	if !x.Eq(&expected) {
+		t.Fatalf("neq")
+	}
+}
