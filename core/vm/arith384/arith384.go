@@ -7,7 +7,9 @@ package arith384
 // /!\ WARNING /!\
 
 import (
+    "fmt"
     "math/bits"
+    "math/big"
 )
 
 type Element [4]uint64
@@ -18,10 +20,32 @@ const Limbs = 4
 // Bytes number bytes needed to represent Element
 const Bytes = Limbs * 8
 
+// convert little-endian ordered, little-endian limbs to a base-10 string representation
+func (e *Element) String() string {
+    result := big.NewInt(0)
+
+    for i := range e {
+        accum := new(big.Int)
+        exp := new(big.Int)
+        limb := new(big.Int)
+
+        exp.SetString("10000000000000000", 16)
+        exp.Exp(exp, big.NewInt(int64(i)), nil)
+        limb.SetUint64(e[i])
+
+        accum.Mul(limb, exp)
+        result.Add(result, accum)
+    }
+
+    return result.String()
+}
+
 // Mul z = x * y mod q
 // see https://hackmd.io/@zkteam/modular_multiplication
 func MulMod(z, x, y, mod *Element, modinv uint64) {
+    fmt.Printf("mulmodmont:    %s %s %s %d ->", x.String(), y.String(), mod.String(), modinv)
     _mulGeneric(z, x, y, mod, modinv)
+    fmt.Printf("%s\n\n", z.String())
 }
 
 // Add z = x + y mod q

@@ -869,10 +869,10 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[1])
-	y_offset := uint32(params_offsets[0] >> 32)
-	mod_offset:= uint32(params_offsets[0])
+    out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
+    x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
+    y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
+    mod_offset := uint32(params_offsets[0] & 0xffff)
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -906,10 +906,10 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	evm384_f_size = 48
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[1])
-	y_offset := uint32(params_offsets[0] >> 32)
-	mod_offset := uint32(params_offsets[0])
+    out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
+    x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
+    y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
+    mod_offset := uint32(params_offsets[0] & 0xffff)
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
@@ -942,13 +942,13 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	evm384_f_size = 32
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32(params_offsets[1] >> 32)
-	x_offset := uint32(params_offsets[1])
-	y_offset := uint32(params_offsets[0] >> 32)
-	modinv_offset := uint32(params_offsets[0])
+    out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
+    x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
+    y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
+    modinv_offset := uint32(params_offsets[0] & 0xffff)
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset + 8, out_offset))
-
+    fmt.Printf("%d %d %d %d\n", out_offset, x_offset, y_offset, modinv_offset)
 	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
