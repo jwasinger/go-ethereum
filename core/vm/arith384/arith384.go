@@ -1,6 +1,7 @@
 package arith384
 
 import (
+    "fmt"
 	"math/bits"
     "math/big"
 )
@@ -152,9 +153,11 @@ func MulModNaive(out *big.Int, x *big.Int, y *big.Int) {
     fmt.Printf("xnum is %d\n", x.Bytes())
     fmt.Printf("xnum is %s\n", x.String())
 */
+    fmt.Printf("mulmodmont: %s %s %s %d ->", x.String(), y.String(), mod.String(), r_inv)
 	out.Mul(x, y)
 	out.Mul(out, r_inv)
 	out.Mod(out, mod)
+    fmt.Printf(" %s\n\n", out.String())
 
     // fmt.Printf("result is %s\n", out.String())
 }
