@@ -29,6 +29,11 @@ var activators = map[int]func(*JumpTable){
 	2200: enable2200,
 	1884: enable1884,
 	1344: enable1344,
+<<<<<<< HEAD
+=======
+	2315: enable2315,
+	9000: enableEVM256,
+>>>>>>> evm256- addmod, submod and montgomery multiplication on 4x64bit limbed moduli.  input format based on evm384-v7 modified with parameter offset sizes reduced to 2 bytes
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -143,4 +148,62 @@ func enable2929(jt *JumpTable) {
 	// factor here
 	jt[SELFDESTRUCT].constantGas = params.SelfdestructGasEIP150
 	jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP2929
+}
+
+func enableEVM256(jt *JumpTable) {
+	jt[ADDMOD256] = &operation{
+		execute:     opAddMod256,
+		constantGas: GasQuickStep,
+		minStack:    minStack(1, 0),
+		maxStack:    maxStack(1, 0),
+	}
+
+	jt[SUBMOD256] = &operation{
+		execute:     opSubMod256,
+		constantGas: GasQuickStep,
+		minStack:    minStack(1, 0),
+		maxStack:    maxStack(1, 0),
+	}
+
+	jt[MULMODMONT256] = &operation{
+		execute:     opMulModMont256,
+		constantGas: 3,
+		minStack:    minStack(1, 0),
+		maxStack:    maxStack(1, 0),
+	}
+
+    jt[LOGF] = &operation{
+        execute:     opLogF,
+        constantGas: GasQuickStep,
+        minStack:    minStack(3, 0),
+        maxStack:    maxStack(3, 0),
+    }
+}
+
+// enable2315 applies EIP-2315 (Simple Subroutines)
+// - Adds opcodes that jump to and return from subroutines
+func enable2315(jt *JumpTable) {
+	// New opcode
+	jt[BEGINSUB] = &operation{
+		execute:     opBeginSub,
+		constantGas: GasQuickStep,
+		minStack:    minStack(0, 0),
+		maxStack:    maxStack(0, 0),
+	}
+	// New opcode
+	jt[JUMPSUB] = &operation{
+		execute:     opJumpSub,
+		constantGas: GasSlowStep,
+		minStack:    minStack(1, 0),
+		maxStack:    maxStack(1, 0),
+		jumps:       true,
+	}
+	// New opcode
+	jt[RETURNSUB] = &operation{
+		execute:     opReturnSub,
+		constantGas: GasFastStep,
+		minStack:    minStack(0, 0),
+		maxStack:    maxStack(0, 0),
+		jumps:       true,
+	}
 }

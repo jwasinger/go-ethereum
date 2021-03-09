@@ -205,6 +205,19 @@ const (
 	SWAP
 )
 
+// 0xc0, 0xc1, 0xc2 - EVM384 instructions
+const (
+	ADDMOD256 = 0xc0 + iota
+	SUBMOD256
+	MULMODMONT256
+)
+
+// 0xc3 - LOGF - print log of 384 bit field element
+const (
+    LOGF = 0xc3
+)
+
+
 // 0xf0 range - closures.
 const (
 	CREATE OpCode = 0xf0 + iota

@@ -576,6 +576,73 @@ func BenchmarkOpSHA3(bench *testing.B) {
 	}
 }
 
+func BenchmarkOpSubMod256(bench *testing.B) {
+	var (
+		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
+		stack, rstack  = newstack(), newReturnStack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+	env.interpreter = evmInterpreter
+	mem.Resize(32 * 5)
+	pc := uint64(0)
+
+	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
+	var packed_offsets uint64
+	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
+
+	bench.ResetTimer()
+	for i := 0; i < bench.N; i++ {
+		stack.push(uint256.NewInt().SetUint64(packed_offsets))
+		opSubMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+	}
+}
+
+func BenchmarkOpAddMod256(bench *testing.B) {
+	var (
+		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
+		stack, rstack  = newstack(), newReturnStack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+	env.interpreter = evmInterpreter
+	mem.Resize(32 * 5)
+	pc := uint64(0)
+
+	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
+	var packed_offsets uint64
+	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
+
+	bench.ResetTimer()
+	for i := 0; i < bench.N; i++ {
+		stack.push(uint256.NewInt().SetUint64(packed_offsets))
+		opAddMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+	}
+}
+
+func BenchmarkOpMulModMont256(bench *testing.B) {
+	var (
+		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
+		stack, rstack  = newstack(), newReturnStack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+	env.interpreter = evmInterpreter
+	mem.Resize(32 * 5)
+	pc := uint64(0)
+
+	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
+	var packed_offsets uint64
+	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
+
+	bench.ResetTimer()
+	for i := 0; i < bench.N; i++ {
+		stack.push(uint256.NewInt().SetUint64(packed_offsets))
+		opMulModMont256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+	}
+}
+
+
 func TestCreate2Addreses(t *testing.T) {
 	type testcase struct {
 		origin   string
