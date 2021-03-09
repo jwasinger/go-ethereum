@@ -1,4 +1,4 @@
-package arith384
+package arith256
 
 // /!\ WARNING /!\
 // this code has not been audited and is provided as-is. In particular,

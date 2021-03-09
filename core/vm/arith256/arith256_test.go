@@ -1,4 +1,4 @@
-package arith384
+package arith256
 
 import (
 "testing"

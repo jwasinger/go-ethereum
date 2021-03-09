@@ -595,7 +595,7 @@ func BenchmarkOpSubMod256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opSubMod384(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opSubMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
 	}
 }
 
@@ -617,7 +617,7 @@ func BenchmarkOpAddMod256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opAddMod384(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opAddMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
 	}
 }
 
@@ -639,7 +639,7 @@ func BenchmarkOpMulModMont256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opMulModMont384(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opMulModMont256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
 	}
 }
 

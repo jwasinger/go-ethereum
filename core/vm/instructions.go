@@ -24,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
-	"github.com/ethereum/go-ethereum/core/vm/arith384"
+	"github.com/ethereum/go-ethereum/core/vm/arith256"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -864,9 +864,7 @@ func opLogF(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
     return nil, nil
 }
 
-func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	var evm384_f_size int64
-	evm384_f_size = 48
+func opAddMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
     out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -876,34 +874,32 @@ func opAddMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
-	if !checkMem(callContext.memory, (int)(max), 48) {
+	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
 
-	var x *arith384.Element
-	var y *arith384.Element
-	var mod *arith384.Element
-	var out *arith384.Element
+	var x *arith256.Element
+	var y *arith256.Element
+	var mod *arith256.Element
+	var out *arith256.Element
 
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
+	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
+	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
+	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), 32)
+	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
 
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
+	x = (*arith256.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith256.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith256.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith256.Element) (unsafe.Pointer(&mod_bytes[0]))
 
-	arith384.AddMod(out, x, y, mod)
+	arith256.AddMod(out, x, y, mod)
 
 	return nil, nil
 }
 
-func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	var evm384_f_size int64
-	evm384_f_size = 48
+func opSubMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
     out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -913,33 +909,31 @@ func opSubMod384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
-	if !checkMem(callContext.memory, (int)(max), 48) {
+	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
 
-	var x *arith384.Element
-	var y *arith384.Element
-	var mod *arith384.Element
-	var out *arith384.Element
+	var x *arith256.Element
+	var y *arith256.Element
+	var mod *arith256.Element
+	var out *arith256.Element
 
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), evm384_f_size)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
+	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
+	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
+	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), 32)
+	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&mod_bytes[0]))
+	x = (*arith256.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith256.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith256.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith256.Element) (unsafe.Pointer(&mod_bytes[0]))
 
-	arith384.SubMod(out, x, y, mod)
+	arith256.SubMod(out, x, y, mod)
 
 	return nil, nil
 }
 
-func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	var evm384_f_size int64
-	evm384_f_size = 32
+func opMulModMont256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
     out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -948,29 +942,28 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     modinv_offset := uint32(params_offsets[0] & 0xffff)
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset + 8, out_offset))
-    //fmt.Printf("%d %d %d %d\n", out_offset, x_offset, y_offset, modinv_offset)
 	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
 
-	var x *arith384.Element
-	var y *arith384.Element
-	var mod *arith384.Element
-	var out *arith384.Element
+	var x *arith256.Element
+	var y *arith256.Element
+	var mod *arith256.Element
+	var out *arith256.Element
     var inv uint64
 
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), evm384_f_size)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), evm384_f_size)
-	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), evm384_f_size + 8)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), evm384_f_size)
+	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
+	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
+	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), 32 + 8)
+	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	x = (*arith384.Element) (unsafe.Pointer(&x_bytes[0]))
-	y = (*arith384.Element) (unsafe.Pointer(&y_bytes[0]))
-	out = (*arith384.Element) (unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith384.Element) (unsafe.Pointer(&modinv_bytes[0]))
-    inv = *((*uint64) (unsafe.Pointer(&modinv_bytes[evm384_f_size])))
+	x = (*arith256.Element) (unsafe.Pointer(&x_bytes[0]))
+	y = (*arith256.Element) (unsafe.Pointer(&y_bytes[0]))
+	out = (*arith256.Element) (unsafe.Pointer(&out_bytes[0]))
+	mod = (*arith256.Element) (unsafe.Pointer(&modinv_bytes[0]))
+    inv = *((*uint64) (unsafe.Pointer(&modinv_bytes[32])))
 
-	arith384.MulMod(out, x, y, mod, inv)
+	arith256.MulMod(out, x, y, mod, inv)
 
 	return nil, nil
 }

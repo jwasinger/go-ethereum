@@ -210,9 +210,9 @@ const (
 
 // 0xc0, 0xc1, 0xc2 - EVM384 instructions
 const (
-	ADDMOD384 = 0xc0 + iota
-	SUBMOD384
-	MULMODMONT384
+	ADDMOD256 = 0xc0 + iota
+	SUBMOD256
+	MULMODMONT256
 )
 
 // 0xc3 - LOGF - print log of 384 bit field element
