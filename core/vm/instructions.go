@@ -948,7 +948,7 @@ func opMulModMont384(pc *uint64, interpreter *EVMInterpreter, callContext *callC
     modinv_offset := uint32(params_offsets[0] & 0xffff)
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset + 8, out_offset))
-    fmt.Printf("%d %d %d %d\n", out_offset, x_offset, y_offset, modinv_offset)
+    //fmt.Printf("%d %d %d %d\n", out_offset, x_offset, y_offset, modinv_offset)
 	if !checkMem(callContext.memory, (int)(max), 32) {
 		panic("memcheck failed")
 	}
