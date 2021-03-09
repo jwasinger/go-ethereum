@@ -7,10 +7,10 @@ package arith256
 // /!\ WARNING /!\
 
 import (
-    "math/bits"
-    "unsafe"
-    "math/big"
-//    "fmt"
+	"math/big"
+	"math/bits"
+	"unsafe"
+	//    "fmt"
 )
 
 type Element [4]uint64
@@ -23,22 +23,22 @@ const Bytes = Limbs * 8
 
 // convert little-endian ordered, little-endian limbs to a base-10 string representation
 func (e *Element) String() string {
-    result := big.NewInt(0)
+	result := big.NewInt(0)
 
-    for i := range e {
-        accum := new(big.Int)
-        exp := new(big.Int)
-        limb := new(big.Int)
+	for i := range e {
+		accum := new(big.Int)
+		exp := new(big.Int)
+		limb := new(big.Int)
 
-        exp.SetString("10000000000000000", 16)
-        exp.Exp(exp, big.NewInt(int64(i)), nil)
-        limb.SetUint64(e[i])
+		exp.SetString("10000000000000000", 16)
+		exp.Exp(exp, big.NewInt(int64(i)), nil)
+		limb.SetUint64(e[i])
 
-        accum.Mul(limb, exp)
-        result.Add(result, accum)
-    }
+		accum.Mul(limb, exp)
+		result.Add(result, accum)
+	}
 
-    return result.String()
+	return result.String()
 }
 
 func ElementFromString(s string) *Element {
@@ -61,23 +61,22 @@ func ElementFromString(s string) *Element {
 		val_bytes[i], val_bytes[j] = val_bytes[j], val_bytes[i]
 	}
 
-	return (*Element) (unsafe.Pointer(&val_bytes[0]))
+	return (*Element)(unsafe.Pointer(&val_bytes[0]))
 }
 
 // Mul z = x * y mod q
 // see https://hackmd.io/@zkteam/modular_multiplication
 func MulMod(z, x, y, mod *Element, modinv uint64) {
-    _mulGeneric(z, x, y, mod, modinv)
+	_mulGeneric(z, x, y, mod, modinv)
 }
 
 func (e *Element) MulModMont(x, y, mod *Element, inv uint64) {
 	MulMod(e, x, y, mod, inv)
 }
 
-func (e *Element) ToMont(mod, r *Element, inv uint64) {
-	// e.MulModMont(r_inv, mod, inv)
-	// TODO calculate r using modulus: ( 1 << (limb_size * 8) ) % mod
-	e.MulModMont(e, r, mod, inv)
+func (e *Element) ToMont(mod, r_squared *Element, inv uint64) {
+	// TODO calculate r_squared using modulus: ( ( 1 << (limb_size * 8) ) ** 2 ) % mod
+	e.MulModMont(e, r_squared, mod, inv)
 }
 
 func (e *Element) ToNorm(mod *Element, inv uint64) {
@@ -95,88 +94,82 @@ func (e *Element) Eq(other *Element) bool {
 	return true
 }
 
-// Add z = x + y mod q
+// Add z = x + y % mod
 func AddMod(z, x, y, mod *Element) {
-    //fmt.Printf("%s %s %s -> ", x.String(), y.String(), mod.String())
-    _addGeneric(z, x, y, mod)
-    //fmt.Printf("%s\n", z.String())
+	_addGeneric(z, x, y, mod)
 }
 
-// Sub  z = x - y mod q
+// Sub  z = x - y % mod
 func SubMod(z, x, y, mod *Element) {
-    _subGeneric(z, x, y, mod)
+	_subGeneric(z, x, y, mod)
 }
-
-// Generic (no ADX instructions, no AMD64) versions of multiplication and squaring algorithms
 
 func _mulGeneric(z, x, y, mod *Element, modinv uint64) {
 
-    var t [4]uint64
-    var c [3]uint64
-    {
-        // round 0
-        v := x[0]
-        c[1], c[0] = bits.Mul64(v, y[0])
-        m := c[0] * modinv
-        c[2] = madd0(m, mod[0], c[0])
-        c[1], c[0] = madd1(v, y[1], c[1])
-        c[2], t[0] = madd2(m, mod[1], c[2], c[0])
-        c[1], c[0] = madd1(v, y[2], c[1])
-        c[2], t[1] = madd2(m, mod[2], c[2], c[0])
-        c[1], c[0] = madd1(v, y[3], c[1])
-        t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
-    }
-    {
-        // round 1
-        v := x[1]
-        c[1], c[0] = madd1(v, y[0], t[0])
-        m := c[0] * modinv
-        c[2] = madd0(m, mod[0], c[0])
-        c[1], c[0] = madd2(v, y[1], c[1], t[1])
-        c[2], t[0] = madd2(m, mod[1], c[2], c[0])
-        c[1], c[0] = madd2(v, y[2], c[1], t[2])
-        c[2], t[1] = madd2(m, mod[2], c[2], c[0])
-        c[1], c[0] = madd2(v, y[3], c[1], t[3])
-        t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
-    }
-    {
-        // round 2
-        v := x[2]
-        c[1], c[0] = madd1(v, y[0], t[0])
-        m := c[0] * modinv
-        c[2] = madd0(m, mod[0], c[0])
-        c[1], c[0] = madd2(v, y[1], c[1], t[1])
-        c[2], t[0] = madd2(m, mod[1], c[2], c[0])
-        c[1], c[0] = madd2(v, y[2], c[1], t[2])
-        c[2], t[1] = madd2(m, mod[2], c[2], c[0])
-        c[1], c[0] = madd2(v, y[3], c[1], t[3])
-        t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
-    }
-    {
-        // round 3
-        v := x[3]
-        c[1], c[0] = madd1(v, y[0], t[0])
-        m := c[0] * modinv
-        c[2] = madd0(m, mod[0], c[0])
-        c[1], c[0] = madd2(v, y[1], c[1], t[1])
-        c[2], z[0] = madd2(m, mod[1], c[2], c[0])
-        c[1], c[0] = madd2(v, y[2], c[1], t[2])
-        c[2], z[1] = madd2(m, mod[2], c[2], c[0])
-        c[1], c[0] = madd2(v, y[3], c[1], t[3])
-        z[3], z[2] = madd3(m, mod[3], c[0], c[2], c[1])
-    }
+	var t [4]uint64
+	var c [3]uint64
+	{
+		// round 0
+		v := x[0]
+		c[1], c[0] = bits.Mul64(v, y[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd1(v, y[1], c[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd1(v, y[2], c[1])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd1(v, y[3], c[1])
+		t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
+	}
+	{
+		// round 1
+		v := x[1]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
+	}
+	{
+		// round 2
+		v := x[2]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], t[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], t[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		t[3], t[2] = madd3(m, mod[3], c[0], c[2], c[1])
+	}
+	{
+		// round 3
+		v := x[3]
+		c[1], c[0] = madd1(v, y[0], t[0])
+		m := c[0] * modinv
+		c[2] = madd0(m, mod[0], c[0])
+		c[1], c[0] = madd2(v, y[1], c[1], t[1])
+		c[2], z[0] = madd2(m, mod[1], c[2], c[0])
+		c[1], c[0] = madd2(v, y[2], c[1], t[2])
+		c[2], z[1] = madd2(m, mod[2], c[2], c[0])
+		c[1], c[0] = madd2(v, y[3], c[1], t[3])
+		z[3], z[2] = madd3(m, mod[3], c[0], c[2], c[1])
+	}
 
-    // TODO can make the following faster and constant time
-
-    // if z > q --> z -= q
-    // note: this is NOT constant time
-    if !(z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))) {
-        var b uint64
-        z[0], b = bits.Sub64(z[0], mod[0], b)
-        z[1], b = bits.Sub64(z[1], mod[1], b)
-        z[2], b = bits.Sub64(z[2], mod[2], b)
-        z[3], _ = bits.Sub64(z[3], mod[3], b)
-    }
+	// TODO make following constant time/measure slowdown of constant time vs worst-case non-constant time
+	// if z > q --> z -= q
+	if !(z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))) {
+		var b uint64
+		z[0], b = bits.Sub64(z[0], mod[0], b)
+		z[1], b = bits.Sub64(z[1], mod[1], b)
+		z[2], b = bits.Sub64(z[2], mod[2], b)
+		z[3], _ = bits.Sub64(z[3], mod[3], b)
+	}
 }
 
 /*
@@ -196,7 +189,6 @@ func _addGeneric(out, x, y, mod *Element) {
 	out[2], c = bits.Sub64(tmp[2], mod[2], c)
 	out[3], c = bits.Sub64(tmp[3], mod[3], c)
 
-	// TODO shouldn't check for carry here use carry from before Sub64s ?
 	if c != 0 { // unnecessary sub
 		*out = tmp
 	}
