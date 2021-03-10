@@ -578,8 +578,8 @@ func BenchmarkOpSHA3(bench *testing.B) {
 
 func BenchmarkOpSubMod256(bench *testing.B) {
 	var (
-		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
-		stack, rstack  = newstack(), newReturnStack()
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack  	       = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
 	)
@@ -594,14 +594,14 @@ func BenchmarkOpSubMod256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opSubMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opSubMod256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
 	}
 }
 
 func BenchmarkOpAddMod256(bench *testing.B) {
 	var (
-		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
-		stack, rstack  = newstack(), newReturnStack()
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack  = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
 	)
@@ -616,14 +616,14 @@ func BenchmarkOpAddMod256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opAddMod256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opAddMod256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
 	}
 }
 
 func BenchmarkOpMulModMont256(bench *testing.B) {
 	var (
-		env            = NewEVM(Context{}, nil, params.TestChainConfig, Config{})
-		stack, rstack  = newstack(), newReturnStack()
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
 	)
@@ -638,7 +638,7 @@ func BenchmarkOpMulModMont256(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opMulModMont256(&pc, evmInterpreter, &callCtx{mem, stack, rstack, nil})
+		opMulModMont256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
 	}
 }
 
