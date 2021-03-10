@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"math/bits"
 	"unsafe"
-	//    "fmt"
 )
 
 type Element [4]uint64
@@ -78,10 +77,14 @@ func (e *Element) Eq(other *Element) bool {
 	return true
 }
 
+var ZeroElement = Element{0,0,0,0}
+
 func (z *Element) MulModMont(x, y, mod *Element, modinv uint64) {
 
 	var t [4]uint64
 	var c [3]uint64
+	var sub_val *Element = mod
+
 	{
 		// round 0
 		v := x[0]
@@ -135,15 +138,19 @@ func (z *Element) MulModMont(x, y, mod *Element, modinv uint64) {
 		z[3], z[2] = madd3(m, mod[3], c[0], c[2], c[1])
 	}
 
-	// TODO make following constant time/measure slowdown of constant time vs worst-case non-constant time
-	// if z > q --> z -= q
-	if !(z[3] < mod[3] || (z[3] == mod[3] && (z[2] < mod[2] || (z[2] == mod[2] && (z[1] < mod[1] || (z[1] == mod[1] && (z[0] < mod[0] || (z[0] == mod[0] && (z[0] < mod[0]))))))))) {
-		var b uint64
-		z[0], b = bits.Sub64(z[0], mod[0], b)
-		z[1], b = bits.Sub64(z[1], mod[1], b)
-		z[2], b = bits.Sub64(z[2], mod[2], b)
-		z[3], _ = bits.Sub64(z[3], mod[3], b)
+	_, c[1] = bits.Sub64(z[0], mod[0], 0)
+	_, c[1] = bits.Sub64(z[1], mod[1], c[1])
+	_, c[1] = bits.Sub64(z[2], mod[2], c[1])
+	_, c[1] = bits.Sub64(z[3], mod[3], c[1])
+
+	if c[1] != 0 { // unnecessary sub
+		sub_val = &ZeroElement
 	}
+
+	z[0], c[0] = bits.Sub64(z[0], sub_val[0], 0)
+	z[1], c[0] = bits.Sub64(z[1], sub_val[1], c[0])
+	z[2], c[0] = bits.Sub64(z[2], sub_val[2], c[0])
+	z[3], c[0] = bits.Sub64(z[3], sub_val[3], c[0])
 }
 
 /*
