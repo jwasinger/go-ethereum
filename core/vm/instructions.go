@@ -838,7 +838,7 @@ func opAddMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out = (*arith256.Element)(unsafe.Pointer(&out_bytes[0]))
 	mod = (*arith256.Element)(unsafe.Pointer(&mod_bytes[0]))
 
-	arith256.AddMod(out, x, y, mod)
+	out.AddMod(x, y, mod)
 
 	return nil, nil
 }
@@ -872,7 +872,7 @@ func opSubMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	out = (*arith256.Element)(unsafe.Pointer(&out_bytes[0]))
 	mod = (*arith256.Element)(unsafe.Pointer(&mod_bytes[0]))
 
-	arith256.SubMod(out, x, y, mod)
+	out.SubMod(x, y, mod)
 
 	return nil, nil
 }
@@ -907,7 +907,7 @@ func opMulModMont256(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	mod = (*arith256.Element)(unsafe.Pointer(&modinv_bytes[0]))
 	inv = *((*uint64)(unsafe.Pointer(&modinv_bytes[32])))
 
-	arith256.MulMod(out, x, y, mod, inv)
+	out.MulModMont(x, y, mod, inv)
 
 	return nil, nil
 }

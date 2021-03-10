@@ -11,7 +11,7 @@ func BenchmarkAddMod_4limbs(b *testing.B) {
 	y := Element{0xd2f66b13d3e3cc9e, 0xc4ad7d09d3b8497d, 0xfc3bcaaeef9fd81e, 0x55ff24e182d1d704}
 
 	for n := 0; n < b.N; n++ {
-		AddMod(&x, &x, &y, &mod)
+		x.AddMod(&x, &y, &mod)
 	}
 }
 
@@ -22,7 +22,7 @@ func BenchmarkSubMod_4limbs(b *testing.B) {
 	y := Element{0xd2f66b13d3e3cc9e, 0xc4ad7d09d3b8497d, 0xfc3bcaaeef9fd81e, 0x55ff24e182d1d704}
 
 	for n := 0; n < b.N; n++ {
-		SubMod(&x, &x, &y, &mod)
+		x.SubMod(&x, &y, &mod)
 	}
 }
 
@@ -34,7 +34,7 @@ func BenchmarkMulMod_4limbs(b *testing.B) {
 	inv = 0x89f3fffcfffcfffd
 
 	for n := 0; n < b.N; n++ {
-		MulMod(&x, &x, &y, &mod, inv)
+		x.MulModMont(&x, &y, &mod, inv)
 	}
 }
 
