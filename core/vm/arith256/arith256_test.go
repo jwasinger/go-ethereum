@@ -5,36 +5,60 @@ import (
 )
 
 func BenchmarkAddMod_4limbs(b *testing.B) {
-	mod := Element{0xb9feffffffffaaab, 0x1eabfffeb153ffff, 0x6730d2a0f6b0f624, 0x64774b84f38512bf}
+	var x, y, r_squared, mod Element
+	var modinv uint64 = 14042775128853446655 // pow(-mod, -1, 1<<64)
 
-	x := Element{0x20b39e434f6b7627, 0xe3b9585c3bc798c3, 0xd601841435360731, 0x592efb881d54c66d}
-	y := Element{0xd2f66b13d3e3cc9e, 0xc4ad7d09d3b8497d, 0xfc3bcaaeef9fd81e, 0x55ff24e182d1d704}
+	mod = *ElementFromString("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+	r_squared = *ElementFromString("944936681149208446651664254269745548490766851729442924617792859073125903783")
 
+	x = *ElementFromString("3")
+	y = *ElementFromString("2")
+
+	x.ToMont(&mod, &r_squared, modinv)
+	y.ToMont(&mod, &r_squared, modinv)
+
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		x.AddMod(&x, &y, &mod)
 	}
 }
 
-func BenchmarkSubMod_4limbs(b *testing.B) {
-	mod := Element{0xb9feffffffffaaab, 0x1eabfffeb153ffff, 0x6730d2a0f6b0f624, 0x64774b84f38512bf}
+func BenchmarkSubMod256(b *testing.B) {
+	var x, y, r_squared, mod Element
+	var modinv uint64 = 14042775128853446655
 
-	x := Element{0x20b39e434f6b7627, 0xe3b9585c3bc798c3, 0xd601841435360731, 0x592efb881d54c66d}
-	y := Element{0xd2f66b13d3e3cc9e, 0xc4ad7d09d3b8497d, 0xfc3bcaaeef9fd81e, 0x55ff24e182d1d704}
+	mod = *ElementFromString("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+	r_squared = *ElementFromString("944936681149208446651664254269745548490766851729442924617792859073125903783")
 
+	x = *ElementFromString("3")
+	y = *ElementFromString("2")
+
+	x.ToMont(&mod, &r_squared, modinv)
+	y.ToMont(&mod, &r_squared, modinv)
+
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		x.SubMod(&x, &y, &mod)
 	}
 }
 
-func BenchmarkMulMod_4limbs(b *testing.B) {
-	x := Element{0xb1f598e5f390298f, 0x6b3088c3a380f4b8, 0x4d10c051c1fa23c0, 0x2945981a13aec13}
-	y := Element{0x4c64af08c847d3ec, 0xf47665551a973a7a, 0x4f0090b4b602e334, 0x670a33daa7a418b4}
-	mod := Element{0xb9feffffffffaaab, 0x1eabfffeb153ffff, 0x6730d2a0f6b0f624, 0x64774b84f38512bf}
-	var inv uint64
-	inv = 0x89f3fffcfffcfffd
+func BenchmarkMulMod256(b *testing.B) {
+	var x, y, r_squared, mod Element
+	var modinv uint64 = 14042775128853446655
+
+	mod = *ElementFromString("21888242871839275222246405745257275088548364400416034343698204186575808495617")
+	r_squared = *ElementFromString("944936681149208446651664254269745548490766851729442924617792859073125903783")
+
+	x = *ElementFromString("2")
+	y = *ElementFromString("3")
+
+	x.ToMont(&mod, &r_squared, modinv)
+	y.ToMont(&mod, &r_squared, modinv)
+
+	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		x.MulModMont(&x, &y, &mod, inv)
+		x.MulModMont(&x, &y, &mod, modinv)
 	}
 }
 
