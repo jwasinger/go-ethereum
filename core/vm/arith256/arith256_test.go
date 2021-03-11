@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func BenchmarkAddMod_4limbs(b *testing.B) {
+func BenchmarkAddMod256(b *testing.B) {
 	var x, y, r_squared, mod Element
 	var modinv uint64 = 14042775128853446655 // pow(-mod, -1, 1<<64)
 
