@@ -792,6 +792,7 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	return nil, nil
 }
 
+// checks whether a range [offset:offset+size] falls within the bounds of memory
 func checkMem(memory *Memory, offset int, size int) bool {
 	if offset+size >= memory.Len() {
 		return false
@@ -820,7 +821,7 @@ func opAddMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 32) {
-		panic("memcheck failed")
+		return nil, ErrExecutionReverted
 	}
 
 	var x *arith256.Element
@@ -854,7 +855,7 @@ func opSubMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
 
 	if !checkMem(callContext.memory, (int)(max), 32) {
-		panic("memcheck failed")
+		return nil, ErrExecutionReverted
 	}
 
 	var x *arith256.Element
@@ -887,7 +888,7 @@ func opMulModMont256(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 
 	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset+8, out_offset))
 	if !checkMem(callContext.memory, (int)(max), 32) {
-		panic("memcheck failed")
+		return nil, ErrExecutionReverted
 	}
 
 	var x *arith256.Element
