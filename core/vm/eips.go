@@ -29,7 +29,7 @@ var activators = map[int]func(*JumpTable){
 	2200: enable2200,
 	1884: enable1884,
 	1344: enable1344,
-	9000: enableEVM256,
+	9000: enableEVMMAX,
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -146,25 +146,32 @@ func enable2929(jt *JumpTable) {
 	jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP2929
 }
 
-func enableEVM256(jt *JumpTable) {
-	jt[ADDMOD256] = &operation{
-		execute:     opAddMod256,
-		constantGas: 2,
+func enableEVMMAX(jt *JumpTable) {
+	jt[ADDMODMAX] = &operation{
+		execute:     opAddModMAX,
+		constantGas: 1,
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
 	}
 
-	jt[SUBMOD256] = &operation{
-		execute:     opSubMod256,
-		constantGas: 2,
+	jt[SUBMODMAX] = &operation{
+		execute:     opSubModMAX,
+		constantGas: 1,
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
 	}
 
-	jt[MULMODMONT256] = &operation{
-		execute:     opMulModMont256,
-		constantGas: 5,
+	jt[MULMODMONTMAX] = &operation{
+		execute:     opMulModMontMAX,
+		constantGas: 1,
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
+	}
+
+	jt[SETMOD] = &operation{
+		execute:     opMulModMontMAX,
+		constantGas: 1,
+		minStack:    minStack(2, 0),
+		maxStack:    maxStack(2, 0),
 	}
 }

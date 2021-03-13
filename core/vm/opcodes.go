@@ -205,11 +205,12 @@ const (
 	SWAP
 )
 
-// 0xc0, 0xc1, 0xc2 - EVM384 instructions
+// 0xc0, 0xc1, 0xc2 - EVMMAX instructions
 const (
-	ADDMOD256 = 0xc0 + iota
-	SUBMOD256
-	MULMODMONT256
+	ADDMODMAX = 0xc0 + iota
+	SUBMODMAX
+	MULMODMONTMAX
+    SETMOD
 )
 
 // 0xc3 - LOGF - print log of 384 bit field element

@@ -68,6 +68,7 @@ type callCtx struct {
 	memory   *Memory
 	stack    *Stack
 	contract *Contract
+    modContext *ModContext
 }
 
 // keccakState wraps sha3.state. In addition to the usual hash methods, it also supports
@@ -163,7 +164,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		op          OpCode        // current opcode
 		mem         = NewMemory() // bound memory
 		stack       = newstack()  // local stack
+
 		callContext = &callCtx{
+            modContext: nil,
 			memory:   mem,
 			stack:    stack,
 			contract: contract,

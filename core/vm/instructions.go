@@ -810,7 +810,7 @@ func max(x uint32, y uint32) uint32 {
 	}
 }
 
-func opAddMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -844,7 +844,7 @@ func opAddMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
-func opSubMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -878,7 +878,7 @@ func opSubMod256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	return nil, nil
 }
 
-func opMulModMont256(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
 	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
@@ -911,6 +911,26 @@ func opMulModMont256(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	out.MulModMont(x, y, mod, inv)
 
 	return nil, nil
+}
+
+func opSetMod(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+    // 3 bytes - <num_limbs byte> <mod/inv offset 2 bytes>
+	params := callContext.stack.pop()
+
+    limb_count = int(params[0] & 0xff)
+    mod_offset = int((params[0] >> 29) & 0xffff)
+
+	if !checkMem(callContext.memory, mod_offset + limb_count * 8 + 8, limb_count) {
+		return nil, ErrExecutionReverted
+	}
+
+    mod_bytes := callContext.memory.GetPtr(int64(mod_offset), limb_count * 8)
+    inv_bytes := callContext.memory.GetPtr(int64(mod_offset) + limb_count * 8, 8)
+	inv = *((*uint64)(unsafe.Pointer(&inv_bytes[0])))
+
+    callContext.ModContext = new(ModCtx)
+    callContext.ModContext.NInv = inv
+    callContext.ModContext.Modulus = mod_bytes
 }
 
 // following functions are used by the instruction jump  table
