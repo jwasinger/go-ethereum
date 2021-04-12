@@ -548,25 +548,31 @@ func opJumpdest(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 func opMemcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	length := scope.Stack.pop().Uint64()
-	dstOffset := scope.Stack.pop().Uint64()
-	srcOffset := scope.Stack.pop().Uint64()
+	l, d, s := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+
+	length := l.Uint64()
+	dstOffset := d.Uint64()
+	srcOffset := s.Uint64()
 
 	var max uint64
-	if dst > src {
-		max = dst
+	if dstOffset > srcOffset {
+		max = dstOffset
 	} else {
-		max = src
+		max = srcOffset
 	}
 
-	if !checkMem(scope.memory, max, length) {
+	if length == 0 {
+		panic("zero-length memcopy: TODO handle this case properly")
+	}
+
+	if !checkMem(scope.Memory, int(max), int(length)) {
 		panic("offset outside of memory bounds: TODO handle this case correctly")
 	}
 
-	dstOffset := scope.memory.GetPtr(int64(dstOffset), int64(length))
-	srcOffset := scope.memory.GetPtr(int64(srcOffset), int64(length))
+	dstSlice := scope.Memory.GetPtr(int64(dstOffset), int64(length))
+	srcSlice := scope.Memory.GetPtr(int64(srcOffset), int64(length))
 
-	copy(srcOffset, dstOffset)
+	copy(srcSlice, dstSlice)
 
 	return nil, nil
 }
@@ -899,7 +905,7 @@ func makeSwap(size int64) executionFunc {
 }
 
 func checkMem(memory *Memory, offset int, size int) bool {
-        if offset + size >= memory.Len() {
+        if offset + size > memory.Len() {
                 return false
         } else {
                 return true

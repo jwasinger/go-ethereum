@@ -649,3 +649,32 @@ func TestCreate2Addreses(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkOpMemcopy(bench *testing.B) {
+	for i := 1; i < 4096; i++ {
+		bench.Run(fmt.Sprintf("%d", i * 64), func(b *testing.B) {
+			benchmarkOpMemcopy(b, uint64(i * 64))
+		})
+	}
+}
+
+func benchmarkOpMemcopy(b *testing.B, copySize uint64) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+	env.interpreter = evmInterpreter
+	mem.Resize(copySize * 2)
+	pc := uint64(0)
+	src := uint256.NewInt().SetUint64(0)
+	dst := uint256.NewInt().SetUint64(copySize)
+	size := uint256.NewInt().SetUint64(copySize)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		stack.pushN(*src, *dst, *size)
+		opMemcopy(&pc, evmInterpreter, &ScopeContext{mem, stack, nil})
+	}
+}
