@@ -80,7 +80,7 @@ func enable1884(jt *JumpTable) {
 func enableMemcopy(jt *JumpTable) {
 	jt[MEMCOPY] = &operation{
 		execute:     opMemcopy,
-		constantGas: GasFastStep,
+		dynamicGas:  gasMemcopy,
 		minStack:    minStack(0, 3),
 		maxStack:    maxStack(0, 3),
 	}

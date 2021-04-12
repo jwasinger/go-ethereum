@@ -652,7 +652,7 @@ func TestCreate2Addreses(t *testing.T) {
 
 func BenchmarkOpMemcopy(bench *testing.B) {
 	for i := 1; i < 4096; i++ {
-		bench.Run(fmt.Sprintf("%d", i * 64), func(b *testing.B) {
+		bench.Run(fmt.Sprintf("%d bytes", i * 64), func(b *testing.B) {
 			benchmarkOpMemcopy(b, uint64(i * 64))
 		})
 	}
