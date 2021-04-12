@@ -547,6 +547,30 @@ func opJumpdest(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
+func opMemcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	length := scope.Stack.pop().Uint64()
+	dstOffset := scope.Stack.pop().Uint64()
+	srcOffset := scope.Stack.pop().Uint64()
+
+	var max uint64
+	if dst > src {
+		max = dst
+	} else {
+		max = src
+	}
+
+	if !checkMem(scope.memory, max, length) {
+		panic("offset outside of memory bounds: TODO handle this case correctly")
+	}
+
+	dstOffset := scope.memory.GetPtr(int64(dstOffset), int64(length))
+	srcOffset := scope.memory.GetPtr(int64(srcOffset), int64(length))
+
+	copy(srcOffset, dstOffset)
+
+	return nil, nil
+}
+
 func opPc(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.push(new(uint256.Int).SetUint64(*pc))
 	return nil, nil
@@ -872,4 +896,13 @@ func makeSwap(size int64) executionFunc {
 		scope.Stack.swap(int(size))
 		return nil, nil
 	}
+}
+
+func checkMem(memory *Memory, offset int, size int) bool {
+        if offset + size >= memory.Len() {
+                return false
+        } else {
+                return true
+        }
+
 }

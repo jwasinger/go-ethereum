@@ -119,6 +119,7 @@ const (
 	MSIZE    OpCode = 0x59
 	GAS      OpCode = 0x5a
 	JUMPDEST OpCode = 0x5b
+	MEMCOPY  OpCode = 0x5c
 )
 
 // 0x60 range.
