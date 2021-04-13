@@ -572,7 +572,7 @@ func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	dstSlice := scope.Memory.GetPtr(int64(dstOffset), int64(length))
 	srcSlice := scope.Memory.GetPtr(int64(srcOffset), int64(length))
 
-	copy(srcSlice, dstSlice)
+	copy(dstSlice, srcSlice)
 
 	return nil, nil
 }

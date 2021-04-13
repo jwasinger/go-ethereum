@@ -650,6 +650,34 @@ func TestCreate2Addreses(t *testing.T) {
 	}
 }
 
+func TestOpMcopy(t *testing.T) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+	env.interpreter = evmInterpreter
+	mem.Resize(64)
+	mem.Set(0, 32, common.FromHex("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+
+	pc := uint64(0)
+	src := uint256.NewInt().SetUint64(0)
+	dst := uint256.NewInt().SetUint64(32)
+	size := uint256.NewInt().SetUint64(32)
+
+	stack.pushN(*src, *dst, *size)
+	opMcopy(&pc, evmInterpreter, &ScopeContext{mem, stack, nil})
+	if common.Bytes2Hex(mem.GetCopy(0, 32)) != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
+		t.Fatalf("Mstore failed to overwrite previous value")
+	}
+
+	if common.Bytes2Hex(mem.GetCopy(32, 32)) != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
+		t.Fatalf("Mstore failed to overwrite previous value")
+	}
+
+}
+
 func BenchmarkOpMcopy(bench *testing.B) {
 	for i := 1; i < 4096; i++ {
 		bench.Run(fmt.Sprintf("%d bytes", i * 64), func(b *testing.B) {
