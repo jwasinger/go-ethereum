@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+	stdlibmath "math"
 )
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
@@ -120,7 +121,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 	// The new gas metering is based on net gas costs (EIP-1283):
 	//
 	// 1. If current value equals new value (this is a no-op), 200 gas is deducted.
-	// 2. If current value does not equal new value
+	// 2. If cur	return rent value does not equal new value
 	//   2.1. If original value equals current value (this storage slot has not been changed by the current execution context)
 	//     2.1.1. If original value is 0, 20000 gas is deducted.
 	// 	   2.1.2. Otherwise, 5000 gas is deducted. If new value is 0, add 15000 gas to refund counter.
@@ -438,4 +439,9 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		evm.StateDB.AddRefund(params.SelfdestructRefundGas)
 	}
 	return gas, nil
+}
+
+func gasMemcopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	length := stack.Back(0)
+	return GasQuickStep + uint64(stdlibmath.Ceil(float64(length.Uint64()) / 30.0)), nil
 }

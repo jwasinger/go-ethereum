@@ -547,7 +547,7 @@ func opJumpdest(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func opMemcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	l, d, s := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
 
 	length := l.Uint64()

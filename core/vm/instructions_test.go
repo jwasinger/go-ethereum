@@ -650,15 +650,15 @@ func TestCreate2Addreses(t *testing.T) {
 	}
 }
 
-func BenchmarkOpMemcopy(bench *testing.B) {
+func BenchmarkOpMcopy(bench *testing.B) {
 	for i := 1; i < 4096; i++ {
 		bench.Run(fmt.Sprintf("%d bytes", i * 64), func(b *testing.B) {
-			benchmarkOpMemcopy(b, uint64(i * 64))
+			benchmarkOpMcopy(b, uint64(i * 64))
 		})
 	}
 }
 
-func benchmarkOpMemcopy(b *testing.B, copySize uint64) {
+func benchmarkOpMcopy(b *testing.B, copySize uint64) {
 	var (
 		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
 		stack          = newstack()
@@ -675,6 +675,6 @@ func benchmarkOpMemcopy(b *testing.B, copySize uint64) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		stack.pushN(*src, *dst, *size)
-		opMemcopy(&pc, evmInterpreter, &ScopeContext{mem, stack, nil})
+		opMcopy(&pc, evmInterpreter, &ScopeContext{mem, stack, nil})
 	}
 }

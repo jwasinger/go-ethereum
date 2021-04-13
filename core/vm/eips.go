@@ -29,7 +29,7 @@ var activators = map[int]func(*JumpTable){
 	2200: enable2200,
 	1884: enable1884,
 	1344: enable1344,
-	9001: enableMemcopy,
+	9001: enableMcopy,
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -77,9 +77,9 @@ func enable1884(jt *JumpTable) {
 	}
 }
 
-func enableMemcopy(jt *JumpTable) {
-	jt[MEMCOPY] = &operation{
-		execute:     opMemcopy,
+func enableMcopy(jt *JumpTable) {
+	jt[MCOPY] = &operation{
+		execute:     opMcopy,
 		dynamicGas:  gasMemcopy,
 		minStack:    minStack(0, 3),
 		maxStack:    maxStack(0, 3),
