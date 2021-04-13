@@ -562,11 +562,11 @@ func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	}
 
 	if length == 0 {
-		panic("zero-length memcopy: TODO handle this case properly")
+		return nil, ErrMemCopyDataOutOfBounds
 	}
 
 	if !checkMem(scope.Memory, int(max), int(length)) {
-		panic("offset outside of memory bounds: TODO handle this case correctly")
+		return nil, ErrMemCopyLenZero
 	}
 
 	dstSlice := scope.Memory.GetPtr(int64(dstOffset), int64(length))
