@@ -669,12 +669,14 @@ func TestOpMcopy(t *testing.T) {
 	stack.pushN(*src, *dst, *size)
 	opMcopy(&pc, evmInterpreter, &ScopeContext{mem, stack, nil})
 	if common.Bytes2Hex(mem.GetCopy(0, 32)) != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
-		t.Fatalf("Mstore failed to overwrite previous value")
+		t.Fatalf("Mcopy clobbered source")
 	}
 
 	if common.Bytes2Hex(mem.GetCopy(32, 32)) != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
-		t.Fatalf("Mstore failed to overwrite previous value")
+		t.Fatalf("Mcopy didn't overwrite previous value")
 	}
+
+	// TODO test overlap, copy to self
 
 }
 
