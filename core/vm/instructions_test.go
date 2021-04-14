@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"testing"
+	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -681,9 +682,10 @@ func TestOpMcopy(t *testing.T) {
 }
 
 func BenchmarkOpMcopy(bench *testing.B) {
-	for i := 1; i < 4096; i++ {
-		bench.Run(fmt.Sprintf("%d bytes", i * 64), func(b *testing.B) {
-			benchmarkOpMcopy(b, uint64(i * 64))
+	// test in increments of 256bytes up to 10mb
+	for i := 256; i < 1024000; i += 256 {
+		bench.Run(fmt.Sprintf("%d bytes", i), func(b *testing.B) {
+			benchmarkOpMcopy(b, uint64(i))
 		})
 	}
 }
