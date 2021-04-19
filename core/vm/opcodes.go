@@ -207,10 +207,10 @@ const (
 
 // 0xc0, 0xc1, 0xc2 - EVMMAX instructions
 const (
-	ADDMODMAX = 0xc0 + iota
-	SUBMODMAX
-	MULMODMONTMAX
-    SETMOD
+	ADDMONT = 0xc0 + iota
+	SUBMONT
+	MULMONT
+	SETMOD
 )
 
 // 0xc3 - LOGF - print log of 384 bit field element

@@ -19,11 +19,9 @@ package vm
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm/arith256"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
-	"unsafe"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
@@ -810,9 +808,7 @@ func max(x uint32, y uint32) uint32 {
 	}
 }
 
-func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	params_offsets := callContext.stack.pop()
-
+func opAddMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	immediate := callContext.contract.Code[*pc+2:*pc+8]
 	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
 	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
@@ -826,12 +822,11 @@ func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
         } else {
           max_offset = y_offset
         }
-        if max_offset>out_offset {
-        } else {
+        if max_offset < out_offset {
           max_offset = out_offset
         }
 
-        max_offset += callContext.montContext.ValueSize()
+        max_offset += uint16(callContext.montContext.ValueSize())
 
         if max_offset > (uint16)(callContext.memory.Len()) {
           callContext.memory.Resize(uint64(max_offset)+48)
@@ -841,14 +836,12 @@ func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	montContext.AddMod(out_bytes, x_bytes, y_btes)
+	callContext.montContext.AddMod(out_bytes, x_bytes, y_bytes)
 
 	return nil, nil
 }
 
-func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	params_offsets := callContext.stack.pop()
-
+func opSubMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	immediate := callContext.contract.Code[*pc+2:*pc+8]
 	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
 	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
@@ -862,12 +855,11 @@ func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
         } else {
           max_offset = y_offset
         }
-        if max_offset>out_offset {
-        } else {
+        if max_offset < out_offset {
           max_offset = out_offset
         }
 
-        max_offset += callContext.montContext.ValueSize()
+        max_offset += uint16(callContext.montContext.ValueSize())
 
         if max_offset > (uint16)(callContext.memory.Len()) {
           callContext.memory.Resize(uint64(max_offset)+48)
@@ -877,14 +869,12 @@ func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	montContext.SubMod(out_bytes, x_bytes, y_btes)
+	callContext.montContext.SubMod(out_bytes, x_bytes, y_bytes)
 
 	return nil, nil
 }
 
-func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	params_offsets := callContext.stack.pop()
-
+func opMulMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	immediate := callContext.contract.Code[*pc+2:*pc+8]
 	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
 	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
@@ -898,12 +888,11 @@ func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callC
         } else {
           max_offset = y_offset
         }
-        if max_offset>out_offset {
-        } else {
+        if max_offset < out_offset {
           max_offset = out_offset
         }
 
-        max_offset += callContext.montContext.ValueSize()
+        max_offset += uint16(callContext.montContext.ValueSize())
 
         if max_offset > (uint16)(callContext.memory.Len()) {
           callContext.memory.Resize(uint64(max_offset)+48)
@@ -913,7 +902,7 @@ func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callC
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	montContext.MulModMont(out_bytes, x_bytes, y_btes)
+	callContext.montContext.MulModMont(out_bytes, x_bytes, y_bytes)
 
 	return nil, nil
 }
@@ -922,16 +911,18 @@ func opSetMod(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 	// 3 bytes - <num_limbs byte> <mod/inv offset 2 bytes>
 	params := callContext.stack.pop()
 
-	limb_count = int(params[0] & 0xff)
-	mod_offset = int((params[0] >> 29) & 0xffff)
+	limb_count := int(params[0] & 0xff)
+	mod_offset := int((params[0] >> 29) & 0xffff)
 
 	if !checkMem(callContext.memory, mod_offset+limb_count*8+8, limb_count) {
 		return nil, ErrExecutionReverted
 	}
 
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), limb_count*8)
+	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), int64(limb_count*8))
 
-	callContext.MontContext.SetMod(mod_bytes)
+	callContext.montContext.SetMod(mod_bytes)
+
+	return nil, nil
 }
 
 // following functions are used by the instruction jump  table

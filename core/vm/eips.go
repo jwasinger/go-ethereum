@@ -147,31 +147,31 @@ func enable2929(jt *JumpTable) {
 }
 
 func enableEVMMAX(jt *JumpTable) {
-	jt[ADDMODMAX] = &operation{
-		execute:     opAddModMAX,
-		constantGas: 1,
-		minStack:    minStack(1, 0),
-		maxStack:    maxStack(1, 0),
-	}
+        jt[ADDMONT] = &operation{
+                execute:     opAddMont,
+                constantGas: GasFastestStep,
+                minStack:    minStack(0, 0),
+                maxStack:    maxStack(0, 0),
+        }
 
-	jt[SUBMODMAX] = &operation{
-		execute:     opSubModMAX,
-		constantGas: 1,
-		minStack:    minStack(1, 0),
-		maxStack:    maxStack(1, 0),
-	}
+        jt[SUBMONT] = &operation{
+                execute:     opSubMont,
+                constantGas: GasFastestStep,
+                minStack:    minStack(0, 0),
+                maxStack:    maxStack(0, 0),
+        }
 
-	jt[MULMODMONTMAX] = &operation{
-		execute:     opMulModMontMAX,
-		constantGas: 1,
-		minStack:    minStack(1, 0),
-		maxStack:    maxStack(1, 0),
-	}
+        jt[MULMONT] = &operation{
+                execute:     opMulMont,
+                constantGas: GasFastestStep,
+                minStack:    minStack(0, 0),
+                maxStack:    maxStack(0, 0),
+        }
 
-	jt[SETMOD] = &operation{
-		execute:     opMulModMontMAX,
-		constantGas: 1,
-		minStack:    minStack(2, 0),
-		maxStack:    maxStack(2, 0),
-	}
+        jt[SETMOD] = &operation{
+                execute:     opSetMod,
+                constantGas: GasFastestStep,
+                minStack:    minStack(2, 1),
+                maxStack:    maxStack(2, 1),
+        }
 }
