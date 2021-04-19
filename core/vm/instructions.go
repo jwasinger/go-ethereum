@@ -813,33 +813,35 @@ func max(x uint32, y uint32) uint32 {
 func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
-	x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
-	y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
-	mod_offset := uint32(params_offsets[0] & 0xffff)
+	immediate := callContext.contract.Code[*pc+2:*pc+8]
+	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
+	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
+	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
+        *pc += 7
 
-	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
+        // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
+        var max_offset uint16
+        if x_offset>y_offset {
+          max_offset = x_offset
+        } else {
+          max_offset = y_offset
+        }
+        if max_offset>out_offset {
+        } else {
+          max_offset = out_offset
+        }
 
-	if !checkMem(callContext.memory, (int)(max), 32) {
-		return nil, ErrExecutionReverted
-	}
+        max_offset += callContext.montContext.ValueSize()
 
-	var x *arith256.Element
-	var y *arith256.Element
-	var mod *arith256.Element
-	var out *arith256.Element
+        if max_offset > (uint16)(callContext.memory.Len()) {
+          callContext.memory.Resize(uint64(max_offset)+48)
+        }
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), 32)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	x = (*arith256.Element)(unsafe.Pointer(&x_bytes[0]))
-	y = (*arith256.Element)(unsafe.Pointer(&y_bytes[0]))
-	out = (*arith256.Element)(unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith256.Element)(unsafe.Pointer(&mod_bytes[0]))
-
-	out.AddMod(x, y, mod)
+	montContext.AddMod(out_bytes, x_bytes, y_btes)
 
 	return nil, nil
 }
@@ -847,33 +849,35 @@ func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
-	x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
-	y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
-	mod_offset := uint32(params_offsets[0] & 0xffff)
+	immediate := callContext.contract.Code[*pc+2:*pc+8]
+	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
+	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
+	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
+        *pc += 7
 
-	var max uint32 = max(max(x_offset, y_offset), max(mod_offset, out_offset))
+        // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
+        var max_offset uint16
+        if x_offset>y_offset {
+          max_offset = x_offset
+        } else {
+          max_offset = y_offset
+        }
+        if max_offset>out_offset {
+        } else {
+          max_offset = out_offset
+        }
 
-	if !checkMem(callContext.memory, (int)(max), 32) {
-		return nil, ErrExecutionReverted
-	}
+        max_offset += callContext.montContext.ValueSize()
 
-	var x *arith256.Element
-	var y *arith256.Element
-	var mod *arith256.Element
-	var out *arith256.Element
+        if max_offset > (uint16)(callContext.memory.Len()) {
+          callContext.memory.Resize(uint64(max_offset)+48)
+        }
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), 32)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	x = (*arith256.Element)(unsafe.Pointer(&x_bytes[0]))
-	y = (*arith256.Element)(unsafe.Pointer(&y_bytes[0]))
-	out = (*arith256.Element)(unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith256.Element)(unsafe.Pointer(&mod_bytes[0]))
-
-	out.SubMod(x, y, mod)
+	montContext.SubMod(out_bytes, x_bytes, y_btes)
 
 	return nil, nil
 }
@@ -881,56 +885,53 @@ func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) 
 func opMulModMontMAX(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	params_offsets := callContext.stack.pop()
 
-	out_offset := uint32((params_offsets[0] >> 48) & 0xffff)
-	x_offset := uint32((params_offsets[0] >> 32) & 0xffff)
-	y_offset := uint32((params_offsets[0] >> 16) & 0xffff)
-	modinv_offset := uint32(params_offsets[0] & 0xffff)
+	immediate := callContext.contract.Code[*pc+2:*pc+8]
+	out_offset := uint16(uint16(immediate[0]) | (uint16(immediate[1])<<8))
+	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
+	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
+        *pc += 7
 
-	var max uint32 = max(max(x_offset, y_offset), max(modinv_offset+8, out_offset))
-	if !checkMem(callContext.memory, (int)(max), 32) {
-		return nil, ErrExecutionReverted
-	}
+        // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
+        var max_offset uint16
+        if x_offset>y_offset {
+          max_offset = x_offset
+        } else {
+          max_offset = y_offset
+        }
+        if max_offset>out_offset {
+        } else {
+          max_offset = out_offset
+        }
 
-	var x *arith256.Element
-	var y *arith256.Element
-	var mod *arith256.Element
-	var out *arith256.Element
-	var inv uint64
+        max_offset += callContext.montContext.ValueSize()
+
+        if max_offset > (uint16)(callContext.memory.Len()) {
+          callContext.memory.Resize(uint64(max_offset)+48)
+        }
 
 	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
 	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
-	modinv_bytes := callContext.memory.GetPtr(int64(modinv_offset), 32+8)
 	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
 
-	x = (*arith256.Element)(unsafe.Pointer(&x_bytes[0]))
-	y = (*arith256.Element)(unsafe.Pointer(&y_bytes[0]))
-	out = (*arith256.Element)(unsafe.Pointer(&out_bytes[0]))
-	mod = (*arith256.Element)(unsafe.Pointer(&modinv_bytes[0]))
-	inv = *((*uint64)(unsafe.Pointer(&modinv_bytes[32])))
-
-	out.MulModMont(x, y, mod, inv)
+	montContext.MulModMont(out_bytes, x_bytes, y_btes)
 
 	return nil, nil
 }
 
 func opSetMod(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-    // 3 bytes - <num_limbs byte> <mod/inv offset 2 bytes>
+	// 3 bytes - <num_limbs byte> <mod/inv offset 2 bytes>
 	params := callContext.stack.pop()
 
-    limb_count = int(params[0] & 0xff)
-    mod_offset = int((params[0] >> 29) & 0xffff)
+	limb_count = int(params[0] & 0xff)
+	mod_offset = int((params[0] >> 29) & 0xffff)
 
-	if !checkMem(callContext.memory, mod_offset + limb_count * 8 + 8, limb_count) {
+	if !checkMem(callContext.memory, mod_offset+limb_count*8+8, limb_count) {
 		return nil, ErrExecutionReverted
 	}
 
-    mod_bytes := callContext.memory.GetPtr(int64(mod_offset), limb_count * 8)
-    inv_bytes := callContext.memory.GetPtr(int64(mod_offset) + limb_count * 8, 8)
-	inv = *((*uint64)(unsafe.Pointer(&inv_bytes[0])))
+	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), limb_count*8)
 
-    callContext.ModContext = new(ModCtx)
-    callContext.ModContext.NInv = inv
-    callContext.ModContext.Modulus = mod_bytes
+	callContext.MontContext.SetMod(mod_bytes)
 }
 
 // following functions are used by the instruction jump  table

@@ -20,6 +20,7 @@ import (
 	"hash"
 	"sync/atomic"
 
+	mont_arith "github.com/jwasinger/mont-arith"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
@@ -68,7 +69,7 @@ type callCtx struct {
 	memory   *Memory
 	stack    *Stack
 	contract *Contract
-    modContext *ModContext
+    montContext *mont_arith.MontArithContext
 }
 
 // keccakState wraps sha3.state. In addition to the usual hash methods, it also supports
@@ -166,7 +167,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		stack       = newstack()  // local stack
 
 		callContext = &callCtx{
-            modContext: nil,
+            montContext: new(mont_arith.MontArithContext),
 			memory:   mem,
 			stack:    stack,
 			contract: contract,
