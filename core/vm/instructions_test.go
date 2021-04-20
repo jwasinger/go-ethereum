@@ -805,3 +805,59 @@ func TestOpAddmont(t *testing.T) {
 		testOpAddmont(t, x, y, mod, limbCount)
 	}
 }
+
+func testOpSubmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+
+	var elementSize uint = limbCount * 8
+
+	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
+	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
+	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
+
+	montCtx := mont_arith.NewMontArithContext()
+	if err := montCtx.SetMod(mod_bytes); err != nil {
+		panic("setMod failed")
+	}
+
+	env.interpreter = evmInterpreter
+	mem.Resize(uint64(elementSize) * 3)
+	mem.Set(uint64(elementSize), uint64(elementSize), x_bytes)
+	mem.Set(uint64(elementSize) * 2, uint64(elementSize), y_bytes)
+
+	pc := uint64(0)
+
+	contract := new(Contract)
+	// op format - immediate/wrapper (2 bytes), out (2 bytes), x (2 bytes), y (2 byte)
+
+	x_offset := encodeOffset(uint64(elementSize))
+	y_offset := encodeOffset(uint64(elementSize * 2))
+	contract.Code = []byte{0, 0, 0, 0, x_offset[0], x_offset[1], y_offset[0], y_offset[1]}
+
+	opSubMont(&pc, evmInterpreter, &callCtx{mem, stack, contract, montCtx})
+
+	out_bytes := mem.GetPtr(0, int64(elementSize))
+
+	//expected := x.Mul(x, y).Mod(x, mod).Mul(x, montCtx.RInv()).Mod(x, mod)
+	expected := x.Sub(x, y).Mod(x, mod)
+	out := LEBytesToInt(out_bytes)
+
+	if out.Cmp(expected) != 0 {
+		t.Fatalf("%x (result) != %x (expected)", out, expected)
+	}
+}
+
+func TestOpSubmont(t *testing.T) {
+	for limbCount := uint(1); limbCount < 64; limbCount++ {
+		x := big.NewInt(3)
+		y := big.NewInt(2)
+		mod := LimbsToInt(BigModulus(limbCount))
+
+		testOpSubmont(t, x, y, mod, limbCount)
+	}
+}
