@@ -18,8 +18,10 @@ package vm
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"io/ioutil"
 	"testing"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+	"github.com/jwasinger/mont-arith"
 )
 
 type TwoOperandTestcase struct {
@@ -104,7 +107,7 @@ func testTwoOperandOp(t *testing.T, tests []TwoOperandTestcase, opFn executionFu
 		expected := new(uint256.Int).SetBytes(common.Hex2Bytes(test.Expected))
 		stack.push(x)
 		stack.push(y)
-		opFn(&pc, evmInterpreter, &callCtx{nil, stack, nil})
+		opFn(&pc, evmInterpreter, &callCtx{nil, stack, nil, nil})
 		if len(stack.data) != 1 {
 			t.Errorf("Expected one item on stack after %v, got %d: ", name, len(stack.data))
 		}
@@ -219,7 +222,7 @@ func TestAddMod(t *testing.T) {
 		stack.push(z)
 		stack.push(y)
 		stack.push(x)
-		opAddmod(&pc, evmInterpreter, &callCtx{nil, stack, nil})
+		opAddmod(&pc, evmInterpreter, &callCtx{nil, stack, nil, nil})
 		actual := stack.pop()
 		if actual.Cmp(expected) != 0 {
 			t.Errorf("Testcase %d, expected  %x, got %x", i, expected, actual)
@@ -241,7 +244,7 @@ func getResult(args []*twoOperandParams, opFn executionFunc) []TwoOperandTestcas
 		y := new(uint256.Int).SetBytes(common.Hex2Bytes(param.y))
 		stack.push(x)
 		stack.push(y)
-		opFn(&pc, interpreter, &callCtx{nil, stack, nil})
+		opFn(&pc, interpreter, &callCtx{nil, stack, nil, nil})
 		actual := stack.pop()
 		result[i] = TwoOperandTestcase{param.x, param.y, fmt.Sprintf("%064x", actual)}
 	}
@@ -299,7 +302,7 @@ func opBenchmark(bench *testing.B, op executionFunc, args ...string) {
 			a.SetBytes(arg)
 			stack.push(a)
 		}
-		op(&pc, evmInterpreter, &callCtx{nil, stack, nil})
+		op(&pc, evmInterpreter, &callCtx{nil, stack, nil, nil})
 		stack.pop()
 	}
 }
@@ -525,12 +528,12 @@ func TestOpMstore(t *testing.T) {
 	pc := uint64(0)
 	v := "abcdef00000000000000abba000000000deaf000000c0de00100000000133700"
 	stack.pushN(*new(uint256.Int).SetBytes(common.Hex2Bytes(v)), *new(uint256.Int))
-	opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil})
+	opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil, nil})
 	if got := common.Bytes2Hex(mem.GetCopy(0, 32)); got != v {
 		t.Fatalf("Mstore fail, got %v, expected %v", got, v)
 	}
 	stack.pushN(*new(uint256.Int).SetUint64(0x1), *new(uint256.Int))
-	opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil})
+	opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil, nil})
 	if common.Bytes2Hex(mem.GetCopy(0, 32)) != "0000000000000000000000000000000000000000000000000000000000000001" {
 		t.Fatalf("Mstore failed to overwrite previous value")
 	}
@@ -553,7 +556,7 @@ func BenchmarkOpMstore(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.pushN(*value, *memStart)
-		opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil})
+		opMstore(&pc, evmInterpreter, &callCtx{mem, stack, nil, nil})
 	}
 }
 
@@ -572,76 +575,9 @@ func BenchmarkOpSHA3(bench *testing.B) {
 	bench.ResetTimer()
 	for i := 0; i < bench.N; i++ {
 		stack.pushN(*uint256.NewInt().SetUint64(32), *start)
-		opSha3(&pc, evmInterpreter, &callCtx{mem, stack, nil})
+		opSha3(&pc, evmInterpreter, &callCtx{mem, stack, nil, nil})
 	}
 }
-
-func BenchmarkOpSubMod256(bench *testing.B) {
-	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
-		stack  	       = newstack()
-		mem            = NewMemory()
-		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
-	)
-	env.interpreter = evmInterpreter
-	mem.Resize(32 * 5)
-	pc := uint64(0)
-
-	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
-	var packed_offsets uint64
-	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
-
-	bench.ResetTimer()
-	for i := 0; i < bench.N; i++ {
-		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opSubMod256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
-	}
-}
-
-func BenchmarkOpAddMod256(bench *testing.B) {
-	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
-		stack  = newstack()
-		mem            = NewMemory()
-		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
-	)
-	env.interpreter = evmInterpreter
-	mem.Resize(32 * 5)
-	pc := uint64(0)
-
-	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
-	var packed_offsets uint64
-	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
-
-	bench.ResetTimer()
-	for i := 0; i < bench.N; i++ {
-		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opAddMod256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
-	}
-}
-
-func BenchmarkOpMulModMont256(bench *testing.B) {
-	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
-		stack = newstack()
-		mem            = NewMemory()
-		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
-	)
-	env.interpreter = evmInterpreter
-	mem.Resize(32 * 5)
-	pc := uint64(0)
-
-	var out_offset, x_offset, y_offset, modinv_offset uint16 = 0, 32, 64, 96
-	var packed_offsets uint64
-	packed_offsets = uint64(out_offset) + (uint64(x_offset) << 16) + (uint64(y_offset) << 32) + (uint64(modinv_offset) << 48)
-
-	bench.ResetTimer()
-	for i := 0; i < bench.N; i++ {
-		stack.push(uint256.NewInt().SetUint64(packed_offsets))
-		opMulModMont256(&pc, evmInterpreter, &callCtx{mem, stack, nil})
-	}
-}
-
 
 func TestCreate2Addreses(t *testing.T) {
 	type testcase struct {
@@ -714,5 +650,127 @@ func TestCreate2Addreses(t *testing.T) {
 		if !bytes.Equal(expected.Bytes(), address.Bytes()) {
 			t.Errorf("test %d: expected %s, got %s", i, expected.String(), address.String())
 		}
+	}
+}
+
+// TODO these helpers below are in mont_arith but I need to refactor the package to expose them
+
+// just for testing here
+func BigModulus(limbCount uint) []uint64 {
+	mod := make([]uint64, limbCount, limbCount)
+
+	mod[0] = 0xfffffffffffffffd
+	for i := uint(1); i < limbCount; i++ {
+		mod[i] = 0xffffffffffffffff
+	}
+
+
+	return mod
+}
+
+// convert big.Int (big-endian) to little-endian limbs
+func IntToLimbs(val *big.Int, num_limbs uint) []uint64 {
+	val_bytes := val.Bytes()
+
+	// pad length to be a multiple of 64bits
+	if len(val_bytes) < 8 * int(num_limbs) {
+		pad_len := 8 * int(num_limbs) - len(val_bytes)
+		pad := make([]byte, pad_len, pad_len)
+		val_bytes = append(pad, val_bytes...)
+	} else if len(val_bytes) > 8 * int(num_limbs) {
+		panic("val too big to fit in specified number of limbs")
+	}
+
+	result := make([]uint64, len(val_bytes) / 8, len(val_bytes) / 8)
+
+	// place byteswapped (little-endian) val into result
+	for i := 0; i < len(result); i++ {
+		startIdx := (len(result) - (i + 1)) * 8
+		endIdx   := (len(result) - i) * 8
+
+		// TODO: this assumes that the system is little-endian.  is that okay?
+		// on a LE system, this swaps big-endian to little-endian
+		result[i] = binary.BigEndian.Uint64(val_bytes[startIdx:endIdx])
+	}
+
+	return result
+}
+
+func LimbsToLEBytes(val []uint64) []byte {
+	result := make([]byte, len(val) * 8)
+
+	for i := 0; i < len(val); i++ {
+		startIdx := i * 8
+
+		for j := 0; j < 8; j++ {
+			result[startIdx + j] = byte(val[i] >> (j*8))
+		}
+	}
+
+	return result
+}
+
+/* 
+Methods for converting between Go big-int (64bit little-endian limbs, big-endian limb ordering) 
+and the bigint representation expected here: 64bit little-endian limbs, little-endian ordered
+*/
+func LEBytesToInt(v []byte) *big.Int {
+	result := new(big.Int)
+
+	if len(v) % 8 != 0 {
+		panic("invalid val length for modext bytes")
+	}
+
+	val := make([]byte, len(v), len(v))
+	copy(val, v)
+
+	// byteswap 8 bytes at a time
+	for i := 0; i < len(val) / 2; i++ {
+		val[i], val[len(val) - 1 - i] = val[len(val) - 1 - i], val[i]
+	}
+
+	result.SetBytes(val)
+	return result
+}
+
+func testOpAddmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+
+	var elementSize uint = limbCount * 8
+
+	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
+	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
+	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
+
+	montCtx := new(mont_arith.MontArithContext)
+	if err := montCtx.SetMod(mod_bytes); err != nil {
+		panic("setMod failed")
+	}
+
+	env.interpreter = evmInterpreter
+	mem.Resize(uint64(elementSize) * 3)
+	mem.Set(uint64(elementSize), uint64(elementSize), x_bytes)
+	mem.Set(uint64(elementSize) * 2, uint64(elementSize), y_bytes)
+
+	pc := uint64(0)
+
+	contract := new(Contract)
+	// op format - immediate/wrapper (2 bytes), out (2 bytes), x (2 bytes), y (2 byte)
+	contract.Code = []byte{0, 0, 0, 0, byte(elementSize), 0, byte(elementSize * 2), 0}
+
+	opAddMont(&pc, evmInterpreter, &callCtx{mem, stack, contract, montCtx})
+
+	out_bytes := mem.GetPtr(0, int64(elementSize))
+
+	expected := x.Mul(x, y).Mod(x, mod).Mul(x, montCtx.RInv()).Mod(x, mod)
+	out := LEBytesToInt(out_bytes)
+
+	if out.Cmp(expected) != 0 {
+		t.Fatalf("%x (result) != %x (expected)", out, expected)
 	}
 }
