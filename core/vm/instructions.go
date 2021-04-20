@@ -895,14 +895,15 @@ func opMulMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
         }
 
         max_offset += uint16(callContext.montContext.ValueSize())
+	elementSize := callContext.montContext.ValueSize()
 
         if max_offset > (uint16)(callContext.memory.Len()) {
-          callContext.memory.Resize(uint64(max_offset)+48)
+          callContext.memory.Resize(uint64(max_offset))
         }
 
-	x_bytes := callContext.memory.GetPtr(int64(x_offset), 32)
-	y_bytes := callContext.memory.GetPtr(int64(y_offset), 32)
-	out_bytes := callContext.memory.GetPtr(int64(out_offset), 32)
+	x_bytes := callContext.memory.GetPtr(int64(x_offset), int64(elementSize))
+	y_bytes := callContext.memory.GetPtr(int64(y_offset), int64(elementSize))
+	out_bytes := callContext.memory.GetPtr(int64(out_offset), int64(elementSize))
 
 	callContext.montContext.MulModMont(out_bytes, x_bytes, y_bytes)
 
