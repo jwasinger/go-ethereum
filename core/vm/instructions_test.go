@@ -733,6 +733,19 @@ func LEBytesToInt(v []byte) *big.Int {
 	return result
 }
 
+// convert little-endian limbs to big.Int
+func LimbsToInt(limbs []uint64) *big.Int {
+	limbs_bytes := make([]byte, 8 * len(limbs), 8 * len(limbs))
+	for i := 0; i < len(limbs); i++ {
+		startIdx := (len(limbs) - (i + 1)) * 8
+		endIdx   := (len(limbs) - i) * 8
+
+		binary.BigEndian.PutUint64(limbs_bytes[startIdx:endIdx], limbs[i])
+	}
+
+	return new(big.Int).SetBytes(limbs_bytes)
+}
+
 func testOpAddmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 	var (
 		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
@@ -772,5 +785,15 @@ func testOpAddmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 
 	if out.Cmp(expected) != 0 {
 		t.Fatalf("%x (result) != %x (expected)", out, expected)
+	}
+}
+
+func TestOpAddmont(t *testing.T) {
+	for limbCount := uint(1); limbCount < 20; limbCount++ {
+		x := big.NewInt(2)
+		y := big.NewInt(3)
+		mod := LimbsToInt(BigModulus(limbCount))
+
+		testOpAddmont(t, x, y, mod, limbCount)
 	}
 }
