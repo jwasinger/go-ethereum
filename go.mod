@@ -33,7 +33,7 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2-0.20160603034137-1fa385a6f458
 	github.com/jedisct1/go-minisign v0.0.0-20190909160543-45766022959e
 	github.com/julienschmidt/httprouter v1.2.0
-	github.com/jwasinger/mont-arith v0.0.0-20210419224912-250bcf6cfceb // indirect
+	github.com/jwasinger/mont-arith v0.0.0-20210420231231-54496bfbb7d1 // indirect
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356
 	github.com/mattn/go-colorable v0.1.0
 	github.com/mattn/go-isatty v0.0.5-0.20180830101745-3fb116b82035
@@ -56,5 +56,3 @@ require (
 	gopkg.in/olebedev/go-duktape.v3 v3.0.0-20200619000410-60c24ae608a6
 	gopkg.in/urfave/cli.v1 v1.20.0
 )
-
-replace github.com/jwasinger/mont-arith => /home/vagrant/projects/mont-arith
