@@ -920,3 +920,170 @@ func TestOpMulmont(t *testing.T) {
 		testOpMulmont(t, x, y, mod, limbCount)
 	}
 }
+
+// benchmarks
+
+func benchmarkOpMulmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+
+	var elementSize uint = limbCount * 8
+
+	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
+
+	montCtx := mont_arith.NewMontArithContext()
+	if err := montCtx.SetMod(mod_bytes); err != nil {
+		panic("setMod failed")
+	}
+
+	x.Mul(x, montCtx.RVal()).Mod(x, mod)
+	y.Mul(y, montCtx.RVal()).Mod(y, mod)
+
+	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
+	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
+
+	env.interpreter = evmInterpreter
+	mem.Resize(uint64(elementSize) * 3)
+	mem.Set(uint64(elementSize), uint64(elementSize), x_bytes)
+	mem.Set(uint64(elementSize) * 2, uint64(elementSize), y_bytes)
+
+	pc := uint64(0)
+
+	contract := new(Contract)
+	// op format - immediate/wrapper (2 bytes), out (2 bytes), x (2 bytes), y (2 byte)
+
+	x_offset := encodeOffset(uint64(elementSize))
+	y_offset := encodeOffset(uint64(elementSize * 2))
+	contract.Code = []byte{0, 0, 0, 0, x_offset[0], x_offset[1], y_offset[0], y_offset[1]}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		opMulMont(&pc, evmInterpreter, &callCtx{mem, stack, contract, montCtx})
+		pc = uint64(0)
+	}
+}
+
+func BenchmarkOpMulmont(b *testing.B) {
+	for limbCount := uint(1); limbCount < 64; limbCount++ {
+		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
+			x := big.NewInt(3)
+			y := big.NewInt(2)
+			mod := LimbsToInt(BigModulus(limbCount))
+			benchmarkOpMulmont(b, x, y, mod, uint(limbCount))
+		})
+	}
+}
+
+func benchmarkOpAddmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+
+	var elementSize uint = limbCount * 8
+
+	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
+
+	montCtx := mont_arith.NewMontArithContext()
+	if err := montCtx.SetMod(mod_bytes); err != nil {
+		panic("setMod failed")
+	}
+
+	x.Mul(x, montCtx.RVal()).Mod(x, mod)
+	y.Mul(y, montCtx.RVal()).Mod(y, mod)
+
+	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
+	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
+
+	env.interpreter = evmInterpreter
+	mem.Resize(uint64(elementSize) * 3)
+	mem.Set(uint64(elementSize), uint64(elementSize), x_bytes)
+	mem.Set(uint64(elementSize) * 2, uint64(elementSize), y_bytes)
+
+	pc := uint64(0)
+
+	contract := new(Contract)
+	// op format - immediate/wrapper (2 bytes), out (2 bytes), x (2 bytes), y (2 byte)
+
+	x_offset := encodeOffset(uint64(elementSize))
+	y_offset := encodeOffset(uint64(elementSize * 2))
+	contract.Code = []byte{0, 0, 0, 0, x_offset[0], x_offset[1], y_offset[0], y_offset[1]}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		opAddMont(&pc, evmInterpreter, &callCtx{mem, stack, contract, montCtx})
+		pc = uint64(0)
+	}
+}
+
+func BenchmarkOpAddmont(b *testing.B) {
+	for limbCount := uint(1); limbCount < 64; limbCount++ {
+		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
+			x := big.NewInt(3)
+			y := big.NewInt(2)
+			mod := LimbsToInt(BigModulus(limbCount))
+			benchmarkOpAddmont(b, x, y, mod, uint(limbCount))
+		})
+	}
+}
+
+func benchmarkOpSubmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
+	var (
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		stack          = newstack()
+		mem            = NewMemory()
+		evmInterpreter = NewEVMInterpreter(env, env.vmConfig)
+	)
+
+	var elementSize uint = limbCount * 8
+
+	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
+
+	montCtx := mont_arith.NewMontArithContext()
+	if err := montCtx.SetMod(mod_bytes); err != nil {
+		panic("setMod failed")
+	}
+
+	x.Mul(x, montCtx.RVal()).Mod(x, mod)
+	y.Mul(y, montCtx.RVal()).Mod(y, mod)
+
+	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
+	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
+
+	env.interpreter = evmInterpreter
+	mem.Resize(uint64(elementSize) * 3)
+	mem.Set(uint64(elementSize), uint64(elementSize), x_bytes)
+	mem.Set(uint64(elementSize) * 2, uint64(elementSize), y_bytes)
+
+	pc := uint64(0)
+
+	contract := new(Contract)
+	// op format - immediate/wrapper (2 bytes), out (2 bytes), x (2 bytes), y (2 byte)
+
+	x_offset := encodeOffset(uint64(elementSize))
+	y_offset := encodeOffset(uint64(elementSize * 2))
+	contract.Code = []byte{0, 0, 0, 0, x_offset[0], x_offset[1], y_offset[0], y_offset[1]}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		opSubMont(&pc, evmInterpreter, &callCtx{mem, stack, contract, montCtx})
+		pc = uint64(0)
+	}
+}
+
+func BenchmarkOpSubmont(b *testing.B) {
+	for limbCount := uint(1); limbCount < 64; limbCount++ {
+		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
+			x := big.NewInt(2)
+			y := big.NewInt(3)
+			mod := LimbsToInt(BigModulus(limbCount))
+			benchmarkOpSubmont(b, x, y, mod, uint(limbCount))
+		})
+	}
+}
