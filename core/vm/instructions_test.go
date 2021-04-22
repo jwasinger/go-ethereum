@@ -764,7 +764,7 @@ func testOpAddmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -834,7 +834,7 @@ func testOpSubmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -899,7 +899,7 @@ func testOpMulmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -971,7 +971,7 @@ func benchmarkOpMulmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -1026,7 +1026,7 @@ func benchmarkOpAddmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -1085,7 +1085,7 @@ func benchmarkOpSubmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext()
+	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
