@@ -20,7 +20,7 @@ import (
 	"hash"
 	"sync/atomic"
 
-	mont_arith "github.com/jwasinger/mont-arith"
+	"github.com/jwasinger/mont-arith"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
@@ -167,10 +167,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		stack       = newstack()  // local stack
 
 		callContext = &callCtx{
-            montContext: new(mont_arith.MontArithContext),
 			memory:   mem,
 			stack:    stack,
 			contract: contract,
+			montContext: mont_arith.NewMontArithContext(mont_arith.DefaultPreset()),
 		}
 		// For optimisation reason we're using uint64 as the program counter.
 		// It's theoretically possible to go above 2^64. The YP defines the PC

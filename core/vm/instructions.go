@@ -791,8 +791,8 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 }
 
 // checks whether a range [offset:offset+size] falls within the bounds of memory
-func checkMem(memory *Memory, offset int, size int) bool {
-	if offset+size >= memory.Len() {
+func checkMem(memory *Memory, offset uint64, size uint64) bool {
+	if offset+size >= uint64(memory.Len()) {
 		return false
 	} else {
 		return true
@@ -912,16 +912,17 @@ func opMulMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 
 func opSetMod(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	// 3 bytes - <num_limbs byte> <mod/inv offset 2 bytes>
-	params := callContext.stack.pop()
+	modOffsetArg:= callContext.stack.pop()
+	limbCountArg:= callContext.stack.pop()
 
-	limb_count := int(params[0] & 0xff)
-	mod_offset := int((params[0] >> 29) & 0xffff)
+	modOffset := modOffsetArg.Uint64()
+	limbCount := limbCountArg.Uint64()
 
-	if !checkMem(callContext.memory, mod_offset+limb_count*8+8, limb_count) {
+	if !checkMem(callContext.memory, modOffset+limbCount*8+8, limbCount) {
 		return nil, ErrExecutionReverted
 	}
 
-	mod_bytes := callContext.memory.GetPtr(int64(mod_offset), int64(limb_count*8))
+	mod_bytes := callContext.memory.GetPtr(int64(modOffset), int64(limbCount*8))
 
 	callContext.montContext.SetMod(mod_bytes)
 
