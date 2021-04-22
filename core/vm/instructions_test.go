@@ -798,10 +798,24 @@ func testOpAddmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 
 func TestOpAddmont(t *testing.T) {
 	for limbCount := uint(1); limbCount < 64; limbCount++ {
-		x := big.NewInt(2)
-		y := big.NewInt(3)
+		// value that overflows
+		x := new(big.Int)
+		y := new(big.Int)
 		mod := LimbsToInt(BigModulus(limbCount))
 
+		x.Sub(mod, big.NewInt(10))
+		y.Sub(mod, big.NewInt(11))
+
+		testOpAddmont(t, x, y, mod, limbCount)
+
+		// value that doesn't overflow
+		x = big.NewInt(10)
+		y = big.NewInt(11)
+
+		testOpAddmont(t, x, y, mod, limbCount)
+
+		// test with zero
+		x = big.NewInt(0)
 		testOpAddmont(t, x, y, mod, limbCount)
 	}
 }
@@ -854,10 +868,21 @@ func testOpSubmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 
 func TestOpSubmont(t *testing.T) {
 	for limbCount := uint(1); limbCount < 64; limbCount++ {
-		x := big.NewInt(3)
-		y := big.NewInt(2)
+		// test with a value that underflows
+		x := new(big.Int)
+		y := new(big.Int)
 		mod := LimbsToInt(BigModulus(limbCount))
 
+		x.Sub(mod, big.NewInt(11))
+		y.Sub(mod, big.NewInt(10))
+
+		testOpSubmont(t, x, y, mod, limbCount)
+
+		// value that doesn't underflow
+		testOpSubmont(t, y, x, mod, limbCount)
+
+		// test with zero
+		x = big.NewInt(0)
 		testOpSubmont(t, x, y, mod, limbCount)
 	}
 }
@@ -913,11 +938,22 @@ func testOpMulmont(t *testing.T, x, y, mod *big.Int, limbCount uint) {
 
 func TestOpMulmont(t *testing.T) {
 	for limbCount := uint(1); limbCount < 64; limbCount++ {
+		// small values
 		x := big.NewInt(3)
 		y := big.NewInt(2)
 		mod := LimbsToInt(BigModulus(limbCount))
 
 		testOpMulmont(t, x, y, mod, limbCount)
+
+		// large values close to modulus
+		// TODO fix this case
+
+		/*
+		x.Sub(mod, big.NewInt(11))
+		y.Sub(mod, big.NewInt(10))
+
+		testOpMulmont(t, x, y, mod, limbCount)
+		*/
 	}
 }
 
@@ -1025,9 +1061,13 @@ func benchmarkOpAddmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 func BenchmarkOpAddmont(b *testing.B) {
 	for limbCount := uint(1); limbCount < 64; limbCount++ {
 		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
-			x := big.NewInt(3)
-			y := big.NewInt(2)
+			x := new(big.Int)
+			y := new(big.Int)
+
 			mod := LimbsToInt(BigModulus(limbCount))
+			x.Sub(mod, big.NewInt(10))
+			y.Sub(mod, big.NewInt(10))
+
 			benchmarkOpAddmont(b, x, y, mod, uint(limbCount))
 		})
 	}
