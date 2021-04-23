@@ -815,6 +815,11 @@ func opAddMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
         *pc += 7
 
+	if !callContext.montContext.ModIsSet() {
+		// OOG
+		panic("mod not set")
+	}
+
         // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
         var max_offset uint16
         if x_offset>y_offset {
@@ -848,6 +853,11 @@ func opSubMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	x_offset := uint16(uint16(immediate[2]) | (uint16(immediate[3])<<8))
 	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
         *pc += 7
+
+	if !callContext.montContext.ModIsSet() {
+		// OOG
+		panic("mod not set")
+	}
 
         // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
         var max_offset uint16
@@ -883,6 +893,11 @@ func opMulMont(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	y_offset := uint16(uint16(immediate[4]) | (uint16(immediate[5])<<8))
         *pc += 7
 
+	if !callContext.montContext.ModIsSet() {
+		// OOG
+		panic("mod not set")
+	}
+
         // check and possibly grow memory, this is a quick hack, not 32-byte aligned and no gas is charged
         var max_offset uint16
         if x_offset>y_offset {
@@ -916,13 +931,13 @@ func opSetMod(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 	limbCountArg:= callContext.stack.pop()
 
 	modOffset := modOffsetArg.Uint64()
-	limbCount := limbCountArg.Uint64()
+	modSize := limbCountArg.Uint64()
 
-	if !checkMem(callContext.memory, modOffset+limbCount*8+8, limbCount) {
+	if !checkMem(callContext.memory, modOffset, modSize) {
 		return nil, ErrExecutionReverted
 	}
 
-	mod_bytes := callContext.memory.GetPtr(int64(modOffset), int64(limbCount*8))
+	mod_bytes := callContext.memory.GetPtr(int64(modOffset), int64(modSize))
 
 	callContext.montContext.SetMod(mod_bytes)
 
