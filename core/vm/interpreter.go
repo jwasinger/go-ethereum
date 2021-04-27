@@ -170,7 +170,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			memory:   mem,
 			stack:    stack,
 			contract: contract,
-			montContext: mont_arith.NewMontArithContext(mont_arith.DefaultPreset()),
+			montContext: mont_arith.NewMontArithContext(mont_arith.Asm384Preset()),
 		}
 		// For optimisation reason we're using uint64 as the program counter.
 		// It's theoretically possible to go above 2^64. The YP defines the PC

@@ -971,7 +971,7 @@ func benchmarkOpMulmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 
 	mod_bytes := LimbsToLEBytes(IntToLimbs(mod, limbCount))
 
-	montCtx := mont_arith.NewMontArithContext(mont_arith.DefaultPreset())
+	montCtx := mont_arith.NewMontArithContext(mont_arith.Asm384Preset())
 	if err := montCtx.SetMod(mod_bytes); err != nil {
 		panic("setMod failed")
 	}
@@ -1004,7 +1004,7 @@ func benchmarkOpMulmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 }
 
 func BenchmarkOpMulmont(b *testing.B) {
-	for limbCount := uint(1); limbCount < 64; limbCount++ {
+	for limbCount := uint(1); limbCount <= 128; limbCount++ {
 		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
 			x := big.NewInt(3)
 			y := big.NewInt(2)
@@ -1031,8 +1031,10 @@ func benchmarkOpAddmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 		panic("setMod failed")
 	}
 
+/*
 	x.Mul(x, montCtx.RVal()).Mod(x, mod)
 	y.Mul(y, montCtx.RVal()).Mod(y, mod)
+*/
 
 	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
 	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
@@ -1059,14 +1061,11 @@ func benchmarkOpAddmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 }
 
 func BenchmarkOpAddmont(b *testing.B) {
-	for limbCount := uint(1); limbCount < 64; limbCount++ {
+	for limbCount := uint(1); limbCount <= 128; limbCount++ {
 		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
-			x := new(big.Int)
-			y := new(big.Int)
-
+			x := big.NewInt(2)
+			y := big.NewInt(3)
 			mod := LimbsToInt(BigModulus(limbCount))
-			x.Sub(mod, big.NewInt(10))
-			y.Sub(mod, big.NewInt(10))
 
 			benchmarkOpAddmont(b, x, y, mod, uint(limbCount))
 		})
@@ -1090,8 +1089,10 @@ func benchmarkOpSubmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 		panic("setMod failed")
 	}
 
+/*
 	x.Mul(x, montCtx.RVal()).Mod(x, mod)
 	y.Mul(y, montCtx.RVal()).Mod(y, mod)
+*/
 
 	x_bytes := LimbsToLEBytes(IntToLimbs(x, limbCount))
 	y_bytes := LimbsToLEBytes(IntToLimbs(y, limbCount))
@@ -1118,10 +1119,10 @@ func benchmarkOpSubmont(b *testing.B, x, y, mod *big.Int, limbCount uint) {
 }
 
 func BenchmarkOpSubmont(b *testing.B) {
-	for limbCount := uint(1); limbCount < 64; limbCount++ {
+	for limbCount := uint(1); limbCount <= 128; limbCount++ {
 		b.Run(fmt.Sprintf("%d-bit", limbCount * 64), func(b *testing.B) {
-			x := big.NewInt(2)
-			y := big.NewInt(3)
+			x := big.NewInt(3)
+			y := big.NewInt(2)
 			mod := LimbsToInt(BigModulus(limbCount))
 			benchmarkOpSubmont(b, x, y, mod, uint(limbCount))
 		})
