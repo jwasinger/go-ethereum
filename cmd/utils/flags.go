@@ -761,7 +761,6 @@ var (
 		Value: metrics.DefaultConfig.InfluxDBTags,
 	}
 
-	// influxdb v2-specific flags
 	MetricsEnableInfluxDBV2Flag = cli.BoolFlag{
 		Name:  "metrics.influxdbv2",
 		Usage: "Enable metrics export/push to an external InfluxDB v2 database",
@@ -1774,11 +1773,11 @@ func SetupMetrics(ctx *cli.Context) {
 			database       = ctx.GlobalString(MetricsInfluxDBDatabaseFlag.Name)
 			username       = ctx.GlobalString(MetricsInfluxDBUsernameFlag.Name)
 			password       = ctx.GlobalString(MetricsInfluxDBPasswordFlag.Name)
+			organization   = ctx.GlobalString(MetricsInfluxDBOrganizationFlag.Name)
 
 			// inflxudb v2-specific flags
-			token        = ctx.GlobalString(MetricsInfluxDBTokenFlag.Name)
-			bucket       = ctx.GlobalString(MetricsInfluxDBBucketFlag.Name)
-			organization = ctx.GlobalString(MetricsInfluxDBOrganizationFlag.Name)
+			token  = ctx.GlobalString(MetricsInfluxDBTokenFlag.Name)
+			bucket = ctx.GlobalString(MetricsInfluxDBBucketFlag.Name)
 		)
 
 		if enableExport {
