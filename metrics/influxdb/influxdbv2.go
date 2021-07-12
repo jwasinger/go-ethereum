@@ -1,13 +1,13 @@
 package influxdb
 
 import (
-	"fmt"
-	"github.com/influxdata/influxdb-client-go/v2/api"
-	"time"
 	"context"
+	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/influxdata/influxdb-client-go/v2"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/influxdata/influxdb-client-go/v2/api"
+	"time"
 )
 
 type v2Reporter struct {
