@@ -51,7 +51,7 @@ func InfluxDBV2WithTags(r metrics.Registry, d time.Duration, endpoint string, to
 	// have to handle write errors in a separate goproc like this b/c the channel is unbuffered and will block writes if not read
 	go func() {
 		for err := range errorsCh {
-			log.Warn("write error", err.Error())
+			log.Warn("write error", "err", err.Error())
 		}
 	}()
 	rep.run()
@@ -69,7 +69,7 @@ func (r *v2Reporter) run() {
 			health, err := r.client.Health(context.Background())
 			_ = health // TODO more reporting around this?
 			if err != nil {
-				log.Warn("Got error from influxdb client health check", "err", err)
+				log.Warn("Got error from influxdb client health check", "err", err.Error())
 			}
 		}
 	}
