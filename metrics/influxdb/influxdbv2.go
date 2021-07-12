@@ -49,7 +49,7 @@ func InfluxDBV2WithTags(r metrics.Registry, d time.Duration, endpoint string, to
 	rep.write = rep.client.WriteAPI(rep.organization, rep.bucket)
 	errorsCh := rep.write.Errors()
 
-	// have to handle write errors in a separate goproc like this b/c the channel is unbuffered and will block writes if not read
+	// have to handle write errors in a separate goroutine like this b/c the channel is unbuffered and will block writes if not read
 	go func() {
 		for err := range errorsCh {
 			log.Warn("write error", "err", err.Error())
