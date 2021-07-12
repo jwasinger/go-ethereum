@@ -3,11 +3,12 @@ package influxdb
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
-	"time"
 )
 
 type v2Reporter struct {
@@ -66,8 +67,7 @@ func (r *v2Reporter) run() {
 		case <-intervalTicker:
 			r.send()
 		case <-pingTicker:
-			health, err := r.client.Health(context.Background())
-			_ = health // TODO more reporting around this?
+			_, err := r.client.Health(context.Background())
 			if err != nil {
 				log.Warn("Got error from influxdb client health check", "err", err.Error())
 			}
