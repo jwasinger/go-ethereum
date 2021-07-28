@@ -48,7 +48,7 @@ type BlockState interface {
 
 // Collator is something that can assemble a block.
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool, interrupt *int32, isSealing bool) error
+	CollateBlock(bs BlockState, pool Pool, interrupt *int32) error
 }
 
 // Pool is an interface to the transaction pool
@@ -160,7 +160,7 @@ var (
 	ErrTxProtectionDisabled    = errors.New("eip155-compatible tx provided when chain config does not support it")
 )
 
-func (w *DefaultCollator) submit(bs BlockState, txs *types.TransactionsByPriceAndNonce, interrupt *int32) error {
+func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce, interrupt *int32) error {
 	for {
 		if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
 			if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
@@ -215,29 +215,26 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int3
 	if len(txs) == 0 {
 		return nil
 	}
-	if isSealing {
-		// Split the pending transactions into locals and remotes
-		localTxs, remoteTxs := make(map[common.Address]types.Transactions), txs
-		for _, account := range pool.Locals() {
-			if accountTxs := remoteTxs[account]; len(accountTxs) > 0 {
-				delete(remoteTxs, account)
-				localTxs[account] = accountTxs
-			}
-		}
-		if len(localTxs) > 0 {
-			if err := w.submit(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee()), interrupt); err != nil {
-				return err
-			}
-		}
-		if len(remoteTxs) > 0 {
-			if err := w.submit(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee()), interrupt); err != nil {
-				return err
-			}
-		}
-	} else {
-		// ignore resubmit interval elapse here (only used when sealing)
-		w.submit(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()), nil)
-	}
+
+    // Split the pending transactions into locals and remotes
+    localTxs, remoteTxs := make(map[common.Address]types.Transactions), txs
+    for _, account := range pool.Locals() {
+        if accountTxs := remoteTxs[account]; len(accountTxs) > 0 {
+            delete(remoteTxs, account)
+            localTxs[account] = accountTxs
+        }
+    }
+    if len(localTxs) > 0 {
+        if err := submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee()), interrupt); err != nil {
+            return err
+        }
+    }
+    if len(remoteTxs) > 0 {
+        if err := submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee()), interrupt); err != nil {
+            return err
+        }
+    }
+
 	bs.Commit()
 	return nil
 }
