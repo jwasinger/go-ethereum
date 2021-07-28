@@ -160,7 +160,7 @@ var (
 	ErrTxProtectionDisabled    = errors.New("eip155-compatible tx provided when chain config does not support it")
 )
 
-func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce, interrupt *int32) error {
+func SubmitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce, interrupt *int32) error {
 	for {
 		if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
 			if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
@@ -202,12 +202,14 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce, i
 			txs.Shift()
 		}
 	}
+
+    bs.Commit()
 	return nil
 }
 
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over 'local' transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int32, isSealing bool) error {
+func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int32) error {
 	txs, err := pool.Pending(true)
 	if err != nil {
 		return err
@@ -225,12 +227,12 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int3
         }
     }
     if len(localTxs) > 0 {
-        if err := submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee()), interrupt); err != nil {
+        if err := SubmitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee()), interrupt); err != nil {
             return err
         }
     }
     if len(remoteTxs) > 0 {
-        if err := submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee()), interrupt); err != nil {
+        if err := SubmitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee()), interrupt); err != nil {
             return err
         }
     }

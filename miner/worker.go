@@ -505,9 +505,6 @@ func (w *worker) mainLoop() {
 				if gp := w.current.gasPool; gp != nil && gp.Gas() < params.TxGas {
 					continue
 				}
-				w.mu.RLock()
-				coinbase := w.coinbase
-				w.mu.RUnlock()
 
 				txs := make(map[common.Address]types.Transactions)
 				for _, tx := range ev.Txs {
@@ -516,7 +513,7 @@ func (w *worker) mainLoop() {
 				}
 				tcount := w.current.tcount
 
-                worker.commitTransactionsToPending(txs)
+                w.commitTransactionsToPending(txs)
 
 				// Only update the snapshot if any new transactons were added
 				// to the pending block
@@ -784,7 +781,7 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) error {
 	}
 	var collator = &DefaultCollator{}
 
-	return collator.CollateBlock(bs, w.eth.TxPool(), interrupt, isSealing)
+	return collator.CollateBlock(bs, w.eth.TxPool(), interrupt)
 }
 
 // commitNewWork generates several new sealing tasks based on the parent block.
@@ -897,7 +894,7 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		return
 	}
 
-	err = w.collateBlock(w.coinbase, interrupt, true)
+	err = w.collateBlock(w.coinbase, interrupt)
 	if err != nil {
 		if err == ErrResubmitIntervalElapsed {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
@@ -975,7 +972,7 @@ func (w *worker) postSideBlock(event core.ChainSideEvent) {
 	}
 }
 
-func (w *worker) commitTransactionsToPending(txs map[common.Address]Transactions) {
+func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transactions) {
 	// Short circuit if current is nil
 	if w.current == nil {
 		return
@@ -994,17 +991,16 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]Transactions
 		signer:   w.current.signer,
 	}
 
-	txs, err := pool.Pending(true)
+	txs, err := w.eth.TxPool().Pending(true)
 	if err != nil {
         log.Trace("error getting pending txs from the pool", "err", err)
 		return
 	}
 	if len(txs) == 0 {
-		return nil
+		return
 	}
 
-    // TODO can ignore returned error here (I think)?
-    submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee()), interrupt)
+    SubmitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()), nil)
 }
 
 // totalFees computes total consumed miner fees in ETH. Block transactions and receipts have to have the same order.
