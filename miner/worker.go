@@ -769,20 +769,20 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 	}
 	var bs BlockState
 	bs = &blockState{
-		state:    w.current.state,
-		logs:     nil,
-		worker:   w,
-		coinbase: w.current.header.Coinbase,
-		baseFee:  w.current.header.BaseFee,
-		signer:   w.current.signer,
-        interrupt: interrupt,
+		state:     w.current.state,
+		logs:      nil,
+		worker:    w,
+		coinbase:  w.current.header.Coinbase,
+		baseFee:   w.current.header.BaseFee,
+		signer:    w.current.signer,
+		interrupt: interrupt,
 	}
 	var collator = &DefaultCollator{}
 
 	if err := collator.CollateBlock(bs, w.eth.TxPool()); err == ErrNewHead {
-        return false
-    }
-    return true
+		return false
+	}
+	return true
 }
 
 // commitNewWork generates several new sealing tasks based on the parent block.
@@ -896,8 +896,8 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 	}
 
 	if !w.collateBlock(w.coinbase, interrupt) {
-        return
-    }
+		return
+	}
 
 	w.commit(uncles, w.fullTaskHook, true, tstart)
 }
@@ -963,17 +963,16 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 	}
 	var bs BlockState
 	bs = &blockState{
-		state:    w.current.state,
-		logs:     nil,
-		worker:   w,
-		coinbase: w.current.header.Coinbase,
-		baseFee:  w.current.header.BaseFee,
-		signer:   w.current.signer,
-        interrupt: nil,
+		state:     w.current.state,
+		logs:      nil,
+		worker:    w,
+		coinbase:  w.current.header.Coinbase,
+		baseFee:   w.current.header.BaseFee,
+		signer:    w.current.signer,
+		interrupt: nil,
 	}
 
-
-    bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
+	bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
 	bs.Commit()
 }
 
