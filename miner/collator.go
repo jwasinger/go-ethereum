@@ -52,6 +52,10 @@ type BlockState interface {
 	Signer() types.Signer
 }
 
+var (
+	ErrNewHead  = errors.New("new chain head received")
+)
+
 // Collator is something that can assemble a block.
 type Collator interface {
 	CollateBlock(bs BlockState, pool Pool, interrupt *int32) error
@@ -71,7 +75,7 @@ type blockState struct {
 	coinbase common.Address
 	baseFee  *big.Int
 	signer   types.Signer
-    recommitInterrupt *int32
+    interrupt *int32
 }
 
 // Coinbase returns the miner-address of the block being mined
@@ -117,16 +121,14 @@ func (bs *blockState) Commit() {
 func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) error {
 	var (
 		w      = bs.worker
-		snap   = w.current.state.Snapshot()
 		returnErr    error
-		tcount = w.current.tcount
         coalescedLogs []*types.Log
 	)
 	for {
 		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-				ratio := float64(w.current.header.GasLimit()-w.current.gasPool.Gas()) / float64(w.current.header.GasLimit())
+				ratio := float64(w.current.header.GasLimit-w.current.gasPool.Gas()) / float64(w.current.header.GasLimit)
 				if ratio < 0.1 {
 					ratio = 0.1
 				}
@@ -135,11 +137,9 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 					inc:   true,
 				}
 			}
-			if atomic.LoadInt32(interrupt) == commitInterruptNewHead {
+			if atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
                 returnErr = ErrNewHead
-            } else if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
-				returnErr = ErrResubmit
-			}
+            }
             break
 		}
 
@@ -147,6 +147,15 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 			log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
 			break
 		}
+		// Retrieve the next transaction and abort if all done
+		tx := txs.Peek()
+		if tx == nil {
+			break
+		}
+		// Error may be ignored here. The error has already been checked
+		// during transaction acceptance is the transaction pool.
+		//
+		// We use the eip155 signer regardless of the current hf.
 		from, _ := types.Sender(w.current.signer, tx)
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
@@ -158,7 +167,7 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 
 		// Start executing the transaction
 		bs.state.Prepare(tx.Hash(), w.current.tcount)
-		_, err := w.commitTransaction(tx, coinbase)
+		logs, err := w.commitTransaction(tx, bs.Coinbase())
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
@@ -195,7 +204,7 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 	}
 	bs.logs = coalescedLogs
 
-	return err
+	return returnErr
 }
 
 func (bs *blockState) Gas() (remaining uint64) {
@@ -208,7 +217,7 @@ type DefaultCollator struct{}
 
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int32) error {
+func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) error {
     recommitFired := false
 	txs, err := pool.Pending(true)
 	if err != nil {
