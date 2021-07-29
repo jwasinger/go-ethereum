@@ -971,6 +971,7 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 		coinbase: w.current.header.Coinbase,
 		baseFee:  w.current.header.BaseFee,
 		signer:   w.current.signer,
+        interrupt: nil,
 	}
 
 	txs, err := w.eth.TxPool().Pending(true)
@@ -982,7 +983,8 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 		return
 	}
 
-	SubmitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()), nil)
+    bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
+	bs.Commit()
 }
 
 // totalFees computes total consumed miner fees in ETH. Block transactions and receipts have to have the same order.

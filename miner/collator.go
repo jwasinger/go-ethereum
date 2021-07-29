@@ -90,22 +90,39 @@ func (bs *blockState) Signer() types.Signer {
 }
 
 func (bs *blockState) Commit() {
+	w := bs.worker
+
+	if !w.isRunning() && len(coalescedLogs) > 0 {
+		// We don't push the pendingLogsEvent while we are mining. The reason is that
+		// when we are mining, the worker will regenerate a mining block every 3 seconds.
+		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
+
+		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
+		// logs by filling in the block hash when the block was mined by the local miner. This can
+		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
+		cpy := make([]*types.Log, len(coalescedLogs))
+		for i, l := range coalescedLogs {
+			cpy[i] = new(types.Log)
+			*cpy[i] = *l
+		}
+		w.pendingLogsFeed.Send(cpy)
+	}
 	// Notify resubmit loop to decrease resubmitting interval if current interval is larger
 	// than the user-specified one.
-	w := bs.worker
 	if bs.interrupt != nil {
 		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
 	}
 }
 
-func (bs *blockState) AddTransactions(sequence types.Transactions) error {
+func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) error {
 	var (
 		w      = bs.worker
 		snap   = w.current.state.Snapshot()
 		err    error
 		tcount = w.current.tcount
+        coalescedLogs []*types.Log
 	)
-	for _, tx := range sequence {
+	for {
 		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
@@ -139,6 +156,7 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 			log.Trace("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
 			continue
 		}
+
 		// Start executing the transaction
 		bs.state.Prepare(tx.Hash(), w.current.tcount)
 		_, err := w.commitTransaction(tx, coinbase)
@@ -146,23 +164,37 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 		case errors.Is(err, core.ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
 			log.Trace("Gas limit exceeded for current block", "sender", from)
+            txs.Pop()
+
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
 			log.Trace("Skipping transaction with low nonce", "sender", from, "nonce", tx.Nonce())
+            txs.Shift()
+
 		case errors.Is(err, core.ErrNonceTooHigh):
 			// Reorg notification data race between the transaction pool and miner, skip account =
 			log.Trace("Skipping account with hight nonce", "sender", from, "nonce", tx.Nonce())
+            txs.Pop()
+
 		case errors.Is(err, nil):
+            // Everything ok, collect the logs and shift in the next transaction from the same account
+            coalescedLogs = append(coalescedLogs, logs...)
 			w.current.tcount++
+            txs.Shift()
+
 		case errors.Is(err, core.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account
 			log.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
+            txs.Pop()
+
 		default:
 			// Strange error, discard the transaction and get the next in line (note, the
 			// nonce-too-high clause will prevent us from executing in vain).
 			log.Debug("Transaction failed, account skipped", "hash", tx.Hash(), "err", err)
+            txs.Shift()
 		}
 	}
+	bs.logs = coalescedLogs
 
 	return err
 }
