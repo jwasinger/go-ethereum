@@ -782,9 +782,10 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 	}
 	var collator = &DefaultCollator{}
 
-	if err := collator.CollateBlock(bs, w.eth.TxPool(), interrupt); err != nil {
+	if err := collator.CollateBlock(bs, w.eth.TxPool()); err == ErrNewHead {
         return false
     }
+    return true
 }
 
 // commitNewWork generates several new sealing tasks based on the parent block.
@@ -974,14 +975,6 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
         interrupt: nil,
 	}
 
-	txs, err := w.eth.TxPool().Pending(true)
-	if err != nil {
-		log.Trace("error getting pending txs from the pool", "err", err)
-		return
-	}
-	if len(txs) == 0 {
-		return
-	}
 
     bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
 	bs.Commit()

@@ -32,16 +32,16 @@ import (
 // BlockState represents a block-to-be-mined, which is being assembled. A collator
 // can add transactions, and finish by calling Commit.
 type BlockState interface {
-	// AddTransactions attempts to add a sequence of transactions to the blockstate.
-	// hashes of transactions which could not be added are returned.
+	// AddTransactions attempts to add transactions to the blockstate.
 	// The following errors are returned
-	//   1) the recommit interval elapses
-	//	 2) a new chainHead is received
-	//   3) not enough gas remains to add another transaction to the block
-	// For all cases, the collator should not attempt to add more transactions to the block
-	// for cases 1) and 2), sealing of the block should be aborted
-	// TODO this should also return a list of (reason, tx_hash) for failing txs
-	AddTransactions(sequence types.Transactions) error
+	//   1) ErrRecommit- the recommit interval elapses
+	//	 2) ErrNewHead- a new chainHead is received
+	// For both cases, no more transactions will be added to the block on subsequent
+    // calls to AddTransactions
+    // If AddTransactions returns an ErrNewHead during sealing, the collator should abort 
+    // immediately and propogate this error to the caller
+	// TODO perhaps this should also return a list of (reason, tx_hash) for failing txs
+	AddTransactions(txs *types.TransactionsByPriceAndNonce) error
 	// Commit signals that the collation is finished, and the block is ready
 	// to be sealed. After calling Commit, no more transactions may be added.
 	Commit()
@@ -92,7 +92,7 @@ func (bs *blockState) Signer() types.Signer {
 func (bs *blockState) Commit() {
 	w := bs.worker
 
-	if !w.isRunning() && len(coalescedLogs) > 0 {
+	if !w.isRunning() && len(bs.logs) > 0 {
 		// We don't push the pendingLogsEvent while we are mining. The reason is that
 		// when we are mining, the worker will regenerate a mining block every 3 seconds.
 		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
@@ -100,8 +100,8 @@ func (bs *blockState) Commit() {
 		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
 		// logs by filling in the block hash when the block was mined by the local miner. This can
 		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
-		cpy := make([]*types.Log, len(coalescedLogs))
-		for i, l := range coalescedLogs {
+		cpy := make([]*types.Log, len(bs.logs))
+		for i, l := range bs.logs {
 			cpy[i] = new(types.Log)
 			*cpy[i] = *l
 		}
@@ -118,7 +118,7 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 	var (
 		w      = bs.worker
 		snap   = w.current.state.Snapshot()
-		err    error
+		returnErr    error
 		tcount = w.current.tcount
         coalescedLogs []*types.Log
 	)
@@ -136,16 +136,15 @@ func (bs *blockState) AddTransactions(txs *types.TransactionsByPriceAndNonce) er
 				}
 			}
 			if atomic.LoadInt32(interrupt) == commitInterruptNewHead {
-                err = ErrNewHead
+                returnErr = ErrNewHead
             } else if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
-				err = ErrResubmit
+				returnErr = ErrResubmit
 			}
             break
 		}
 
 		if w.current.gasPool.Gas() < params.TxGas {
 			log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
-			err = core.ErrGasLimitReached
 			break
 		}
 		from, _ := types.Sender(w.current.signer, tx)
@@ -208,8 +207,9 @@ func (bs *blockState) Gas() (remaining uint64) {
 type DefaultCollator struct{}
 
 // CollateBlock fills a block based on the highest paying transactions from the
-// transaction pool, giving precedence over 'local' transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int32) bool {
+// transaction pool, giving precedence over local transactions.
+func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int32) error {
+    recommitFired := false
 	txs, err := pool.Pending(true)
 	if err != nil {
 		log.Error("could not get pending transactions from the pool", "err", err)
@@ -227,15 +227,25 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, interrupt *int3
 		}
 	}
 	if len(localTxs) > 0 {
-		if err := bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee())); err != core.ErrGasLimitReached {
-			return err
+		if err := bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee())); err != nil {
+            if err == ErrNewHead {
+			    return err
+            } else {
+                recommitFired = true
+            }
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if err := bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee())); err != core.ErrGasLimitReached {
-			return err
+		if err := bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee())); err != nil {
+            if err == ErrNewHead {
+			    return err
+            } else {
+                recommitFired = true
+            }
 		}
 	}
-	bs.Commit()
+    if !recommitFired {
+	    bs.Commit()
+    }
 	return nil
 }
