@@ -780,12 +780,12 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 	}
 	var collator = &DefaultCollator{}
 
-	if err := collator.CollateBlock(&bs, w.eth.TxPool()); err != nil {
-		return false
+	if collator.CollateBlock(&bs, w.eth.TxPool()) {
+		return true
 	}
 
     bs.Commit()
-	return true
+	return false 
 }
 
 // commitNewWork generates several new sealing tasks based on the parent block.
@@ -898,7 +898,7 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		return
 	}
 
-	if !w.collateBlock(w.coinbase, interrupt) {
+	if w.collateBlock(w.coinbase, interrupt) {
 		return
 	}
 
@@ -978,7 +978,11 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 
     // try to commit all transactions to the pending state. won't return an error
     // because the recommit interrupt only applies when sealing
-	bs.AddTransactions(types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
+	tcount := w.current.tcount
+	submitTransactions(&bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
+	if tcount != w.current.tcount {
+		w.updateSnapshot()
+	}
 	bs.Commit()
 }
 
