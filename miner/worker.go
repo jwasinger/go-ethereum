@@ -769,14 +769,14 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 	}
 	var bs blockState
 	bs = blockState{
-		state:     w.current.state,
-		logs:      nil,
-		worker:    w,
-		coinbase:  w.coinbase,
-		baseFee:   w.current.header.BaseFee,
-		signer:    w.current.signer,
-		interrupt: interrupt,
-        resubmitAdjustHandled: false,
+		state:                 w.current.state,
+		logs:                  nil,
+		worker:                w,
+		coinbase:              w.coinbase,
+		baseFee:               w.current.header.BaseFee,
+		signer:                w.current.signer,
+		interrupt:             interrupt,
+		resubmitAdjustHandled: false,
 	}
 	var collator = &DefaultCollator{}
 
@@ -784,8 +784,8 @@ func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 		return true
 	}
 
-    bs.Commit()
-	return false 
+	bs.Commit()
+	return false
 }
 
 // commitNewWork generates several new sealing tasks based on the parent block.
@@ -966,18 +966,18 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 	}
 	var bs blockState
 	bs = blockState{
-		state:     w.current.state,
-		logs:      nil,
-		worker:    w,
-		coinbase:  w.coinbase,
-		baseFee:   w.current.header.BaseFee,
-		signer:    w.current.signer,
-		interrupt: nil,
-        resubmitAdjustHandled: false,
+		state:                 w.current.state,
+		logs:                  nil,
+		worker:                w,
+		coinbase:              w.coinbase,
+		baseFee:               w.current.header.BaseFee,
+		signer:                w.current.signer,
+		interrupt:             nil,
+		resubmitAdjustHandled: false,
 	}
 
-    // try to commit all transactions to the pending state. won't return an error
-    // because the recommit interrupt only applies when sealing
+	// try to commit all transactions to the pending state. won't return an error
+	// because the recommit interrupt only applies when sealing
 	tcount := w.current.tcount
 	submitTransactions(&bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
 	if tcount != w.current.tcount {

@@ -29,15 +29,18 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// BlockState represents a block-to-be-mined, which is being assembled. A collator
-// can add transactions, and finish by calling Commit.
+// BlockState represents a block-to-be-mined, which is being assembled.
+// A collator can add transactions by calling AddTransactions
 type BlockState interface {
-	// AddTransactions attempts to add transactions to the blockstate.  An error 
-    // (ErrNewHead) is returned signalling that the calling Collator should abort
-    // immediately and not make subsequent calls to AddTransactions.
-	// If a call to AddTransactions returns an ErrNewHead during sealing,
-    // the collator should abort immediately and propogate this error to the caller
-	AddTransactions(txs types.Transactions) error
+	// AddTransactions adds the sequence of transactions to the blockstate. Either all
+	// transactions are added, or none of them. In the latter case, the error
+	// describes the reason why the txs could not be included.
+	// if ErrRecommit, the collator should not attempt to add more transactions to the
+	// block and submit the block for sealing.
+	// If ErrAbort is returned, the collator should immediately abort and return a
+	// value (true) from CollateBlock which indicates to the miner to discard the
+	// block
+	AddTransactions(sequence types.Transactions) error
 	Gas() (remaining uint64)
 	Coinbase() common.Address
 	BaseFee() *big.Int
@@ -45,13 +48,15 @@ type BlockState interface {
 }
 
 var (
-	ErrNewHead = errors.New("new chain head received")
+	ErrAbort    = errors.New("miner signalled to abort sealing the current block")
 	ErrRecommit = errors.New("err sealing recommit timer elapsed")
 )
 
 // Collator is something that can assemble a block.
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool, interrupt *int32) error
+	// should add transactions to the pending BlockState.
+	// should return true if sealing of the block should be aborted
+	CollateBlock(bs BlockState, pool Pool) bool
 }
 
 // Pool is an interface to the transaction pool
@@ -62,14 +67,14 @@ type Pool interface {
 
 // blockState is an implementation of BlockState
 type blockState struct {
-	state     *state.StateDB
-	logs      []*types.Log
-	worker    *worker
-	coinbase  common.Address
-	baseFee   *big.Int
-	signer    types.Signer
-	interrupt *int32
-    resubmitAdjustHandled bool
+	state                 *state.StateDB
+	logs                  []*types.Log
+	worker                *worker
+	coinbase              common.Address
+	baseFee               *big.Int
+	signer                types.Signer
+	interrupt             *int32
+	resubmitAdjustHandled bool
 }
 
 // Coinbase returns the miner-address of the block being mined
@@ -114,16 +119,16 @@ func (bs *blockState) Commit() {
 
 func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 	var (
-		w             = bs.worker
-        snap   = w.current.state.Snapshot()
-		err error
-		logs []*types.Log
-        tcount = w.current.tcount
+		w      = bs.worker
+		snap   = w.current.state.Snapshot()
+		err    error
+		logs   []*types.Log
+		tcount = w.current.tcount
 	)
-    if bs.resubmitAdjustHandled {
-        return ErrRecommit
-    }
-    for _, tx := range sequence {
+	if bs.resubmitAdjustHandled {
+		return ErrRecommit
+	}
+	for _, tx := range sequence {
 		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
@@ -137,11 +142,11 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 				}
 			}
 			if atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
-				err = ErrNewHead
+				err = ErrAbort
 			} else {
-                err = ErrRecommit
-            }
-            bs.resubmitAdjustHandled = true
+				err = ErrRecommit
+			}
+			bs.resubmitAdjustHandled = true
 			break
 		}
 		if w.current.gasPool.Gas() < params.TxGas {
@@ -152,7 +157,7 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !w.chainConfig.IsEIP155(w.current.header.Number) {
-			log.Trace("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
+			log.Trace("Ignoring replay-protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
 			continue
 		}
 		// Start executing the transaction
@@ -203,7 +208,6 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			txs.Pop()
 			continue
 		}
-
 		// Error already logged in AddTransactions
 		err := bs.AddTransactions(types.Transactions{tx})
 		switch {
@@ -213,7 +217,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			fallthrough
 		case errors.Is(err, core.ErrNonceTooHigh):
 			txs.Pop()
-		case errors.Is(err, ErrNewHead):
+		case errors.Is(err, ErrAbort):
 			returnVal = true
 			break
 		case errors.Is(err, ErrRecommit):
@@ -251,13 +255,14 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) bool {
 	}
 	if len(localTxs) > 0 {
 		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee())) {
-            return true
+			return true
 		}
 	}
 	if len(remoteTxs) > 0 {
 		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee())) {
-            return true
+			return true
 		}
 	}
+
 	return false
 }
