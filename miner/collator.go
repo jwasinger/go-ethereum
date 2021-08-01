@@ -48,8 +48,9 @@ type BlockState interface {
 }
 
 var (
-	ErrAbort    = errors.New("miner signalled to abort sealing the current block")
-	ErrRecommit = errors.New("err sealing recommit timer elapsed")
+	ErrAbort               = errors.New("miner signalled to abort sealing the current block")
+	ErrRecommit            = errors.New("err sealing recommit timer elapsed")
+	ErrUnsupportedEIP155Tx = errors.New("encountered eip155 tx when chain doesn't support it")
 )
 
 // Collator is something that can assemble a block.
@@ -151,17 +152,20 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 		}
 		if w.current.gasPool.Gas() < params.TxGas {
 			log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
+			err = core.ErrGasLimitReached
 			break
 		}
 		from, _ := types.Sender(w.current.signer, tx)
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !w.chainConfig.IsEIP155(w.current.header.Number) {
-			log.Trace("Ignoring replay-protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
-			continue
+			log.Trace("encountered replay-protected transaction when chain doesn't support replay protection", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
+			err = ErrUnsupportedEIP155Tx
+			break
 		}
 		// Start executing the transaction
 		bs.state.Prepare(tx.Hash(), w.current.tcount)
+
 		var txLogs []*types.Log
 		txLogs, err = w.commitTransaction(tx, bs.Coinbase())
 		if err == nil {

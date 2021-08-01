@@ -510,13 +510,7 @@ func (w *worker) mainLoop() {
 					acc, _ := types.Sender(w.current.signer, tx)
 					txs[acc] = append(txs[acc], tx)
 				}
-				tcount := w.current.tcount
 				w.commitTransactionsToPending(txs)
-				// Only update the snapshot if any new transactons were added
-				// to the pending block
-				if tcount != w.current.tcount {
-					w.updateSnapshot()
-				}
 			} else {
 				// Special case, if the consensus engine is 0 period clique(dev mode),
 				// submit mining work here since all empty submission will be rejected
@@ -761,7 +755,7 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 func (w *worker) collateBlock(coinbase common.Address, interrupt *int32) bool {
 	// Short circuit if current is nil
 	if w.current == nil {
-		return false
+		return true
 	}
 	gasLimit := w.current.header.GasLimit
 	if w.current.gasPool == nil {
@@ -980,6 +974,8 @@ func (w *worker) commitTransactionsToPending(txs map[common.Address]types.Transa
 	// because the recommit interrupt only applies when sealing
 	tcount := w.current.tcount
 	submitTransactions(&bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), txs, bs.BaseFee()))
+	// Only update the snapshot if any new transactons were added
+	// to the pending block
 	if tcount != w.current.tcount {
 		w.updateSnapshot()
 	}
