@@ -29,6 +29,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+type AddTransactionsResultFunc func(error, []*types.Receipt) bool
+
 // BlockState represents a block-to-be-mined, which is being assembled.
 // A collator can add transactions by calling AddTransactions
 type BlockState interface {
@@ -40,7 +42,7 @@ type BlockState interface {
 	// If ErrAbort is returned, the collator should immediately abort and return a
 	// value (true) from CollateBlock which indicates to the miner to discard the
 	// block
-	AddTransactions(sequence types.Transactions) error
+	AddTransactions(sequence types.Transactions, cb AddTransactionsResultFunc)
 	Gas() (remaining uint64)
 	Coinbase() common.Address
 	BaseFee() *big.Int
@@ -118,7 +120,7 @@ func (bs *blockState) Commit() {
 	}
 }
 
-func (bs *blockState) AddTransactions(sequence types.Transactions) error {
+func (bs *blockState) AddTransactions(sequence types.Transactions, cb AddTransactionsResultFunc) {
 	var (
 		w           = bs.worker
 		snap        = w.current.state.Snapshot()
@@ -128,57 +130,71 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 		startTCount = w.current.tcount
 	)
 	if bs.resubmitAdjustHandled {
-		return ErrRecommit
+		err = ErrRecommit
 	}
-	for _, tx := range sequence {
-		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-				ratio := float64(w.current.header.GasLimit-w.current.gasPool.Gas()) / float64(w.current.header.GasLimit)
-				if ratio < 0.1 {
-					ratio = 0.1
-				}
-				w.resubmitAdjustCh <- &intervalAdjust{
-					ratio: ratio,
-					inc:   true,
-				}
-			}
-			if atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
-				err = ErrAbort
-			} else {
-				err = ErrRecommit
-			}
-			bs.resubmitAdjustHandled = true
-			break
-		}
-		if w.current.gasPool.Gas() < params.TxGas {
-			log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
-			err = core.ErrGasLimitReached
-			break
-		}
-		from, _ := types.Sender(w.current.signer, tx)
-		// Check whether the tx is replay protected. If we're not in the EIP155 hf
-		// phase, start ignoring the sender until we do.
-		if tx.Protected() && !w.chainConfig.IsEIP155(w.current.header.Number) {
-			log.Trace("encountered replay-protected transaction when chain doesn't support replay protection", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
-			err = ErrUnsupportedEIP155Tx
-			break
-		}
-		// Start executing the transaction
-		bs.state.Prepare(tx.Hash(), w.current.tcount)
 
-		var txLogs []*types.Log
-		txLogs, err = w.commitTransaction(tx, bs.Coinbase())
-		if err == nil {
-			logs = append(logs, txLogs...)
-			tcount++
-		} else {
-			log.Trace("Tx block inclusion failed", "sender", from, "nonce", tx.Nonce(),
-				"type", tx.Type(), "hash", tx.Hash(), "err", err)
-			break
-		}
-	}
-	if err != nil {
+    if err != nil {
+        for _, tx := range sequence {
+            if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
+                // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
+                if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+                    ratio := float64(w.current.header.GasLimit-w.current.gasPool.Gas()) / float64(w.current.header.GasLimit)
+                    if ratio < 0.1 {
+                        ratio = 0.1
+                    }
+                    w.resubmitAdjustCh <- &intervalAdjust{
+                        ratio: ratio,
+                        inc:   true,
+                    }
+                }
+                if atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
+                    err = ErrAbort
+                } else {
+                    err = ErrRecommit
+                }
+                bs.resubmitAdjustHandled = true
+                break
+            }
+            if w.current.gasPool.Gas() < params.TxGas {
+                log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
+                err = core.ErrGasLimitReached
+                break
+            }
+            from, _ := types.Sender(w.current.signer, tx)
+            // Check whether the tx is replay protected. If we're not in the EIP155 hf
+            // phase, start ignoring the sender until we do.
+            if tx.Protected() && !w.chainConfig.IsEIP155(w.current.header.Number) {
+                log.Trace("encountered replay-protected transaction when chain doesn't support replay protection", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
+                err = ErrUnsupportedEIP155Tx
+                break
+            }
+            // Start executing the transaction
+            bs.state.Prepare(tx.Hash(), w.current.tcount)
+
+            var txLogs []*types.Log
+            txLogs, err = w.commitTransaction(tx, bs.Coinbase())
+            if err == nil {
+                logs = append(logs, txLogs...)
+                tcount++
+            } else {
+                log.Trace("Tx block inclusion failed", "sender", from, "nonce", tx.Nonce(),
+                    "type", tx.Type(), "hash", tx.Hash(), "err", err)
+                break
+            }
+        }
+    }
+    revertTxs := false
+
+    if err != nil {
+        revertTxs = true
+        cb(err, nil)
+    } else {
+        if cb(nil, w.current.receipts[startTCount:tcount]) {
+            revertTxs = true
+        }
+    }
+
+	if revertTxs {
 		bs.state.RevertToSnapshot(snap)
 
 		// remove the txs and receipts that were added
@@ -186,13 +202,12 @@ func (bs *blockState) AddTransactions(sequence types.Transactions) error {
 			w.current.txs[i] = nil
 			w.current.receipts[i] = nil
 		}
-		w.current.txs = w.current.txs[:startTCount+1]
-		w.current.receipts = w.current.receipts[:startTCount+1]
+		w.current.txs = w.current.txs[:startTCount]
+		w.current.receipts = w.current.receipts[:startTCount]
 	} else {
 		bs.logs = append(bs.logs, logs...)
 		w.current.tcount = tcount
 	}
-	return err
 }
 
 func (bs *blockState) Gas() (remaining uint64) {
@@ -205,6 +220,7 @@ type DefaultCollator struct{}
 
 func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) bool {
 	returnVal := false
+    shouldReturn := false
 	for {
 		// If we don't have enough gas for any further transactions then we're done
 		available := bs.Gas()
@@ -221,27 +237,36 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			txs.Pop()
 			continue
 		}
+
+        cb := func(err error, receipts []*types.Receipt) bool {
+            switch {
+            case errors.Is(err, core.ErrGasLimitReached):
+                fallthrough
+            case errors.Is(err, core.ErrTxTypeNotSupported):
+                fallthrough
+            case errors.Is(err, core.ErrNonceTooHigh):
+                txs.Pop()
+            case errors.Is(err, ErrAbort):
+                returnVal = true
+                shouldReturn = true
+            case errors.Is(err, ErrRecommit):
+                returnVal = false
+                shouldReturn = true
+            case errors.Is(err, core.ErrNonceTooLow):
+                fallthrough
+            case errors.Is(err, nil):
+                fallthrough
+            default:
+                txs.Shift()
+            }
+            return false
+        }
+
 		// Error already logged in AddTransactions
-		err := bs.AddTransactions(types.Transactions{tx})
-		switch {
-		case errors.Is(err, core.ErrGasLimitReached):
-			fallthrough
-		case errors.Is(err, core.ErrTxTypeNotSupported):
-			fallthrough
-		case errors.Is(err, core.ErrNonceTooHigh):
-			txs.Pop()
-		case errors.Is(err, ErrAbort):
-			returnVal = true
-			break
-		case errors.Is(err, ErrRecommit):
-			break
-		case errors.Is(err, core.ErrNonceTooLow):
-			fallthrough
-		case errors.Is(err, nil):
-			fallthrough
-		default:
-			txs.Shift()
-		}
+		bs.AddTransactions(types.Transactions{tx}, cb)
+        if shouldReturn {
+            break
+        }
 	}
 
 	return returnVal
