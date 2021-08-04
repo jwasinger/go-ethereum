@@ -111,6 +111,19 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Warn("Sanitizing invalid miner gas price", "provided", config.Miner.GasPrice, "updated", ethconfig.Defaults.Miner.GasPrice)
 		config.Miner.GasPrice = new(big.Int).Set(ethconfig.Defaults.Miner.GasPrice)
 	}
+
+    var minerCollator *miner.Collator
+    var minerCollatorAPI *miner.CollatorAPI
+
+    if config.Miner.UseCustomCollator {
+        log.Info("using custom mining collator")
+        minerCollatorConstructor, minerCollatorAPI, err = miner.LoadCollator(config.miner.CollatorPath))
+        if err != nil {
+            return nil, err
+        }
+        minerCollator := minerCollatorConstructor()
+    }
+
 	if config.NoPruning && config.TrieDirtyCache > 0 {
 		if config.SnapshotCache > 0 {
 			config.TrieCleanCache += config.TrieDirtyCache * 3 / 5

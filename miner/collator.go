@@ -17,12 +17,14 @@
 package miner
 
 import (
+    "plugin"
 	"errors"
 	"math/big"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -60,6 +62,42 @@ type Collator interface {
 	// should add transactions to the pending BlockState.
 	// should return true if sealing of the block should be aborted
 	CollateBlock(bs BlockState, pool Pool) bool
+}
+
+type CollatorConstructorFunc func () *Collator
+type CollatorAPIConstructorFunc func (c *Collator) rpc.API
+
+type CollatorAPI struct {
+    version string
+    APIConstructor CollatorAPIConstructorFunc
+}
+
+func LoadCollator(filepath string) (*CollatorConstructorFunc, *CollatorAPI, error) {
+    // collator API should contain: {version, APIConstructorFunc}
+    p, err := plugin.Open(filepath)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    v, err := p.Lookup("APIExport")
+    if err != nil {
+        return nil, nil, errors.New("Symbol 'APIExport' not found")
+    }
+    api, ok := v.(*CollatorAPI)
+    if !ok {
+        return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
+    }
+
+    v, err = p.Lookup("CollatorConstructorExport")
+    if err != nil {
+        return nil, nil, errors.New("Symbol 'CollatorConstructorExport' not found")
+    }
+    collatorConstructor, ok := v.(*CollatorConstructorFunc)
+    if !ok {
+        return nil, nil, errors.New("Expected symbol 'CollatorExport' to be of type 'Collator'")
+    }
+
+    return collatorConstructor, api, nil
 }
 
 // Pool is an interface to the transaction pool
