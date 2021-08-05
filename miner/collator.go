@@ -31,6 +31,10 @@ import (
 
 type AddTransactionsResultFunc func(error, []*types.Receipt) bool
 
+type ReadonlyState interface {
+    GetBalance(addr common.Address) *big.Int
+}
+
 // BlockState represents a block-to-be-mined, which is being assembled.
 // A collator can add transactions by calling AddTransactions
 type BlockState interface {
@@ -47,6 +51,7 @@ type BlockState interface {
 	Coinbase() common.Address
 	BaseFee() *big.Int
 	Signer() types.Signer
+    Copy() BlockState
 }
 
 var (
@@ -77,7 +82,24 @@ type blockState struct {
 	baseFee               *big.Int
 	signer                types.Signer
 	interrupt             *int32
+	//resubmitAdjustHandled *int32
 	resubmitAdjustHandled bool
+}
+
+func (bs *blockState) Copy() BlockState {
+    // TODO
+    return bs
+    /*
+    return &blockState{
+        bs.state.Copy(),
+        []*types.Log{},
+        common.Address{},
+        &big.NewInt(0),
+        nil,
+        new(int32),
+        false,
+    }
+    */
 }
 
 // Coinbase returns the miner-address of the block being mined
