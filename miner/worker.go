@@ -991,6 +991,14 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		w.updateSnapshot()
 		return
 	}
+
+    // TODO we could have collator transactions that aren't in the main pool.
+    // maybe just advise that clients should allow sealing empty blocks to cover
+    // this edge-case
+
+    // TODO if there are custom collators, we feed them the block here.
+    // they proceed to compute blocks and feed them to the sealer via worker.commit()
+
 	// Split the pending transactions into locals and remotes
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
@@ -1012,6 +1020,9 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		}
 	}
 	w.commit(uncles, w.fullTaskHook, true, tstart)
+
+    // TODO if there are custom collators running:
+    //  spin until custom collators have submitted all the blocks they want to (or they are interrupted)
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
