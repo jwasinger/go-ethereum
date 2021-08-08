@@ -77,20 +77,23 @@ const (
 	staleThreshold = 7
 )
 
-// environment is the worker's current environment and holds all of the current state information.
-type environment struct {
-	signer types.Signer
-
+type blockState struct {
 	state     *state.StateDB // apply state changes here
-	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
-	family    mapset.Set     // family set (used for checking uncle invalidity)
-	uncles    mapset.Set     // uncle set
-	tcount    int            // tx count in cycle
 	gasPool   *core.GasPool  // available gas used to pack transactions
 
 	header   *types.Header
 	txs      []*types.Transaction
 	receipts []*types.Receipt
+	uncles    mapset.Set     // uncle set
+	tcount    int            // tx count in cycle
+}
+
+// environment is the worker's current environment and holds all of the current state information.
+type environment struct {
+	signer types.Signer
+	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
+	family    mapset.Set     // family set (used for checking uncle invalidity)
+    block blockState
 }
 
 // task contains all information for consensus engine sealing and result submitting.
@@ -318,8 +321,8 @@ func (w *worker) isRunning() bool {
 // close terminates all background threads maintained by the worker.
 // Note the worker does not support being closed multiple times.
 func (w *worker) close() {
-	if w.current != nil && w.current.state != nil {
-		w.current.state.StopPrefetcher()
+	if w.current != nil {
+		w.current.block.state.StopPrefetcher()
 	}
 	atomic.StoreInt32(&w.running, 0)
 	close(w.exitCh)
@@ -471,11 +474,11 @@ func (w *worker) mainLoop() {
 			}
 			// If our mining block contains less than 2 uncle blocks,
 			// add the new uncle block if valid and regenerate a mining block.
-			if w.isRunning() && w.current != nil && w.current.uncles.Cardinality() < 2 {
+			if w.isRunning() && w.current != nil && w.current.block.uncles.Cardinality() < 2 {
 				start := time.Now()
 				if err := w.commitUncle(w.current, ev.Block.Header()); err == nil {
 					var uncles []*types.Header
-					w.current.uncles.Each(func(item interface{}) bool {
+					w.current.block.uncles.Each(func(item interface{}) bool {
 						hash, ok := item.(common.Hash)
 						if !ok {
 							return false
@@ -490,7 +493,7 @@ func (w *worker) mainLoop() {
 						uncles = append(uncles, uncle.Header())
 						return false
 					})
-					w.commit(uncles, nil, true, start)
+					w.commit(nil, uncles, nil, true, start)
 				}
 			}
 
@@ -502,7 +505,7 @@ func (w *worker) mainLoop() {
 			// be automatically eliminated.
 			if !w.isRunning() && w.current != nil {
 				// If block is already full, abort
-				if gp := w.current.gasPool; gp != nil && gp.Gas() < params.TxGas {
+				if gp := w.current.block.gasPool; gp != nil && gp.Gas() < params.TxGas {
 					continue
 				}
 				w.mu.RLock()
@@ -514,12 +517,12 @@ func (w *worker) mainLoop() {
 					acc, _ := types.Sender(w.current.signer, tx)
 					txs[acc] = append(txs[acc], tx)
 				}
-				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs, w.current.header.BaseFee)
-				tcount := w.current.tcount
+				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs, w.current.block.header.BaseFee)
+				tcount := w.current.block.tcount
 				w.commitTransactions(txset, coinbase, nil)
 				// Only update the snapshot if any new transactons were added
 				// to the pending block
-				if tcount != w.current.tcount {
+				if tcount != w.current.block.tcount {
 					w.updateSnapshot()
 				}
 			} else {
@@ -551,6 +554,7 @@ func (w *worker) taskLoop() {
 	var (
 		stopCh chan struct{}
 		prev   common.Hash
+        prevProfit *big.Int
 	)
 
 	// interrupt aborts the in-flight sealing task.
@@ -571,6 +575,15 @@ func (w *worker) taskLoop() {
 			if sealHash == prev {
 				continue
 			}
+            // taken from mev-geth (TODO attribution needed?)
+            taskParentHash := task.block.Header().ParentHash
+            // reject new tasks which don't profit
+            if taskParentHash == prevParentHash &&
+                prevProfit != nil && task.profit.Cmp(prevProfit) < 0 {
+                continue
+            }
+            prevParentHash = taskParentHash
+            prevProfit = task.profit
 			// Interrupt previous sealing operation
 			interrupt()
 			stopCh, prev = make(chan struct{}), sealHash
@@ -668,13 +681,17 @@ func (w *worker) makeCurrent(parent *types.Block, header *types.Header) error {
 	}
 	state.StartPrefetcher("miner")
 
+    bs := blockState {
+        state: state,
+        uncles: mapset.NewSet(),
+		header:    header,
+        profit:    bigInt.Zero,
+    }
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
-		state:     state,
 		ancestors: mapset.NewSet(),
 		family:    mapset.NewSet(),
-		uncles:    mapset.NewSet(),
-		header:    header,
+        block: bs,
 	}
 	// when 08 is processed ancestors contain 07 (quick block)
 	for _, ancestor := range w.chain.GetBlocksFromHash(parent.Hash(), 7) {
@@ -689,8 +706,8 @@ func (w *worker) makeCurrent(parent *types.Block, header *types.Header) error {
 
 	// Swap out the old work with the new one, terminating any leftover prefetcher
 	// processes in the mean time and starting a new one.
-	if w.current != nil && w.current.state != nil {
-		w.current.state.StopPrefetcher()
+	if w.current != nil && w.current.block.state != nil {
+		w.current.block.state.StopPrefetcher()
 	}
 	w.current = env
 	return nil
@@ -722,7 +739,7 @@ func (w *worker) updateSnapshot() {
 	defer w.snapshotMu.Unlock()
 
 	var uncles []*types.Header
-	w.current.uncles.Each(func(item interface{}) bool {
+	w.current.block.uncles.Each(func(item interface{}) bool {
 		hash, ok := item.(common.Hash)
 		if !ok {
 			return false
@@ -739,26 +756,26 @@ func (w *worker) updateSnapshot() {
 	})
 
 	w.snapshotBlock = types.NewBlock(
-		w.current.header,
-		w.current.txs,
+		w.current.block.header,
+		w.current.block.txs,
 		uncles,
-		w.current.receipts,
+		w.current.block.receipts,
 		trie.NewStackTrie(nil),
 	)
-	w.snapshotReceipts = copyReceipts(w.current.receipts)
-	w.snapshotState = w.current.state.Copy()
+	w.snapshotReceipts = copyReceipts(w.current.block.receipts)
+	w.snapshotState = w.current.block.state.Copy()
 }
 
 func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Address) ([]*types.Log, error) {
-	snap := w.current.state.Snapshot()
+	snap := w.current.block.state.Snapshot()
 
-	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, w.current.gasPool, w.current.state, w.current.header, tx, &w.current.header.GasUsed, *w.chain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, w.current.block.gasPool, w.current.block.state, w.current.block.header, tx, &w.current.block.header.GasUsed, *w.chain.GetVMConfig())
 	if err != nil {
-		w.current.state.RevertToSnapshot(snap)
+		w.current.block.state.RevertToSnapshot(snap)
 		return nil, err
 	}
-	w.current.txs = append(w.current.txs, tx)
-	w.current.receipts = append(w.current.receipts, receipt)
+	w.current.block.txs = append(w.current.block.txs, tx)
+	w.current.block.receipts = append(w.current.block.receipts, receipt)
 
 	return receipt.Logs, nil
 }
@@ -769,9 +786,9 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 		return true
 	}
 
-	gasLimit := w.current.header.GasLimit
-	if w.current.gasPool == nil {
-		w.current.gasPool = new(core.GasPool).AddGas(gasLimit)
+	gasLimit := w.current.block.header.GasLimit
+	if w.current.block.gasPool == nil {
+		w.current.block.gasPool = new(core.GasPool).AddGas(gasLimit)
 	}
 
 	var coalescedLogs []*types.Log
@@ -786,7 +803,7 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 		if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
-				ratio := float64(gasLimit-w.current.gasPool.Gas()) / float64(gasLimit)
+				ratio := float64(gasLimit-w.current.block.gasPool.Gas()) / float64(gasLimit)
 				if ratio < 0.1 {
 					ratio = 0.1
 				}
@@ -798,8 +815,8 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 			return atomic.LoadInt32(interrupt) == commitInterruptNewHead
 		}
 		// If we don't have enough gas for any further transactions then we're done
-		if w.current.gasPool.Gas() < params.TxGas {
-			log.Trace("Not enough gas for further transactions", "have", w.current.gasPool, "want", params.TxGas)
+		if w.current.block.gasPool.Gas() < params.TxGas {
+			log.Trace("Not enough gas for further transactions", "have", w.current.block.gasPool, "want", params.TxGas)
 			break
 		}
 		// Retrieve the next transaction and abort if all done
@@ -814,14 +831,14 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 		from, _ := types.Sender(w.current.signer, tx)
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
-		if tx.Protected() && !w.chainConfig.IsEIP155(w.current.header.Number) {
+		if tx.Protected() && !w.chainConfig.IsEIP155(w.current.block.header.Number) {
 			log.Trace("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
 
 			txs.Pop()
 			continue
 		}
 		// Start executing the transaction
-		w.current.state.Prepare(tx.Hash(), w.current.tcount)
+		w.current.block.state.Prepare(tx.Hash(), w.current.block.tcount)
 
 		logs, err := w.commitTransaction(tx, coinbase)
 		switch {
@@ -843,7 +860,7 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 		case errors.Is(err, nil):
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			coalescedLogs = append(coalescedLogs, logs...)
-			w.current.tcount++
+			w.current.block.tcount++
 			txs.Shift()
 
 		case errors.Is(err, core.ErrTxTypeNotSupported):
@@ -975,7 +992,7 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 	// Create an empty block based on temporary copied state for
 	// sealing in advance without waiting block execution finished.
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
-		w.commit(uncles, nil, false, tstart)
+		w.commit(nil, uncles, nil, false, tstart)
 	}
 
 	// Fill the block with all available pending transactions.
@@ -991,14 +1008,13 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 		w.updateSnapshot()
 		return
 	}
-
-    // TODO we could have collator transactions that aren't in the main pool.
-    // maybe just advise that clients should allow sealing empty blocks to cover
-    // this edge-case
-
-    // TODO if there are custom collators, we feed them the block here.
-    // they proceed to compute blocks and feed them to the sealer via worker.commit()
-
+    collatorsEnabled := w.Running() && multiCollator.CollatorCount() > 0
+    // TODO note that collator won't seal if there aren't any txs available
+    // from the pool (even if it has non-pool transactions it wants to seal).
+    // probably won't happen often, if at all in practice
+    if collatorsEnabled {
+        w.multiCollator.CollateBlock(...)
+    }
 	// Split the pending transactions into locals and remotes
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, account := range w.eth.TxPool().Locals() {
@@ -1019,19 +1035,36 @@ func (w *worker) commitNewWork(interrupt *int32, noempty bool, timestamp int64) 
 			return
 		}
 	}
-	w.commit(uncles, w.fullTaskHook, true, tstart)
 
-    // TODO if there are custom collators running:
-    //  spin until custom collators have submitted all the blocks they want to (or they are interrupted)
+    if collatorsEnabled {
+	    w.commit(nil, uncles, w.fullTaskHook, false, tstart)
+        multiCollator.Collect()
+        w.updateSnapshot()
+    } else {
+	    w.commit(nil, uncles, w.fullTaskHook, true, tstart)
+    }
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
 // and commits new work if consensus engine is running.
-func (w *worker) commit(uncles []*types.Header, interval func(), update bool, start time.Time) error {
+func (w *worker) commit(block *blockState, interval func(), update bool, start time.Time, profit *big.Int) error {
+
+    if block != nil {
+        if w.isRunning() && profit.Lte(worker.current.block.profit) {
+            return
+        }
+
+        // TODO this is all that has to be done for cleaning up prevoius sealing blockState
+        worker.current.block.state.StopPrefetcher()
+        // TODO full deep copy here?
+        worker.current.block = *blockState
+    }
+
 	// Deep copy receipts here to avoid interaction between different tasks.
-	receipts := copyReceipts(w.current.receipts)
-	s := w.current.state.Copy()
-	block, err := w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts)
+    // ^when commit() is called for default collation behavior
+	receipts := copyReceipts(worker.current.block.receipts)
+	s := worker.current.block.state.Copy()
+	assembledBlock, err := w.engine.FinalizeAndAssemble(w.chain, worker.current.block.header, s, worker.current.block.txs, worker.current.block.uncles, receipts)
 	if err != nil {
 		return err
 	}
@@ -1040,11 +1073,11 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 			interval()
 		}
 		select {
-		case w.taskCh <- &task{receipts: receipts, state: s, block: block, createdAt: time.Now()}:
-			w.unconfirmed.Shift(block.NumberU64() - 1)
-			log.Info("Commit new mining work", "number", block.Number(), "sealhash", w.engine.SealHash(block.Header()),
-				"uncles", len(uncles), "txs", w.current.tcount,
-				"gas", block.GasUsed(), "fees", totalFees(block, receipts),
+		case w.taskCh <- &task{receipts: receipts, state: s, block: assembledBlock, createdAt: time.Now()}:
+			w.unconfirmed.Shift(assembledBlock.NumberU64() - 1)
+			log.Info("Commit new mining work", "number", assembledBlock.Number(), "sealhash", w.engine.SealHash(assembledBlock.Header()),
+				"uncles", len(uncles), "txs", w.current.block.tcount,
+				"gas", assembledBlock.GasUsed(), "fees", totalFees(assembledBlock, receipts),
 				"elapsed", common.PrettyDuration(time.Since(start)))
 
 		case <-w.exitCh:
