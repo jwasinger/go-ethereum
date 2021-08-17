@@ -1078,6 +1078,11 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
+
+    collator := DefaultCollator{}
+    bs := BlockState{work: work, best: best}
+    collator.CollateBlock(work)
+
 	// Fill pending transactions from the txpool
 	if err := w.fillTransactions(interrupt, work); err != nil {
 		return
