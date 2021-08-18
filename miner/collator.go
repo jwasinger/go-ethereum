@@ -1,5 +1,25 @@
-type BlockState interface {
+// Pool is an interface to the transaction pool
+type Pool interface {
+	Pending(bool) (map[common.Address]types.Transactions, error)
+	Locals() []common.Address
+}
 
+type BlockState interface {
+    AddTransaction(tx *types.Transaction) (AddTransactionError, *types.Receipt)
+    RevertTransaction()
+    Commit() bool
+    Copy() BlockState
+}
+
+type Collator interface {
+    CollateBlock(bs BlockState, pool Pool)
+    /*
+    Start()
+    Stop()
+    TODO:
+    chain side event hook
+    new chain head event hook
+    */
 }
 
 const (
@@ -12,11 +32,11 @@ const (
     ErrGasFeeCapTooLow = errors.New("gas fee cap too low")
 )
 
-// Pool is an interface to the transaction pool
-type Pool interface {
-	Pending(bool) (map[common.Address]types.Transactions, error)
-	Locals() []common.Address
-}
+
+const (
+    interruptIsHandled = 0
+    interruptNotHandled = 1
+)
 
 type blockState struct {
     worker *worker
@@ -29,18 +49,20 @@ type blockState struct {
 
 	// mutex to make sure only one blockState is calling commit at a given time
     commitMu *sync.Mutex
-    // this makes sure multiple copies of a blockState can only trigger the
-    // recommit once by gating it with a compare-and-swap
-    recommitTriggered *int32
-    // triggered when CollateBlock ends to prevent subsequent calls to worker.commit
-    done *struct{}
+    // this makes sure multiple copies of a blockState can only trigger
+    // adjustment of the recommit interval once
+    interruptHandled *int32
+    // prevents calls to worker.commit (with a given blockState) after
+    // CollateBlock call on that blockState returns. examined in commit
+    // when commitMu is held.  modified right after CollateBlock returns
+    done *bool
 }
 
-func (bs *blockState) AddTransaction() (AddTransactionError, *types.Receipt) {
+func (bs *blockState) AddTransaction(tx *types.Transaction) (AddTransactionError, *types.Receipt) {
     snapshot := bs.env.state.Snapshot()
 
     if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
-        if atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
+        if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
             // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
             // TODO figure out a better heuristic for the adjust ratio here
             // the gasRemaining/gasLimit is not a good proxy for all collators
@@ -114,7 +136,7 @@ func (bs *blockState) RevertTransaction() {
 
 func (bs *blockState) Commit() bool {
     if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
-        if atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
+        if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
             // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
             // TODO figure out a better heuristic for the adjust ratio here
             // the gasRemaining/gasLimit is not a good proxy for all collators
@@ -133,7 +155,7 @@ func (bs *blockState) Commit() bool {
 
     bs.commitMu.Lock()
     defer bs.commitMu.Unlock()
-    if bs.done != nil {
+    if *bs.done {
         return false
     }
     bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)

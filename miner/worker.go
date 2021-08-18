@@ -1083,7 +1083,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
     bs := BlockState{work: work, best: best}
     collator.CollateBlock(work)
     bs.commitMu.Lock()
-    bs.done = new(struct{})
+    *bs.done = true
     bs.commitMu.Unlock()
 
     if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) {
