@@ -2,16 +2,14 @@ type BlockState interface {
 
 }
 
-type AddTransactionError int
 const (
-    ErrInterrupt AddTransactionError = iota
-    ErrGasLimitReached AddTransactionError
-    ErrNonceTooLow AddTransactionError
-    ErrNonceTooHigh AddTransactionError
-    ErrTxTypeNotSupported AddTransactionError
-    ErrStrange AddTransactionError
-    ErrGasFeeCapTooLow AddTransactionError
-    ErrInterrupt AddTransactionError
+    ErrInterrupt = errors.New("interrupt triggered")
+    ErrGasLimitReached = errors.New("gas limit reached")
+    ErrNonceTooLow = errors.New("tx nonce too low")
+    ErrNonceTooHigh = errors.New("tx nonce too high")
+    ErrTxTypeNotSupported = errors.New("tx type not supported")
+    ErrStrange = errors.New("strange error")
+    ErrGasFeeCapTooLow = errors.New("gas fee cap too low")
 )
 
 // Pool is an interface to the transaction pool
@@ -23,16 +21,39 @@ type Pool interface {
 type blockState struct {
     worker *worker
     env *environment
-    commitMu *sync.Mutex
     start time.Time
     snapshots []int
     state *types.StateDB
+
+    // shared values between multiple copies of a blockState
+
+	// mutex to make sure only one blockState is calling commit at a given time
+    commitMu *sync.Mutex
+    // this makes sure multiple copies of a blockState can only trigger the
+    // recommit once by gating it with a compare-and-swap
+    recommitTriggered *int32
+    // triggered when CollateBlock ends to prevent subsequent calls to worker.commit
+    done *struct{}
 }
 
 func (bs *blockState) AddTransaction() (AddTransactionError, *types.Receipt) {
-    snapshot := bs.state.Snapshot()
+    snapshot := bs.env.state.Snapshot()
 
-    if bs.interrupt != nil && atomic.Load(bs.interrupt) != CommitInterruptNone {
+    if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
+        if atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
+            // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
+            // TODO figure out a better heuristic for the adjust ratio here
+            // the gasRemaining/gasLimit is not a good proxy for all collators
+            // where the 
+            ratio := float64(gasLimit-env.gasPool.Gas()) / float64(gasLimit)
+            if ratio < 0.1 {
+                ratio = 0.1
+            }
+            w.resubmitAdjustCh <- &intervalAdjust{
+                ratio: ratio,
+                inc:   true,
+            }
+        }
         return ErrInterrupt, nil
     }
 
@@ -52,7 +73,7 @@ func (bs *blockState) AddTransaction() (AddTransactionError, *types.Receipt) {
         return ErrGasFeeCapTooLow, nil
     }
 
-    state.Prepare(tx.Hash(), tcount)
+    bs.env.state.Prepare(tx.Hash(), tcount)
     txLogs, err = commitTransaction(chain, chainConfig, bs.env, tx, bs.Coinbase())
     if err != nil {
         switch {
@@ -83,7 +104,7 @@ func (bs *blockState) RevertTransaction() {
     if len(bs.snapshots) == 0 {
         return
     }
-    bs.state.revertToSnapshot(bs.snapshots[len(bs.snapshots) - 1])
+    bs.env.state.revertToSnapshot(bs.snapshots[len(bs.snapshots) - 1])
     bs.snapshots = bs.snapshots[:len(bs.snapshots) - 1]
     bs.coalescedLogs =  bs.coalescedLogs[:len(bs.coalescedLogs) - 1]
     bs.env.tcount--
@@ -92,30 +113,39 @@ func (bs *blockState) RevertTransaction() {
 }
 
 func (bs *blockState) Commit() bool {
+    if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
+        if atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
+            // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
+            // TODO figure out a better heuristic for the adjust ratio here
+            // the gasRemaining/gasLimit is not a good proxy for all collators
+            // where the 
+            ratio := float64(gasLimit-env.gasPool.Gas()) / float64(gasLimit)
+            if ratio < 0.1 {
+                ratio = 0.1
+            }
+            w.resubmitAdjustCh <- &intervalAdjust{
+                ratio: ratio,
+                inc:   true,
+            }
+        }
+        return false
+    }
+
     bs.commitMu.Lock()
     defer bs.commitMu.Unlock()
-
-    if bs.done {
+    if bs.done != nil {
         return false
     }
-
-    if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != CommitInterruptNone {
-        bs.done = true
-        return false
-    }
-
-    bs.done = true
-    bs.worker.commit(bs.worker, bs.worker.fullTaskHook, true, bs.start)
-
+    bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
     bs.worker.current.discard()
     bs.worker.current = bs.env
     return true
 }
 
 func (bs *blockState) Copy() BlockState {
-    snapshotCopies := []*types.StateDB
+    snapshotCopies := []int
     for i := 0; i < len(bs.snapshots); i++ {
-        snapshotCopies = append(snapshotCopies, bs.snapshots[i].Copy())
+        snapshotCopies = append(snapshotCopies, bs.snapshots[i])
     }
 
     return &blockState {
@@ -123,5 +153,7 @@ func (bs *blockState) Copy() BlockState {
         &bs.commitMu,
         bs.start,
         snapshotCopies,
+        bs.state.Copy(),
+        bs.recommitTriggered,
     }
 }

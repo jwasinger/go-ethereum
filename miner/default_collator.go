@@ -1,7 +1,38 @@
 type DefaultCollator struct {}
 
-func (c *defaultCollator) Collateblock(bs blockstate, pool pool) {
+// CollateBlock fills a block based on the highest paying transactions from the
+// transaction pool, giving precedence over local transactions.
+func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
+	txs, err := pool.Pending(true)
+	if err != nil {
+		log.Error("could not get pending transactions from the pool", "err", err)
+		return
+	}
+	if len(txs) == 0 {
+		return
+	}
+	// Split the pending transactions into locals and remotes
+	localTxs, remoteTxs := make(map[common.Address]types.Transactions), txs
+	for _, account := range pool.Locals() {
+		if accountTxs := remoteTxs[account]; len(accountTxs) > 0 {
+			delete(remoteTxs, account)
+			localTxs[account] = accountTxs
+		}
+	}
+	if len(localTxs) > 0 {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee())) {
+			return
+		}
+	}
+	if len(remoteTxs) > 0 {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee())) {
+			return
+		}
+	}
 
+	bs.Commit()
+
+	return
 }
 
 func submitTransactions(bs blockState, txs *types.TransactionsByPriceAndNonce) bool {
@@ -23,8 +54,37 @@ func submitTransactions(bs blockState, txs *types.TransactionsByPriceAndNonce) b
 		}
 
 		err, receipt = bs.AddTransaction(tx)
-        if err != nil {
-            // only abort if the interrupt was triggered
-        }
+		switch {
+		case errors.Is(err, ErrGasLimitReached):
+			// Pop the current out-of-gas transaction without shifting in the next from the account
+			log.Trace("Gas limit exceeded for current block", "sender", from)
+			txs.Pop()
+
+		case errors.Is(err, ErrNonceTooLow):
+			// New head notification data race between the transaction pool and miner, shift
+			log.Trace("Skipping transaction with low nonce", "sender", from, "nonce", tx.Nonce())
+			txs.Shift()
+
+		case errors.Is(err, ErrNonceTooHigh):
+			// Reorg notification data race between the transaction pool and miner, skip account =
+			log.Trace("Skipping account with hight nonce", "sender", from, "nonce", tx.Nonce())
+			txs.Pop()
+
+		case errors.Is(err, nil):
+			// Everything ok, collect the logs and shift in the next transaction from the same account
+			coalescedLogs = append(coalescedLogs, logs...)
+			env.tcount++
+			txs.Shift()
+
+		case errors.Is(err, ErrTxTypeNotSupported):
+			// Pop the unsupported transaction without shifting in the next from the account
+			log.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
+			txs.Pop()
+		default:
+			// Strange error, discard the transaction and get the next in line (note, the
+			// nonce-too-high clause will prevent us from executing in vain).
+			log.Debug("Transaction failed, account skipped", "hash", tx.Hash(), "err", err)
+			txs.Shift()
+		}
    }
 }

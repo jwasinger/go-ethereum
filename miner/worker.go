@@ -1082,19 +1082,13 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
     collator := DefaultCollator{}
     bs := BlockState{work: work, best: best}
     collator.CollateBlock(work)
+    bs.commitMu.Lock()
+    bs.done = new(struct{})
+    bs.commitMu.Unlock()
 
-	// Fill pending transactions from the txpool
-	if err := w.fillTransactions(interrupt, work); err != nil {
-		return
-	}
-	w.commit(work.copy(), w.fullTaskHook, true, start)
-
-	// Swap out the old work with the new one, terminating any leftover
-	// prefetcher processes in the mean time and starting a new one.
-	if w.current != nil {
-		w.current.discard()
-	}
-	w.current = work
+    if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) {
+        w.resubmitAdjustCh <- &intervalAdjust{inc: false}
+    }
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
