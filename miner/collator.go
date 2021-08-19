@@ -1,3 +1,37 @@
+// Copyright 2021 The go-ethereum Authors
+// This file is part of the go-ethereum library.
+//
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The go-ethereum library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+
+// Package miner implements Ethereum block creation and mining.
+package miner
+
+import (
+	"errors"
+//	"math"
+//	"math/big"
+    "sync"
+	"sync/atomic"
+    "time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+//    "github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/params"
+)
+
 // Pool is an interface to the transaction pool
 type Pool interface {
 	Pending(bool) (map[common.Address]types.Transactions, error)
@@ -5,10 +39,11 @@ type Pool interface {
 }
 
 type BlockState interface {
-    AddTransaction(tx *types.Transaction) (AddTransactionError, *types.Receipt)
+    AddTransaction(tx *types.Transaction) (error, *types.Receipt)
     RevertTransaction()
     Commit() bool
     Copy() BlockState
+    Coinbase() common.Address
 }
 
 type Collator interface {
@@ -22,7 +57,7 @@ type Collator interface {
     */
 }
 
-const (
+var (
     ErrInterrupt = errors.New("interrupt triggered")
     ErrGasLimitReached = errors.New("gas limit reached")
     ErrNonceTooLow = errors.New("tx nonce too low")
@@ -32,10 +67,9 @@ const (
     ErrGasFeeCapTooLow = errors.New("gas fee cap too low")
 )
 
-
 const (
-    interruptIsHandled = 0
-    interruptNotHandled = 1
+    interruptNotHandled int32 = 0
+    interruptIsHandled int32 = 1
 )
 
 type blockState struct {
@@ -43,10 +77,11 @@ type blockState struct {
     env *environment
     start time.Time
     snapshots []int
-    state *types.StateDB
+    logs []*types.Log
 
     // shared values between multiple copies of a blockState
 
+    interrupt *int32
 	// mutex to make sure only one blockState is calling commit at a given time
     commitMu *sync.Mutex
     // this makes sure multiple copies of a blockState can only trigger
@@ -58,20 +93,27 @@ type blockState struct {
     done *bool
 }
 
-func (bs *blockState) AddTransaction(tx *types.Transaction) (AddTransactionError, *types.Receipt) {
+func (bs *blockState) Coinbase() common.Address {
+	resultCopy := common.Address{}
+	copy(resultCopy[:], bs.env.coinbase[:])
+	return resultCopy
+}
+
+func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
     snapshot := bs.env.state.Snapshot()
 
-    if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
-        if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(interrupt) == commitInterruptResubmit {
+    if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
+        if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
             // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
             // TODO figure out a better heuristic for the adjust ratio here
             // the gasRemaining/gasLimit is not a good proxy for all collators
             // where the 
-            ratio := float64(gasLimit-env.gasPool.Gas()) / float64(gasLimit)
+            gasLimit := bs.env.header.GasLimit
+            ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
             if ratio < 0.1 {
                 ratio = 0.1
             }
-            w.resubmitAdjustCh <- &intervalAdjust{
+            bs.worker.resubmitAdjustCh <- &intervalAdjust{
                 ratio: ratio,
                 inc:   true,
             }
@@ -79,24 +121,24 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (AddTransactionError
         return ErrInterrupt, nil
     }
 
-    if gasPool.Gas() < params.TxGas {
+    if bs.env.gasPool.Gas() < params.TxGas {
         return ErrGasLimitReached, nil
     }
 
-    from, _ := types.Sender(signer, tx)
+    from, _ := types.Sender(bs.env.signer, tx)
     // Check whether the tx is replay protected. If we're not in the EIP155 hf
     // phase, start ignoring the sender until we do.
-    if tx.Protected() && !chainConfig.IsEIP155(header.Number) {
+    if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
         return ErrTxTypeNotSupported, nil
     }
 
-    gasPrice, err := tx.EffectiveGasTip(bs.work.env.header.BaseFee)
+    gasPrice, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
     if err != nil {
         return ErrGasFeeCapTooLow, nil
     }
 
-    bs.env.state.Prepare(tx.Hash(), tcount)
-    txLogs, err = commitTransaction(chain, chainConfig, bs.env, tx, bs.Coinbase())
+    bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
+    txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.Coinbase())
     if err != nil {
         switch {
         case errors.Is(err, core.ErrGasLimitReached):
@@ -171,11 +213,14 @@ func (bs *blockState) Copy() BlockState {
     }
 
     return &blockState {
-        bs.worker,
-        &bs.commitMu,
-        bs.start,
-        snapshotCopies,
-        bs.state.Copy(),
-        bs.recommitTriggered,
+        worker: bs.worker,
+        env: bs.env.copy(),
+        start: bs.start,
+        snapshots: snapshotCopies,
+        logs: copyLogs(bs.logs),
+        interrupt: bs.interrupt,
+        commitMu: bs.commitMu,
+        interruptHandled: bs.interruptHandled,
+        done: bs.done,
     }
 }

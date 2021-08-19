@@ -92,10 +92,13 @@ type environment struct {
 	txs      []*types.Transaction
 	receipts []*types.Receipt
 	uncles   map[common.Hash]*types.Header
+    coinbase common.Address
 }
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
+    coinbaseCopy := common.Address{}
+    copy(coinbaseCopy[:], env.coinbase[:])
 	cpy := &environment{
 		signer:    env.signer,
 		state:     env.state.Copy(),
@@ -104,6 +107,7 @@ func (env *environment) copy() *environment {
 		tcount:    env.tcount,
 		header:    types.CopyHeader(env.header),
 		receipts:  copyReceipts(env.receipts),
+        coinbase:  coinbaseCopy,
 	}
 	if env.gasPool != nil {
 		cpy.gasPool = &(*env.gasPool)
@@ -118,6 +122,32 @@ func (env *environment) copy() *environment {
 	}
 	return cpy
 }
+
+func copyLogs(logs []*types.Log) []*types.Log {
+    result := make([]*types.Log, len(logs))
+    for _, l := range logs {
+        logCopy := types.Log{}
+        copy(logCopy.Address[:], l.Address[:])
+        for _, t := range l.Topics {
+            topic := common.Hash{}
+            copy(topic[:], t[:])
+            logCopy.Topics = append(logCopy.Topics, topic)
+        }
+        logCopy.Data = make([]byte, len(l.Data))
+        copy(logCopy.Data[:], l.Data[:])
+        logCopy.BlockNumber = l.BlockNumber
+        copy(logCopy.TxHash[:], l.TxHash[:])
+        logCopy.TxIndex = l.TxIndex
+        copy(logCopy.BlockHash[:], l.BlockHash[:])
+        logCopy.Index = l.Index
+        logCopy.Removed = l.Removed
+
+        result = append(result, &logCopy)
+    }
+
+    return result
+}
+
 
 // unclelist returns the contained uncles as the list format.
 func (env *environment) unclelist() []*types.Header {
@@ -740,6 +770,9 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 	}
 	state.StartPrefetcher("miner")
 
+    coinbaseCopy := common.Address{}
+    copy(coinbaseCopy[:], w.coinbase[:])
+
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
 		state:     state,
@@ -747,6 +780,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		family:    mapset.NewSet(),
 		header:    header,
 		uncles:    make(map[common.Hash]*types.Header),
+        coinbase:  coinbaseCopy,
 	}
 	// when 08 is processed ancestors contain 07 (quick block)
 	for _, ancestor := range w.chain.GetBlocksFromHash(parent.Hash(), 7) {
@@ -1080,11 +1114,37 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	}
 
     collator := DefaultCollator{}
-    bs := BlockState{work: work, best: best}
-    collator.CollateBlock(work)
+    bs := blockState{
+        worker: w,
+        env: work,
+        start: start,
+        snapshots: []int{},
+        commitMu: new(sync.Mutex),
+        interruptHandled: new(int32),
+        done: new(bool),
+        interrupt: interrupt,
+    }
+
+    collator.CollateBlock(&bs, eth.TxPool())
     bs.commitMu.Lock()
     *bs.done = true
     bs.commitMu.Unlock()
+
+	if !w.isRunning() && len(bs.coalescedLogs) > 0 {
+		// We don't push the pendingLogsEvent while we are mining. The reason is that
+		// when we are mining, the worker will regenerate a mining block every 3 seconds.
+		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
+
+		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
+		// logs by filling in the block hash when the block was mined by the local miner. This can
+		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
+		cpy := make([]*types.Log, len(bs.coalescedLogs))
+		for i, l := range bs.logs {
+			cpy[i] = new(types.Log)
+			*cpy[i] = *l
+		}
+		w.pendingLogsFeed.Send(cpy)
+	}
 
     if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.recommitAdjTriggered, recommitAdjNotTriggered, recommitAdjIsTriggered) {
         w.resubmitAdjustCh <- &intervalAdjust{inc: false}
