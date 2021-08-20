@@ -153,6 +153,7 @@ func (miner *Miner) Stop() {
 }
 
 func (miner *Miner) Close() {
+	miner.worker.collator.Close()
 	close(miner.exitCh)
 }
 

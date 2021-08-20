@@ -209,6 +209,7 @@ type worker struct {
 	engine      consensus.Engine
 	eth         Backend
 	chain       *core.BlockChain
+	collator    Collator
 
 	// Feeds
 	pendingLogsFeed event.Feed
@@ -294,12 +295,14 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		startCh:            make(chan struct{}, 1),
 		resubmitIntervalCh: make(chan time.Duration),
 		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
+		collator:           &DefaultCollator{},
 	}
 	// Subscribe NewTxsEvent for tx pool
 	worker.txsSub = eth.TxPool().SubscribeNewTxsEvent(worker.txsCh)
 	// Subscribe events for blockchain
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 	worker.chainSideSub = eth.BlockChain().SubscribeChainSideEvent(worker.chainSideCh)
+	worker.collator.Start()
 
 	// Sanitize recommit interval if the user-specified one is too short.
 	recommit := worker.config.Recommit
@@ -1113,7 +1116,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		w.commit(work.copy(), nil, false, start)
 	}
 
-	collator := DefaultCollator{}
 	bs := blockState{
 		worker:           w,
 		env:              work,
@@ -1125,7 +1127,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		interrupt:        interrupt,
 	}
 
-	collator.CollateBlock(&bs, w.eth.TxPool())
+	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
 	bs.commitMu.Lock()
 	*bs.done = true
 	bs.commitMu.Unlock()

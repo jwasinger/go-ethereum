@@ -38,6 +38,10 @@ type Pool interface {
 	Locals() []common.Address
 }
 
+type ReadOnlyState interface {
+	GetBalance(addr common.Address) *big.Int
+}
+
 type BlockState interface {
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
 	RevertTransaction()
@@ -50,14 +54,9 @@ type BlockState interface {
 }
 
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool)
-	/*
-	   Start()
-	   Stop()
-	   TODO:
-	   chain side event hook
-	   new chain head event hook
-	*/
+	CollateBlock(bs BlockState, pool Pool, state ReadOnlyState)
+	Start()
+	Close()
 }
 
 var (

@@ -88,7 +88,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
+func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, state ReadOnlyState) {
 	txs, err := pool.Pending(true)
 	if err != nil {
 		log.Error("could not get pending transactions from the pool", "err", err)
@@ -119,4 +119,12 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
 	bs.Commit()
 
 	return
+}
+
+func (w *DefaultCollator) Start() {
+
+}
+
+func (w *DefaultCollator) Close() {
+
 }
