@@ -29,9 +29,10 @@ import (
 type DefaultCollator struct{}
 
 func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) bool {
+    headerView := bs.Header()
 	for {
 		// If we don't have enough gas for any further transactions then we're done
-		available := bs.Gas()
+		available := headerView.GasLimit() - headerView.GasUsed()
 		if available < params.TxGas {
 			break
 		}
@@ -89,6 +90,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
 func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, state ReadOnlyState) {
+    headerView := bs.Header()
 	txs, err := pool.Pending(true)
 	if err != nil {
 		log.Error("could not get pending transactions from the pool", "err", err)
@@ -106,12 +108,12 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, state ReadOnlyS
 		}
 	}
 	if len(localTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, bs.BaseFee())) {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, headerView.BaseFee())) {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, bs.BaseFee())) {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, headerView.BaseFee())) {
 			return
 		}
 	}

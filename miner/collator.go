@@ -47,10 +47,8 @@ type BlockState interface {
 	RevertTransaction()
 	Commit() bool
 	Copy() BlockState
-	Coinbase() common.Address
 	Signer() types.Signer
-	BaseFee() *big.Int
-	Gas() (remaining uint64)
+    Header() ReadOnlyHeader
 }
 
 type Collator interface {
@@ -77,6 +75,7 @@ const (
 type blockState struct {
 	worker    *worker
 	env       *environment
+    headerView ReadOnlyHeader
 	start     time.Time
 	snapshots []int
 	logs      []*types.Log
@@ -95,22 +94,8 @@ type blockState struct {
 	done *bool
 }
 
-func (bs *blockState) Coinbase() common.Address {
-	resultCopy := common.Address{}
-	copy(resultCopy[:], bs.env.coinbase[:])
-	return resultCopy
-}
-
-func (bs *blockState) BaseFee() *big.Int {
-	if bs.env.header.BaseFee != nil {
-		return new(big.Int).Set(bs.env.header.BaseFee)
-	}
-
-	return nil
-}
-
-func (bs *blockState) Gas() uint64 {
-	return bs.env.gasPool.Gas()
+func (bs *blockState) Header() ReadOnlyHeader {
+    return bs.headerView
 }
 
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
@@ -155,7 +140,7 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 	}
 
 	bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
-	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.Coinbase())
+	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.coinbase)
 	if err != nil {
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
@@ -239,6 +224,7 @@ func (bs *blockState) Copy() BlockState {
 	return &blockState{
 		worker:           bs.worker,
 		env:              bs.env.copy(),
+        headerView:       ReadOnlyHeader{bs.env.header},
 		start:            bs.start,
 		snapshots:        snapshotCopies,
 		logs:             copyLogs(bs.logs),

@@ -1,4 +1,4 @@
-// Copyright 2015 The go-ethereum Authors
+// Copyright 2021 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -1125,6 +1125,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
+        headerView:       ReadOnlyHeader{work.header},
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
