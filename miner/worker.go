@@ -92,13 +92,13 @@ type environment struct {
 	txs      []*types.Transaction
 	receipts []*types.Receipt
 	uncles   map[common.Hash]*types.Header
-	coinbase common.Address
+	etherbase common.Address
 }
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
-	coinbaseCopy := common.Address{}
-	copy(coinbaseCopy[:], env.coinbase[:])
+	etherbaseCopy := common.Address{}
+	copy(etherbaseCopy[:], env.etherbase[:])
 	cpy := &environment{
 		signer:    env.signer,
 		state:     env.state.Copy(),
@@ -107,7 +107,7 @@ func (env *environment) copy() *environment {
 		tcount:    env.tcount,
 		header:    types.CopyHeader(env.header),
 		receipts:  copyReceipts(env.receipts),
-		coinbase:  coinbaseCopy,
+		etherbase:  etherbaseCopy,
 	}
 	if env.gasPool != nil {
 		cpy.gasPool = env.gasPool
@@ -772,8 +772,8 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 	}
 	state.StartPrefetcher("miner")
 
-	coinbaseCopy := common.Address{}
-	copy(coinbaseCopy[:], w.coinbase[:])
+	etherbaseCopy := common.Address{}
+	copy(etherbaseCopy[:], w.coinbase[:])
 
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
@@ -782,7 +782,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		family:    mapset.NewSet(),
 		header:    header,
 		uncles:    make(map[common.Hash]*types.Header),
-		coinbase:  coinbaseCopy,
+		etherbase:  etherbaseCopy,
 		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
 	}
 	// when 08 is processed ancestors contain 07 (quick block)

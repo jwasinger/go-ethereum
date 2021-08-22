@@ -140,7 +140,7 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 	}
 
 	bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
-	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.coinbase)
+	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
 	if err != nil {
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
