@@ -410,6 +410,7 @@ func (w *worker) close() {
 	if w.current != nil {
 		w.current.discard()
 	}
+    w.collator.Close()
 	atomic.StoreInt32(&w.running, 0)
 	close(w.exitCh)
 }
