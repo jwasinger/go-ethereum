@@ -27,42 +27,32 @@ type ReadOnlyHeader struct {
     header *types.Header
 }
 
-func copyHash(h common.Hash) common.Hash {
-    hashCopy := common.Hash{}
-    copy(hashCopy[:], h[:])
-    return hashCopy
-}
-
 func (h *ReadOnlyHeader) ParentHash() common.Hash {
-    return copyHash(h.header.ParentHash)
+    return h.header.ParentHash
 }
 
 func (h *ReadOnlyHeader) UncleHash() common.Hash {
-    return copyHash(h.header.UncleHash)
+    return h.header.UncleHash
 }
 
 func (h *ReadOnlyHeader) Coinbase() common.Address {
-    coinbaseCopy := common.Address{}
-    copy(coinbaseCopy[:], h.header.Coinbase[:])
-    return coinbaseCopy
+    return h.header.Coinbase
 }
 
 func (h *ReadOnlyHeader) Root() common.Hash {
-    return copyHash(h.header.Root)
+    return h.header.Root
 }
 
 func (h *ReadOnlyHeader) TxHash() common.Hash {
-    return copyHash(h.header.TxHash)
+    return h.header.TxHash
 }
 
 func (h *ReadOnlyHeader) ReceiptHash() common.Hash {
-    return copyHash(h.header.ReceiptHash)
+    return h.header.ReceiptHash
 }
 
 func (h *ReadOnlyHeader) Bloom() types.Bloom {
-    bloomCopy := types.Bloom{}
-    copy(bloomCopy[:], h.header.Bloom[:])
-    return bloomCopy
+    return h.header.Bloom
 }
 
 func (h *ReadOnlyHeader) Difficulty() *big.Int {
@@ -102,13 +92,11 @@ func (h *ReadOnlyHeader) Extra() []byte {
 }
 
 func (h *ReadOnlyHeader) MixDigest() common.Hash {
-    return copyHash(h.header.MixDigest)
+    return h.header.MixDigest
 }
 
 func (h *ReadOnlyHeader) Nonce() types.BlockNonce {
-    blockNonceCopy := types.BlockNonce{}
-    copy(blockNonceCopy[:], h.header.Nonce[:])
-    return blockNonceCopy
+    return h.header.Nonce
 }
 
 func (h *ReadOnlyHeader) BaseFee() *big.Int {
