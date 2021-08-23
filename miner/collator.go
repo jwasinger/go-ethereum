@@ -44,7 +44,7 @@ type ReadOnlyState interface {
 
 type BlockState interface {
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
-	RevertTransaction()
+	RevertTransaction() bool
 	Commit() bool
 	Copy() BlockState
 	Signer() types.Signer
@@ -170,9 +170,9 @@ func (bs *blockState) Signer() types.Signer {
 	return bs.env.signer
 }
 
-func (bs *blockState) RevertTransaction() {
+func (bs *blockState) RevertTransaction() bool {
 	if len(bs.snapshots) == 0 {
-		return
+		return false
 	}
 	bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-1])
 	bs.snapshots = bs.snapshots[:len(bs.snapshots)-1]
@@ -180,6 +180,7 @@ func (bs *blockState) RevertTransaction() {
 	bs.env.tcount--
 	bs.env.txs = bs.env.txs[:len(bs.env.txs)-1]
 	bs.env.receipts = bs.env.receipts[:len(bs.env.receipts)-1]
+    return true
 }
 
 func (bs *blockState) Commit() bool {
