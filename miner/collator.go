@@ -42,9 +42,14 @@ type ReadOnlyState interface {
 	GetBalance(addr common.Address) *big.Int
 }
 
+type AddTransactionsError struct {
+    err error
+    idx int
+}
+
 type BlockState interface {
-	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
-	RevertTransaction()
+	AddTransactions(txs types.Transactions) (*AddTransactionsError, types.Receipts)
+	RevertTransactions()
 	Commit() bool
 	Copy() BlockState
 	Signer() types.Signer
@@ -77,8 +82,10 @@ type blockState struct {
 	env       *environment
     headerView ReadOnlyHeader
 	start     time.Time
-	snapshots []int
 	logs      []*types.Log
+
+	snapshot  *int
+    snapshotTcount int
 
 	// shared values between multiple copies of a blockState
 
@@ -98,88 +105,112 @@ func (bs *blockState) Header() ReadOnlyHeader {
     return bs.headerView
 }
 
-func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
+func (bs *blockState) AddTransactions(txs types.Transactions) (*AddTransactionsError, types.Receipts) {
+    if len(txs) == 0 {
+        return nil, make(types.Receipts, 0, 0)
+    }
+
 	snapshot := bs.env.state.Snapshot()
+    tcountBefore := bs.env.tcount
+    txErr := AddTransactionsError{nil, -1}
 
-	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			// TODO figure out a better heuristic for the adjust ratio here
-			// the gasRemaining/gasLimit is not a good proxy for all collators
-			// where the
-			gasLimit := bs.env.header.GasLimit
-			ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
-			if ratio < 0.1 {
-				ratio = 0.1
-			}
-			bs.worker.resubmitAdjustCh <- &intervalAdjust{
-				ratio: ratio,
-				inc:   true,
-			}
-		}
-		return ErrInterrupt, nil
-	}
+    for i, tx := range txs {
+        if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
+            if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+                // Notify resubmit loop to increase resubmitting interval due to too frequent commits.
+                // TODO figure out a better heuristic for the adjust ratio here
+                // the gasRemaining/gasLimit is not a good proxy for all collators
+                // where the
+                gasLimit := bs.env.header.GasLimit
+                ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
+                if ratio < 0.1 {
+                    ratio = 0.1
+                }
+                bs.worker.resubmitAdjustCh <- &intervalAdjust{
+                    ratio: ratio,
+                    inc:   true,
+                }
+            }
+            txErr = AddTransactionsError{ErrInterrupt, i}
+            break
+        }
 
-	if bs.env.gasPool.Gas() < params.TxGas {
-		return ErrGasLimitReached, nil
-	}
+        if bs.env.gasPool.Gas() < params.TxGas {
+            txErr = AddTransactionsError{ErrGasLimitReached, i}
+            break
+        }
+        // Check whether the tx is replay protected. If we're not in the EIP155 hf
+        // phase, start ignoring the sender until we do.
+        if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
+            txErr = AddTransactionsError{ErrTxTypeNotSupported, i}
+            break
+        }
+        // TODO can this error also be returned by commitTransaction below?
+        _, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
+        if err != nil {
+            txErr = AddTransactionsError{ErrGasFeeCapTooLow, i}
+            break
+        }
 
-	// from, _ := types.Sender(bs.env.signer, tx)
-	// TODO use this and add log messages back?
+        bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
+        txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
+        if err != nil {
+            // TODO revert to snapshot
+            //  * revert added transactions
+            //  * revert added receipts
+            switch {
+            case errors.Is(err, core.ErrGasLimitReached):
+                // this should never be reached.
+                // should be caught above
+                txErr = AddTransactionsError{ErrGasLimitReached, i}
+            case errors.Is(err, core.ErrNonceTooLow):
+                txErr = AddTransactionsError{ErrNonceTooLow, i}
+            case errors.Is(err, core.ErrNonceTooHigh):
+                txErr = AddTransactionsError{ErrNonceTooHigh, i}
+            case errors.Is(err, core.ErrTxTypeNotSupported):
+                // TODO check that this unspported tx type is the same as the one caught above
+                txErr = AddTransactionsError{ErrTxTypeNotSupported, i}
+            default:
+                txErr = AddTransactionsError{ErrStrange, i}
+            }
+        } else {
+            bs.logs = append(bs.logs, txLogs...)
+            bs.env.tcount++
+        }
+    }
 
-	// Check whether the tx is replay protected. If we're not in the EIP155 hf
-	// phase, start ignoring the sender until we do.
-	if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
-		return ErrTxTypeNotSupported, nil
-	}
+    if txErr.err != nil {
+        // revert state, transactions, receipts, env.tcount
+        bs.env.txs = bs.env.txs[:tcountBefore]
+        bs.env.receipts = bs.env.receipts[:tcountBefore]
+        bs.env.tcount = tcountBefore
+        bs.env.state.RevertToSnapshot(snapshot)
+        return &txErr, nil
+    } else {
+        bs.snapshot = &snapshot
+        bs.snapshotTcount = bs.env.tcount - tcountBefore
+    }
 
-	// TODO can this error also be returned by commitTransaction below?
-	_, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
-	if err != nil {
-		return ErrGasFeeCapTooLow, nil
-	}
-
-	bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
-	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
-	if err != nil {
-		switch {
-		case errors.Is(err, core.ErrGasLimitReached):
-			// this should never be reached.
-			// should be caught above
-			return ErrGasLimitReached, nil
-		case errors.Is(err, core.ErrNonceTooLow):
-			return ErrNonceTooLow, nil
-		case errors.Is(err, core.ErrNonceTooHigh):
-			return ErrNonceTooHigh, nil
-		case errors.Is(err, core.ErrTxTypeNotSupported):
-			// TODO check that this unspported tx type is the same as the one caught above
-			return ErrTxTypeNotSupported, nil
-		default:
-			return ErrStrange, nil
-		}
-	} else {
-		bs.snapshots = append(bs.snapshots, snapshot)
-		bs.logs = append(bs.logs, txLogs...)
-		bs.env.tcount++
-	}
-
-	return nil, bs.env.receipts[len(bs.env.receipts)-1]
+	return nil, bs.env.receipts[tcountBefore:bs.env.tcount]
 }
 
 func (bs *blockState) Signer() types.Signer {
 	return bs.env.signer
 }
 
-func (bs *blockState) RevertTransaction() {
-	if len(bs.snapshots) == 0 {
+func (bs *blockState) RevertTransactions() {
+	if bs.snapshot == nil {
+        //log.Error("no pre-existing snapshot to revert to")
 		return
 	}
-	bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-1])
-	bs.snapshots = bs.snapshots[:len(bs.snapshots)-1]
-	bs.logs = bs.logs[:len(bs.logs)-1]
-	bs.env.tcount--
-	bs.env.txs = bs.env.txs[:len(bs.env.txs)-1]
-	bs.env.receipts = bs.env.receipts[:len(bs.env.receipts)-1]
+	bs.env.state.RevertToSnapshot(*bs.snapshot)
+	bs.logs = bs.logs[:bs.env.tcount - bs.snapshotTcount]
+	bs.env.tcount -= bs.snapshotTcount
+	bs.env.txs = bs.env.txs[:bs.env.tcount - bs.snapshotTcount]
+	bs.env.receipts = bs.env.receipts[:bs.env.tcount - bs.snapshotTcount]
+
+    bs.snapshot = nil
+    bs.snapshotTcount = 0
 }
 
 func (bs *blockState) Commit() bool {
@@ -216,17 +247,15 @@ func (bs *blockState) Commit() bool {
 }
 
 func (bs *blockState) Copy() BlockState {
-	snapshotCopies := []int{}
-	for i := 0; i < len(bs.snapshots); i++ {
-		snapshotCopies = append(snapshotCopies, bs.snapshots[i])
-	}
+    snapshotCopy := *bs.snapshot
 
 	return &blockState{
 		worker:           bs.worker,
 		env:              bs.env.copy(),
         headerView:       ReadOnlyHeader{bs.env.header},
 		start:            bs.start,
-		snapshots:        snapshotCopies,
+        snapshot:         &snapshotCopy,
+        snapshotTcount:   bs.snapshotTcount,
 		logs:             copyLogs(bs.logs),
 		interrupt:        bs.interrupt,
 		commitMu:         bs.commitMu,
