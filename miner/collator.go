@@ -207,11 +207,11 @@ func (bs *blockState) Commit() bool {
 	if *bs.done {
 		return false
 	}
-	bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	if bs.worker.current != nil {
 		bs.worker.current.discard()
 	}
 	bs.worker.current = bs.env
+	bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	return true
 }
 
