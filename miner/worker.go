@@ -1129,9 +1129,20 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
+
 	bs.commitMu.Lock()
 	*bs.done = true
 	bs.commitMu.Unlock()
+
+	if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
+        if atomic.LoadInt32(bs.interrupt) != commitInterruptNewHead {
+		    w.resubmitAdjustCh <- &intervalAdjust{inc: false}
+        }
+	}
+
+    if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
+        return
+    }
 
 	if !w.isRunning() && len(bs.logs) > 0 {
 		// We don't push the pendingLogsEvent while we are mining. The reason is that
@@ -1149,9 +1160,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		w.pendingLogsFeed.Send(cpy)
 	}
 
-	if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
-		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
-	}
+
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
