@@ -1055,50 +1055,34 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	return env, nil
 }
 
-// fillTransactions retrieves the pending transactions from the txpool and fills them
-// into the given sealing block. The transaction selection and ordering strategy can
-// be customized with the plugin in the future.
-func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
-	// Split the pending transactions into locals and remotes
-	// Fill the block with all available pending transactions.
-	pending, err := w.eth.TxPool().Pending(true)
-	if err != nil {
-		log.Error("Failed to fetch pending transactions", "err", err)
-		return err
-	}
-	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
-	for _, account := range w.eth.TxPool().Locals() {
-		if txs := remoteTxs[account]; len(txs) > 0 {
-			delete(remoteTxs, account)
-			localTxs[account] = txs
-		}
-	}
-	if len(localTxs) > 0 {
-		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
-		if w.commitTransactions(env, txs, w.coinbase, interrupt) {
-			return nil
-		}
-	}
-	if len(remoteTxs) > 0 {
-		txs := types.NewTransactionsByPriceAndNonce(env.signer, remoteTxs, env.header.BaseFee)
-		if w.commitTransactions(env, txs, w.coinbase, interrupt) {
-			return nil
-		}
-	}
-	return nil
-}
-
 // generateWork generates a sealing block based on the given parameters.
 func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
+	start := time.Now()
 	work, err := w.prepareWork(params)
 	if err != nil {
 		return nil, err
 	}
 	defer work.discard()
 
-	if err := w.fillTransactions(nil, work); err != nil {
-		return nil, err
+	bs := blockState{
+		worker:           w,
+		env:              work,
+		start:            start,
+		snapshot:         nil,
+        snapshotTcount:   0,
+		commitMu:         new(sync.Mutex),
+		interruptHandled: new(int32),
+		done:             new(bool),
+		interrupt:        nil,
+        headerView:       ReadOnlyHeader{work.header},
 	}
+
+	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
+
+	bs.commitMu.Lock()
+	*bs.done = true
+	bs.commitMu.Unlock()
+
 	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
 }
 
