@@ -88,10 +88,10 @@ type environment struct {
 	tcount    int            // tx count in cycle
 	gasPool   *core.GasPool  // available gas used to pack transactions
 
-	header   *types.Header
-	txs      []*types.Transaction
-	receipts []*types.Receipt
-	uncles   map[common.Hash]*types.Header
+	header    *types.Header
+	txs       []*types.Transaction
+	receipts  []*types.Receipt
+	uncles    map[common.Hash]*types.Header
 	etherbase common.Address
 }
 
@@ -125,13 +125,13 @@ func copyLogs(logs []*types.Log) []*types.Log {
 	result := make([]*types.Log, len(logs))
 	for _, l := range logs {
 		logCopy := types.Log{
-            Address: l.Address,
-            BlockNumber: l.BlockNumber,
-            TxHash: l.TxHash,
-            TxIndex: l.TxIndex,
-            Index: l.Index,
-            Removed: l.Removed,
-        }
+			Address:     l.Address,
+			BlockNumber: l.BlockNumber,
+			TxHash:      l.TxHash,
+			TxIndex:     l.TxIndex,
+			Index:       l.Index,
+			Removed:     l.Removed,
+		}
 		for _, t := range l.Topics {
 			logCopy.Topics = append(logCopy.Topics, t)
 		}
@@ -406,7 +406,7 @@ func (w *worker) close() {
 	if w.current != nil {
 		w.current.discard()
 	}
-    w.collator.Close()
+	w.collator.Close()
 	atomic.StoreInt32(&w.running, 0)
 	close(w.exitCh)
 }
@@ -776,7 +776,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		family:    mapset.NewSet(),
 		header:    header,
 		uncles:    make(map[common.Hash]*types.Header),
-		etherbase:  w.coinbase,
+		etherbase: w.coinbase,
 		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
 	}
 	// when 08 is processed ancestors contain 07 (quick block)
@@ -1061,15 +1061,15 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	bs := blockState{
 		worker:           w,
 		env:              work.copy(),
-        resultEnv:        nil,
+		resultEnv:        nil,
 		start:            start,
 		snapshots:        []int{},
 		commitMu:         new(sync.Mutex),
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
-        shouldSeal:       false,
-        headerView:       ReadOnlyHeader{work.header},
+		shouldSeal:       false,
+		headerView:       ReadOnlyHeader{work.header},
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
@@ -1078,9 +1078,9 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	*bs.done = true
 	bs.commitMu.Unlock()
 
-    if bs.resultEnv == nil {
-        bs.resultEnv = work
-    }
+	if bs.resultEnv == nil {
+		bs.resultEnv = work
+	}
 
 	return w.engine.FinalizeAndAssemble(w.chain, bs.resultEnv.header, bs.resultEnv.state, bs.resultEnv.txs, bs.resultEnv.unclelist(), bs.resultEnv.receipts)
 }
@@ -1108,9 +1108,9 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
-        headerView:       ReadOnlyHeader{work.header},
-        shouldSeal:       true,
-        resultEnv:        nil,
+		headerView:       ReadOnlyHeader{work.header},
+		shouldSeal:       true,
+		resultEnv:        nil,
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
@@ -1120,14 +1120,14 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	bs.commitMu.Unlock()
 
 	if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
-        if atomic.LoadInt32(bs.interrupt) != commitInterruptNewHead {
-		    w.resubmitAdjustCh <- &intervalAdjust{inc: false}
-        }
+		if atomic.LoadInt32(bs.interrupt) != commitInterruptNewHead {
+			w.resubmitAdjustCh <- &intervalAdjust{inc: false}
+		}
 	}
 
-    if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
-        return
-    }
+	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
+		return
+	}
 
 	if !w.isRunning() && len(bs.logs) > 0 {
 		// We don't push the pendingLogsEvent while we are mining. The reason is that
@@ -1145,10 +1145,10 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		w.pendingLogsFeed.Send(cpy)
 	}
 
-    if bs.resultEnv == nil {
-        bs.resultEnv = work
-    }
-    w.current = bs.resultEnv
+	if bs.resultEnv == nil {
+		bs.resultEnv = work
+	}
+	w.current = bs.resultEnv
 }
 
 // commit runs any post-transaction state modifications, assembles the final block

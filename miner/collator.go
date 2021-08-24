@@ -48,7 +48,7 @@ type BlockState interface {
 	Commit() bool
 	Copy() BlockState
 	Signer() types.Signer
-    Header() ReadOnlyHeader
+	Header() ReadOnlyHeader
 }
 
 type Collator interface {
@@ -73,13 +73,13 @@ const (
 )
 
 type blockState struct {
-	worker    *worker
-	env       *environment
-    headerView ReadOnlyHeader
-	start     time.Time
-	snapshots []int
-	logs      []*types.Log
-    shouldSeal bool
+	worker     *worker
+	env        *environment
+	headerView ReadOnlyHeader
+	start      time.Time
+	snapshots  []int
+	logs       []*types.Log
+	shouldSeal bool
 
 	// shared values between multiple copies of a blockState
 
@@ -93,13 +93,13 @@ type blockState struct {
 	// CollateBlock call on that blockState returns. examined in commit
 	// when commitMu is held.  modified right after CollateBlock returns
 	done *bool
-    // calling Commit() copies the value of env to this value
-    // and forwards it to the sealer via worker.commit() if shouldSeal is true
-    resultEnv *environment
+	// calling Commit() copies the value of env to this value
+	// and forwards it to the sealer via worker.commit() if shouldSeal is true
+	resultEnv *environment
 }
 
 func (bs *blockState) Header() ReadOnlyHeader {
-    return bs.headerView
+	return bs.headerView
 }
 
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
@@ -184,7 +184,7 @@ func (bs *blockState) RevertTransaction() bool {
 	bs.env.tcount--
 	bs.env.txs = bs.env.txs[:len(bs.env.txs)-1]
 	bs.env.receipts = bs.env.receipts[:len(bs.env.receipts)-1]
-    return true
+	return true
 }
 
 func (bs *blockState) Commit() bool {
@@ -215,9 +215,9 @@ func (bs *blockState) Commit() bool {
 	if bs.resultEnv != nil {
 		bs.resultEnv.discard()
 	}
-    if bs.shouldSeal {
-	    bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
-    }
+	if bs.shouldSeal {
+		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
+	}
 	bs.resultEnv = bs.env.copy()
 	return true
 }
@@ -231,7 +231,7 @@ func (bs *blockState) Copy() BlockState {
 	return &blockState{
 		worker:           bs.worker,
 		env:              bs.env.copy(),
-        headerView:       ReadOnlyHeader{bs.env.header},
+		headerView:       ReadOnlyHeader{bs.env.header},
 		start:            bs.start,
 		snapshots:        snapshotCopies,
 		logs:             copyLogs(bs.logs),

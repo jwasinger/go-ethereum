@@ -17,93 +17,93 @@
 package miner
 
 import (
-    "math/big"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-    "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type ReadOnlyHeader struct {
-    header *types.Header
+	header *types.Header
 }
 
 func (h *ReadOnlyHeader) ParentHash() common.Hash {
-    return h.header.ParentHash
+	return h.header.ParentHash
 }
 
 func (h *ReadOnlyHeader) UncleHash() common.Hash {
-    return h.header.UncleHash
+	return h.header.UncleHash
 }
 
 func (h *ReadOnlyHeader) Coinbase() common.Address {
-    return h.header.Coinbase
+	return h.header.Coinbase
 }
 
 func (h *ReadOnlyHeader) Root() common.Hash {
-    return h.header.Root
+	return h.header.Root
 }
 
 func (h *ReadOnlyHeader) TxHash() common.Hash {
-    return h.header.TxHash
+	return h.header.TxHash
 }
 
 func (h *ReadOnlyHeader) ReceiptHash() common.Hash {
-    return h.header.ReceiptHash
+	return h.header.ReceiptHash
 }
 
 func (h *ReadOnlyHeader) Bloom() types.Bloom {
-    return h.header.Bloom
+	return h.header.Bloom
 }
 
 func (h *ReadOnlyHeader) Difficulty() *big.Int {
-    var difficultyCopy *big.Int
-    if h.header.Difficulty != nil {
-        difficultyCopy = new(big.Int).Set(h.header.Difficulty)
-    }
+	var difficultyCopy *big.Int
+	if h.header.Difficulty != nil {
+		difficultyCopy = new(big.Int).Set(h.header.Difficulty)
+	}
 
-    return difficultyCopy
+	return difficultyCopy
 }
 
 func (h *ReadOnlyHeader) Number() *big.Int {
-    var numberCopy *big.Int
-    if h.header.Number != nil {
-        numberCopy = new(big.Int).Set(h.header.Number)
-    }
+	var numberCopy *big.Int
+	if h.header.Number != nil {
+		numberCopy = new(big.Int).Set(h.header.Number)
+	}
 
-    return numberCopy
+	return numberCopy
 }
 
 func (h *ReadOnlyHeader) GasLimit() uint64 {
-    return h.header.GasLimit
+	return h.header.GasLimit
 }
 
 func (h *ReadOnlyHeader) GasUsed() uint64 {
-    return h.header.GasUsed
+	return h.header.GasUsed
 }
 
 func (h *ReadOnlyHeader) Time() uint64 {
-    return h.header.Time
+	return h.header.Time
 }
 
 func (h *ReadOnlyHeader) Extra() []byte {
-    extraCopy := make([]byte, len(h.header.Extra), len(h.header.Extra))
-    copy(extraCopy[:], h.header.Extra[:])
-    return extraCopy
+	extraCopy := make([]byte, len(h.header.Extra), len(h.header.Extra))
+	copy(extraCopy[:], h.header.Extra[:])
+	return extraCopy
 }
 
 func (h *ReadOnlyHeader) MixDigest() common.Hash {
-    return h.header.MixDigest
+	return h.header.MixDigest
 }
 
 func (h *ReadOnlyHeader) Nonce() types.BlockNonce {
-    return h.header.Nonce
+	return h.header.Nonce
 }
 
 func (h *ReadOnlyHeader) BaseFee() *big.Int {
-    var baseFeeCopy *big.Int
-    if h.header.BaseFee != nil {
-        baseFeeCopy = new(big.Int).Set(h.header.BaseFee)
-    }
+	var baseFeeCopy *big.Int
+	if h.header.BaseFee != nil {
+		baseFeeCopy = new(big.Int).Set(h.header.BaseFee)
+	}
 
-    return baseFeeCopy
+	return baseFeeCopy
 }
