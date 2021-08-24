@@ -97,8 +97,6 @@ type environment struct {
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
-	etherbaseCopy := common.Address{}
-	copy(etherbaseCopy[:], env.etherbase[:])
 	cpy := &environment{
 		signer:    env.signer,
 		state:     env.state.Copy(),
@@ -107,7 +105,7 @@ func (env *environment) copy() *environment {
 		tcount:    env.tcount,
 		header:    types.CopyHeader(env.header),
 		receipts:  copyReceipts(env.receipts),
-		etherbase:  etherbaseCopy,
+		etherbase: env.etherbase,
 	}
 	if env.gasPool != nil {
 		cpy.gasPool = env.gasPool
@@ -126,21 +124,19 @@ func (env *environment) copy() *environment {
 func copyLogs(logs []*types.Log) []*types.Log {
 	result := make([]*types.Log, len(logs))
 	for _, l := range logs {
-		logCopy := types.Log{}
-		copy(logCopy.Address[:], l.Address[:])
+		logCopy := types.Log{
+            Address: l.Address,
+            BlockNumber: l.BlockNumber,
+            TxHash: l.TxHash,
+            TxIndex: l.TxIndex,
+            Index: l.Index,
+            Removed: l.Removed,
+        }
 		for _, t := range l.Topics {
-			topic := common.Hash{}
-			copy(topic[:], t[:])
-			logCopy.Topics = append(logCopy.Topics, topic)
+			logCopy.Topics = append(logCopy.Topics, t)
 		}
 		logCopy.Data = make([]byte, len(l.Data))
 		copy(logCopy.Data[:], l.Data[:])
-		logCopy.BlockNumber = l.BlockNumber
-		copy(logCopy.TxHash[:], l.TxHash[:])
-		logCopy.TxIndex = l.TxIndex
-		copy(logCopy.BlockHash[:], l.BlockHash[:])
-		logCopy.Index = l.Index
-		logCopy.Removed = l.Removed
 
 		result = append(result, &logCopy)
 	}
@@ -773,9 +769,6 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 	}
 	state.StartPrefetcher("miner")
 
-	etherbaseCopy := common.Address{}
-	copy(etherbaseCopy[:], w.coinbase[:])
-
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
 		state:     state,
@@ -783,7 +776,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		family:    mapset.NewSet(),
 		header:    header,
 		uncles:    make(map[common.Hash]*types.Header),
-		etherbase:  etherbaseCopy,
+		etherbase:  w.coinbase,
 		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
 	}
 	// when 08 is processed ancestors contain 07 (quick block)
@@ -1067,13 +1060,15 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 
 	bs := blockState{
 		worker:           w,
-		env:              work,
+		env:              work.copy(),
+        resultEnv:        nil,
 		start:            start,
 		snapshots:        []int{},
 		commitMu:         new(sync.Mutex),
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
+        shouldSeal:       false,
         headerView:       ReadOnlyHeader{work.header},
 	}
 
@@ -1083,7 +1078,11 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	*bs.done = true
 	bs.commitMu.Unlock()
 
-	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
+    if bs.resultEnv == nil {
+        bs.resultEnv = work
+    }
+
+	return w.engine.FinalizeAndAssemble(w.chain, bs.resultEnv.header, bs.resultEnv.state, bs.resultEnv.txs, bs.resultEnv.unclelist(), bs.resultEnv.receipts)
 }
 
 // commitWork generates several new sealing tasks based on the parent block
@@ -1102,7 +1101,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 
 	bs := blockState{
 		worker:           w,
-		env:              work,
+		env:              work.copy(),
 		start:            start,
 		snapshots:        []int{},
 		commitMu:         new(sync.Mutex),
@@ -1110,6 +1109,8 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		done:             new(bool),
 		interrupt:        interrupt,
         headerView:       ReadOnlyHeader{work.header},
+        shouldSeal:       true,
+        resultEnv:        nil,
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
@@ -1144,7 +1145,10 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		w.pendingLogsFeed.Send(cpy)
 	}
 
-
+    if bs.resultEnv == nil {
+        bs.resultEnv = work
+    }
+    w.current = bs.resultEnv
 }
 
 // commit runs any post-transaction state modifications, assembles the final block

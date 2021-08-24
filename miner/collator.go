@@ -79,6 +79,7 @@ type blockState struct {
 	start     time.Time
 	snapshots []int
 	logs      []*types.Log
+    shouldSeal bool
 
 	// shared values between multiple copies of a blockState
 
@@ -92,6 +93,9 @@ type blockState struct {
 	// CollateBlock call on that blockState returns. examined in commit
 	// when commitMu is held.  modified right after CollateBlock returns
 	done *bool
+    // calling Commit() copies the value of env to this value
+    // and forwards it to the sealer via worker.commit() if shouldSeal is true
+    resultEnv *environment
 }
 
 func (bs *blockState) Header() ReadOnlyHeader {
@@ -208,11 +212,13 @@ func (bs *blockState) Commit() bool {
 	if *bs.done {
 		return false
 	}
-	if bs.worker.current != nil {
-		bs.worker.current.discard()
+	if bs.resultEnv != nil {
+		bs.resultEnv.discard()
 	}
-	bs.worker.current = bs.env
-	bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
+    if bs.shouldSeal {
+	    bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
+    }
+	bs.resultEnv = bs.env.copy()
 	return true
 }
 
