@@ -108,7 +108,8 @@ func (env *environment) copy() *environment {
 		etherbase: env.etherbase,
 	}
 	if env.gasPool != nil {
-		cpy.gasPool = env.gasPool
+		cpy.gasPool = new(core.GasPool)
+		*cpy.gasPool = *env.gasPool
 	}
 	// The content of txs and uncles are immutable, unnecessary
 	// to do the expensive deep copy for them.
