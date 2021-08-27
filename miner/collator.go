@@ -211,9 +211,6 @@ func (bs *blockState) Commit() bool {
 	if *bs.done {
 		return false
 	}
-	if bs.resultEnv != nil {
-		bs.resultEnv.discard()
-	}
 	if bs.shouldSeal {
 		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}

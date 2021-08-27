@@ -1053,16 +1053,16 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // generateWork generates a sealing block based on the given parameters.
 func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	start := time.Now()
-	work, err := w.prepareWork(params)
+	emptyEnv, err := w.prepareWork(params)
 	if err != nil {
 		return nil, err
 	}
-	defer work.discard()
+	defer emptyEnv.discard()
 
 	bs := blockState{
 		worker:           w,
-		env:              work.copy(),
-		resultEnv:        nil,
+		env:              emptyEnv.copy(),
+		resultEnv:        emptyEnv,
 		start:            start,
 		snapshots:        []int{},
 		commitMu:         new(sync.Mutex),
@@ -1077,10 +1077,6 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	bs.commitMu.Lock()
 	*bs.done = true
 	bs.commitMu.Unlock()
-
-	if bs.resultEnv == nil {
-		bs.resultEnv = work
-	}
 
 	return w.engine.FinalizeAndAssemble(w.chain, bs.resultEnv.header, bs.resultEnv.state, bs.resultEnv.txs, bs.resultEnv.unclelist(), bs.resultEnv.receipts)
 }
