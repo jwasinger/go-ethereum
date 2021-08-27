@@ -1070,7 +1070,6 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		done:             new(bool),
 		interrupt:        nil,
 		shouldSeal:       false,
-		headerView:       ReadOnlyHeader{work.header},
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
@@ -1109,7 +1108,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
-		headerView:       ReadOnlyHeader{work.header},
 		shouldSeal:       true,
 		resultEnv:        nil,
 	}

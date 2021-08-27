@@ -48,7 +48,7 @@ type BlockState interface {
 	Commit() bool
 	Copy() BlockState
 	Signer() types.Signer
-	Header() ReadOnlyHeader
+	Header() *types.Header
 }
 
 type Collator interface {
@@ -75,7 +75,6 @@ const (
 type blockState struct {
 	worker     *worker
 	env        *environment
-	headerView ReadOnlyHeader
 	start      time.Time
 	snapshots  []int
 	logs       []*types.Log
@@ -98,8 +97,8 @@ type blockState struct {
 	resultEnv *environment
 }
 
-func (bs *blockState) Header() ReadOnlyHeader {
-	return bs.headerView
+func (bs *blockState) Header() *types.Header {
+	return types.CopyHeader(bs.env.header)
 }
 
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
@@ -218,7 +217,7 @@ func (bs *blockState) Commit() bool {
 	if bs.shouldSeal {
 		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}
-	bs.resultEnv = bs.env.copy()
+	bs.resultEnv = bs.env
 	return true
 }
 
@@ -231,7 +230,6 @@ func (bs *blockState) Copy() BlockState {
 	return &blockState{
 		worker:           bs.worker,
 		env:              bs.env.copy(),
-		headerView:       ReadOnlyHeader{bs.env.header},
 		start:            bs.start,
 		snapshots:        snapshotCopies,
 		logs:             copyLogs(bs.logs),

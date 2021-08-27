@@ -23,32 +23,27 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 type DefaultCollator struct{}
 
 func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) bool {
-	headerView := bs.Header()
+	header := bs.Header()
+	availableGas := header.GasLimit
 	for {
-		// If we don't have enough gas for any further transactions then we're done
-		available := headerView.GasLimit() - headerView.GasUsed()
-		if available < params.TxGas {
-			break
-		}
 		// Retrieve the next transaction and abort if all done
 		tx := txs.Peek()
 		if tx == nil {
 			break
 		}
 		// Enough space for this tx?
-		if available < tx.Gas() {
+		if availableGas < tx.Gas() {
 			txs.Pop()
 			continue
 		}
 		from, _ := types.Sender(bs.Signer(), tx)
 
-		err, _ := bs.AddTransaction(tx)
+		err, receipt := bs.AddTransaction(tx)
 		switch {
 		case errors.Is(err, ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
@@ -66,6 +61,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			txs.Pop()
 
 		case errors.Is(err, nil):
+			availableGas = header.GasLimit - receipt.CumulativeGasUsed
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			txs.Shift()
 
@@ -90,7 +86,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
 func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, state ReadOnlyState) {
-	headerView := bs.Header()
+	header := bs.Header()
 	txs, err := pool.Pending(true)
 	if err != nil {
 		log.Error("could not get pending transactions from the pool", "err", err)
@@ -108,12 +104,12 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool, state ReadOnlyS
 		}
 	}
 	if len(localTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, headerView.BaseFee())) {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)) {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, headerView.BaseFee())) {
+		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)) {
 			return
 		}
 	}
