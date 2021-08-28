@@ -20,7 +20,7 @@ package miner
 import (
 	"errors"
 	//	"math"
-	"math/big"
+	//"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	//    "github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -36,10 +37,6 @@ import (
 type Pool interface {
 	Pending(bool) (map[common.Address]types.Transactions, error)
 	Locals() []common.Address
-}
-
-type ReadOnlyState interface {
-	GetBalance(addr common.Address) *big.Int
 }
 
 type BlockState interface {
@@ -52,7 +49,7 @@ type BlockState interface {
 }
 
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool, state ReadOnlyState)
+	CollateBlock(bs BlockState, pool Pool, state vm.StateReader)
 	Start()
 	Close()
 }

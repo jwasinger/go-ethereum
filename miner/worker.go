@@ -1105,7 +1105,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		done:             new(bool),
 		interrupt:        interrupt,
 		shouldSeal:       true,
-		resultEnv:        nil,
+		resultEnv:        work,
 	}
 
 	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
@@ -1138,10 +1138,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 			*cpy[i] = *l
 		}
 		w.pendingLogsFeed.Send(cpy)
-	}
-
-	if bs.resultEnv == nil {
-		bs.resultEnv = work
 	}
 	w.current = bs.resultEnv
 }
