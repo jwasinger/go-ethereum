@@ -21,9 +21,11 @@ import (
 	"errors"
 	//	"math"
 	//"math/big"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+    "plugin"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -31,7 +33,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	//    "github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
+    "github.com/naoina/toml"
 )
+
+type CollatorAPI interface {
+    Version() string
+    Service() interface{}
+}
 
 // Pool is an interface to the transaction pool
 type Pool interface {
@@ -63,6 +71,42 @@ var (
 	ErrStrange            = errors.New("strange error")
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
 )
+
+type CollatorPluginConstructorFunc func (config map[string]interface{}) (*Collator, *CollatorAPI, error)
+
+func LoadCollator(filepath string, configPath string) (*Collator, *CollatorAPI, error) {
+    p, err := plugin.Open(filepath)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    v, err := p.Lookup("PluginConstructor")
+    if err != nil {
+        return nil, nil, errors.New("Symbol 'APIExport' not found")
+    }
+    pluginConstructor, ok := v.(CollatorPluginConstructorFunc)
+    if !ok {
+        return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
+    }
+
+    f, err := os.Open(configPath)
+    if err != nil {
+		return nil, nil, err
+    }
+    defer f.Close()
+
+    config := make(map[string]interface{})
+    if err := toml.NewDecoder(f).Decode(&config); err != nil {
+        return nil, nil, err
+    }
+
+	collator, collatorAPI, err := pluginConstructor(config)
+	if err != nil {
+        return nil, nil, err
+	}
+
+    return collator, collatorAPI, nil
+}
 
 const (
 	interruptNotHandled int32 = 0
