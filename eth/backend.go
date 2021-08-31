@@ -310,7 +310,7 @@ func (s *Ethereum) APIs() []rpc.API {
 	// Append any APIs exposed explicitly by the consensus engine
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
 
-	if s.config.Miner.UseCustomCollator {
+	if s.config.Miner.UseCustomCollator && s.miner.API != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "minercollator",
 			Version:   s.miner.API.Version(),
