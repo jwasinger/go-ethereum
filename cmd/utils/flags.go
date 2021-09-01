@@ -477,6 +477,19 @@ var (
 		Name:  "miner.noverify",
 		Usage: "Disable remote sealing verification",
 	}
+	MinerCollatorPluginEnableFlag = cli.BoolFlag{
+		Name:  "miner.collatorplugin",
+		Usage: "Enable custom miner collator",
+	}
+	MinerCollatorPluginPath = cli.StringFlag{
+		Name:  "miner.collatorpluginfile",
+		Usage: "Path to collator plugin compiled as shared library",
+	}
+	MinerCollatorPluginConfigPath = cli.StringFlag{
+		Name:  "miner.collatorpluginconfigfile",
+		Usage: "Path to custom collator config toml",
+	}
+
 	// Account settings
 	UnlockedAccountFlag = cli.StringFlag{
 		Name:  "unlock",
@@ -1400,6 +1413,15 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	}
 	if ctx.GlobalIsSet(MinerNoVerfiyFlag.Name) {
 		cfg.Noverify = ctx.GlobalBool(MinerNoVerfiyFlag.Name)
+	}
+	if ctx.GlobalIsSet(MinerCollatorPluginEnableFlag.Name) {
+		cfg.UseCustomCollator = ctx.GlobalBool(MinerCollatorPluginEnableFlag.Name)
+	}
+	if ctx.GlobalIsSet(MinerCollatorPluginPath.Name) {
+		cfg.CollatorPath = ctx.GlobalString(MinerCollatorPluginPath.Name)
+	}
+	if ctx.GlobalIsSet(MinerCollatorPluginConfigPath.Name) {
+		cfg.CollatorConfigPath = ctx.GlobalString(MinerCollatorPluginConfigPath.Name)
 	}
 }
 
