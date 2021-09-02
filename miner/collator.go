@@ -22,10 +22,10 @@ import (
 	//	"math"
 	//"math/big"
 	"os"
+	"plugin"
 	"sync"
 	"sync/atomic"
 	"time"
-    "plugin"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -33,12 +33,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	//    "github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
-    "github.com/naoina/toml"
+	"github.com/naoina/toml"
 )
 
 type CollatorAPI interface {
-    Version() string
-    Service() interface{}
+	Version() string
+	Service() interface{}
 }
 
 // Pool is an interface to the transaction pool
@@ -49,7 +49,6 @@ type Pool interface {
 
 type BlockState interface {
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
-	RevertTransaction() bool
 	Commit() bool
 	Copy() BlockState
 	Signer() types.Signer
@@ -72,40 +71,40 @@ var (
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
 )
 
-type CollatorPluginConstructorFunc func (config map[string]interface{}) (*Collator, *CollatorAPI, error)
+type CollatorPluginConstructorFunc func(config *map[string]interface{}) (*Collator, *CollatorAPI, error)
 
 func LoadCollator(filepath string, configPath string) (*Collator, *CollatorAPI, error) {
-    p, err := plugin.Open(filepath)
-    if err != nil {
-        return nil, nil, err
-    }
-
-    v, err := p.Lookup("PluginConstructor")
-    if err != nil {
-        return nil, nil, errors.New("Symbol 'APIExport' not found")
-    }
-    pluginConstructor, ok := v.(CollatorPluginConstructorFunc)
-    if !ok {
-        return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
-    }
-
-    f, err := os.Open(configPath)
-    if err != nil {
-		return nil, nil, err
-    }
-    defer f.Close()
-
-    config := make(map[string]interface{})
-    if err := toml.NewDecoder(f).Decode(&config); err != nil {
-        return nil, nil, err
-    }
-
-	collator, collatorAPI, err := pluginConstructor(config)
+	p, err := plugin.Open(filepath)
 	if err != nil {
-        return nil, nil, err
+		return nil, nil, err
 	}
 
-    return collator, collatorAPI, nil
+	v, err := p.Lookup("PluginConstructor")
+	if err != nil {
+		return nil, nil, errors.New("Symbol 'APIExport' not found")
+	}
+	pluginConstructor, ok := v.(CollatorPluginConstructorFunc)
+	if !ok {
+		return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
+	}
+
+	f, err := os.Open(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+
+	config := make(map[string]interface{})
+	if err := toml.NewDecoder(f).Decode(&config); err != nil {
+		return nil, nil, err
+	}
+
+	collator, collatorAPI, err := pluginConstructor(&config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return collator, collatorAPI, nil
 }
 
 const (
@@ -117,7 +116,6 @@ type blockState struct {
 	worker     *worker
 	env        *environment
 	start      time.Time
-	snapshots  []int
 	logs       []*types.Log
 	shouldSeal bool
 
@@ -143,8 +141,6 @@ func (bs *blockState) Header() *types.Header {
 }
 
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
-	snapshot := bs.env.state.Snapshot()
-
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
@@ -202,7 +198,6 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 			return ErrStrange, nil
 		}
 	} else {
-		bs.snapshots = append(bs.snapshots, snapshot)
 		bs.logs = append(bs.logs, txLogs...)
 		bs.env.tcount++
 	}
@@ -212,19 +207,6 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 
 func (bs *blockState) Signer() types.Signer {
 	return bs.env.signer
-}
-
-func (bs *blockState) RevertTransaction() bool {
-	if len(bs.snapshots) == 0 {
-		return false
-	}
-	bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-1])
-	bs.snapshots = bs.snapshots[:len(bs.snapshots)-1]
-	bs.logs = bs.logs[:len(bs.logs)-1]
-	bs.env.tcount--
-	bs.env.txs = bs.env.txs[:len(bs.env.txs)-1]
-	bs.env.receipts = bs.env.receipts[:len(bs.env.receipts)-1]
-	return true
 }
 
 func (bs *blockState) Commit() bool {
@@ -260,16 +242,10 @@ func (bs *blockState) Commit() bool {
 }
 
 func (bs *blockState) Copy() BlockState {
-	snapshotCopies := []int{}
-	for i := 0; i < len(bs.snapshots); i++ {
-		snapshotCopies = append(snapshotCopies, bs.snapshots[i])
-	}
-
 	return &blockState{
 		worker:           bs.worker,
 		env:              bs.env.copy(),
 		start:            bs.start,
-		snapshots:        snapshotCopies,
 		logs:             copyLogs(bs.logs),
 		interrupt:        bs.interrupt,
 		commitMu:         bs.commitMu,

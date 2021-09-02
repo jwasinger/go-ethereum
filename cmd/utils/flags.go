@@ -478,7 +478,7 @@ var (
 		Usage: "Disable remote sealing verification",
 	}
 	MinerCollatorPluginEnableFlag = cli.BoolFlag{
-		Name:  "miner.collatorplugin",
+		Name:  "miner.enablecollatorplugin",
 		Usage: "Enable custom miner collator",
 	}
 	MinerCollatorPluginPath = cli.StringFlag{
