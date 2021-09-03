@@ -51,12 +51,13 @@ type BlockState interface {
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
 	Commit() bool
 	Copy() BlockState
+	State() vm.StateReader
 	Signer() types.Signer
 	Header() *types.Header
 }
 
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool, state vm.StateReader)
+	CollateBlock(bs BlockState, pool Pool)
 	Start()
 	Close()
 }
@@ -203,6 +204,10 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 	}
 
 	return nil, bs.env.receipts[len(bs.env.receipts)-1]
+}
+
+func (bs *blockState) State() vm.StateReader {
+	return bs.env.state
 }
 
 func (bs *blockState) Signer() types.Signer {

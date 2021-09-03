@@ -1071,7 +1071,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		shouldSeal:       false,
 	}
 
-	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
+	w.collator.CollateBlock(&bs, w.eth.TxPool())
 
 	bs.commitMu.Lock()
 	*bs.done = true
@@ -1106,7 +1106,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		resultEnv:        work,
 	}
 
-	w.collator.CollateBlock(&bs, w.eth.TxPool(), bs.env.state)
+	w.collator.CollateBlock(&bs, w.eth.TxPool())
 
 	bs.commitMu.Lock()
 	*bs.done = true
