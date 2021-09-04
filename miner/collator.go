@@ -49,16 +49,18 @@ type Pool interface {
 
 type BlockState interface {
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
+	RevertTransactions(count uint) error
 	Commit() bool
 	Copy() BlockState
 	State() vm.StateReader
 	Signer() types.Signer
 	Header() *types.Header
+	Etherbase() common.Address
 }
 
 type Collator interface {
-	CollateBlock(bs BlockState, pool Pool)
-	Start()
+	CollateBlock(bs BlockState)
+	Start(pool Pool)
 	Close()
 }
 
@@ -119,6 +121,8 @@ type blockState struct {
 	start      time.Time
 	logs       []*types.Log
 	shouldSeal bool
+	snapshots  []int
+	committed  bool
 
 	// shared values between multiple copies of a blockState
 
@@ -135,6 +139,10 @@ type blockState struct {
 	// calling Commit() copies the value of env to this value
 	// and forwards it to the sealer via worker.commit() if shouldSeal is true
 	resultEnv *environment
+}
+
+func (bs *blockState) Etherbase() common.Address {
+	return bs.env.etherbase
 }
 
 func (bs *blockState) Header() *types.Header {
@@ -164,9 +172,6 @@ func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Recei
 	if bs.env.gasPool.Gas() < params.TxGas {
 		return ErrGasLimitReached, nil
 	}
-
-	// from, _ := types.Sender(bs.env.signer, tx)
-	// TODO use this and add log messages back?
 
 	// Check whether the tx is replay protected. If we're not in the EIP155 hf
 	// phase, start ignoring the sender until we do.
@@ -243,7 +248,24 @@ func (bs *blockState) Commit() bool {
 		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}
 	bs.resultEnv = bs.env
+	bs.committed = true
 	return true
+}
+
+var (
+	ErrTooManyTxs = errors.New("tried to revert more txs than exist in BlockState")
+	ErrZeroTxs    = errors.New("tried to revert 0 transactions")
+)
+
+func (bs *blockState) RevertTransactions(count uint) error {
+	if int(count) > len(bs.snapshots) {
+		return ErrTooManyTxs
+	} else if count == 0 {
+		return ErrZeroTxs
+	}
+	bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-int(count)])
+	bs.snapshots = bs.snapshots[:len(bs.snapshots)-int(count)]
+	return nil
 }
 
 func (bs *blockState) Copy() BlockState {
@@ -256,5 +278,6 @@ func (bs *blockState) Copy() BlockState {
 		commitMu:         bs.commitMu,
 		interruptHandled: bs.interruptHandled,
 		done:             bs.done,
+		committed:        bs.committed,
 	}
 }

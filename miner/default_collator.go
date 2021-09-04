@@ -25,7 +25,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-type DefaultCollator struct{}
+type DefaultCollator struct {
+	pool Pool
+}
 
 func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) bool {
 	header := bs.Header()
@@ -85,9 +87,9 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
+func (w *DefaultCollator) CollateBlock(bs BlockState) {
 	header := bs.Header()
-	txs, err := pool.Pending(true)
+	txs, err := w.pool.Pending(true)
 	if err != nil {
 		log.Error("could not get pending transactions from the pool", "err", err)
 		return
@@ -97,7 +99,7 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
 	}
 	// Split the pending transactions into locals and remotes
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), txs
-	for _, account := range pool.Locals() {
+	for _, account := range w.pool.Locals() {
 		if accountTxs := remoteTxs[account]; len(accountTxs) > 0 {
 			delete(remoteTxs, account)
 			localTxs[account] = accountTxs
@@ -119,8 +121,8 @@ func (w *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
 	return
 }
 
-func (w *DefaultCollator) Start() {
-
+func (w *DefaultCollator) Start(pool Pool) {
+	w.pool = pool
 }
 
 func (w *DefaultCollator) Close() {

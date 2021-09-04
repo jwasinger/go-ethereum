@@ -299,7 +299,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 	// Subscribe events for blockchain
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 	worker.chainSideSub = eth.BlockChain().SubscribeChainSideEvent(worker.chainSideCh)
-	worker.collator.Start()
+	worker.collator.Start(worker.eth.TxPool())
 
 	// Sanitize recommit interval if the user-specified one is too short.
 	recommit := worker.config.Recommit
@@ -1065,13 +1065,14 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		resultEnv:        emptyEnv,
 		start:            start,
 		commitMu:         new(sync.Mutex),
+		committed:        false,
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
 		shouldSeal:       false,
 	}
 
-	w.collator.CollateBlock(&bs, w.eth.TxPool())
+	w.collator.CollateBlock(&bs)
 
 	bs.commitMu.Lock()
 	*bs.done = true
@@ -1099,6 +1100,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		env:              work.copy(),
 		start:            start,
 		commitMu:         new(sync.Mutex),
+		committed:        false,
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
@@ -1106,7 +1108,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		resultEnv:        work,
 	}
 
-	w.collator.CollateBlock(&bs, w.eth.TxPool())
+	w.collator.CollateBlock(&bs)
 
 	bs.commitMu.Lock()
 	*bs.done = true
@@ -1137,7 +1139,9 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		}
 		w.pendingLogsFeed.Send(cpy)
 	}
-	w.current = bs.resultEnv
+	if bs.committed {
+		w.current = bs.resultEnv
+	}
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
