@@ -74,9 +74,9 @@ var (
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
 )
 
-type CollatorPluginConstructorFunc func(config *map[string]interface{}) (*Collator, *CollatorAPI, error)
+type CollatorPluginConstructorFunc func(config *map[string]interface{}) (Collator, CollatorAPI, error)
 
-func LoadCollator(filepath string, configPath string) (*Collator, *CollatorAPI, error) {
+func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, error) {
 	p, err := plugin.Open(filepath)
 	if err != nil {
 		return nil, nil, err

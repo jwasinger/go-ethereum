@@ -112,8 +112,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		config.Miner.GasPrice = new(big.Int).Set(ethconfig.Defaults.Miner.GasPrice)
 	}
 
-	var minerCollator *miner.Collator
-	var minerCollatorAPI *miner.CollatorAPI
+	var minerCollator miner.Collator
+	var minerCollatorAPI miner.CollatorAPI
 
 	if config.Miner.UseCustomCollator {
 		log.Info("using custom mining collator")
@@ -238,7 +238,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock, *minerCollator, *minerCollatorAPI)
+	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock, minerCollator, minerCollatorAPI)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
