@@ -74,8 +74,6 @@ var (
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
 )
 
-type CollatorPluginConstructorFunc func(config *map[string]interface{}) (Collator, CollatorAPI, error)
-
 func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, error) {
 	p, err := plugin.Open(filepath)
 	if err != nil {
@@ -86,7 +84,8 @@ func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, er
 	if err != nil {
 		return nil, nil, errors.New("Symbol 'APIExport' not found")
 	}
-	pluginConstructor, ok := v.(CollatorPluginConstructorFunc)
+
+	pluginConstructor, ok := v.(func(config *map[string]interface{}) (Collator, CollatorAPI, error))
 	if !ok {
 		return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
 	}
