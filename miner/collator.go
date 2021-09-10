@@ -278,5 +278,6 @@ func (bs *blockState) Copy() BlockState {
 		interruptHandled: bs.interruptHandled,
 		done:             bs.done,
 		committed:        bs.committed,
+		shouldSeal:       bs.shouldSeal,
 	}
 }
