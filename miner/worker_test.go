@@ -196,7 +196,7 @@ func (b *testWorkerBackend) newRandomTx(creation bool) *types.Transaction {
 func newTestWorker(t *testing.T, chainConfig *params.ChainConfig, engine consensus.Engine, db ethdb.Database, blocks int) (*worker, *testWorkerBackend) {
 	backend := newTestWorkerBackend(t, chainConfig, engine, db, blocks)
 	backend.txPool.AddLocals(pendingTxs)
-	w := newWorker(testConfig, chainConfig, &DefaultCollator{}, engine, backend, new(event.TypeMux), nil, false)
+	w := newWorker(testConfig, chainConfig, &DefaultCollator{pool: backend.txPool}, engine, backend, new(event.TypeMux), nil, false)
 	w.setEtherbase(testBankAddress)
 	return w, backend
 }
@@ -476,14 +476,19 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 			wantMinInterval, wantRecommitInterval = time.Second, time.Second
 		}
 
+		collator, ok := w.collator.(*DefaultCollator)
+		if !ok {
+			panic("this should never be reached: test always run configured with default collator")
+		}
+
 		// Check interval
-		if minInterval != wantMinInterval {
-			t.Errorf("resubmit min interval mismatch: have %v, want %v ", minInterval, wantMinInterval)
+		if *collator.minRecommit != wantMinInterval {
+			t.Errorf("resubmit min interval mismatch: have %v, want %v ", *collator.minRecommit, wantMinInterval)
 		}
-		if recommitInterval != wantRecommitInterval {
-			t.Errorf("resubmit interval mismatch: have %v, want %v", recommitInterval, wantRecommitInterval)
+		if w.recommitInterval != wantRecommitInterval {
+			t.Errorf("resubmit interval mismatch: have %v, want %v", w.recommitInterval, wantRecommitInterval)
 		}
-		result = append(result, float64(recommitInterval.Nanoseconds()))
+		result = append(result, float64(w.recommitInterval.Nanoseconds()))
 		index += 1
 		progress <- struct{}{}
 	}

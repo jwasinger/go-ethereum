@@ -95,6 +95,10 @@ type environment struct {
 	etherbase common.Address
 }
 
+type recommitIntervalState struct {
+
+}
+
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
 	cpy := &environment{
@@ -228,7 +232,7 @@ type worker struct {
 	startCh            chan struct{}
 	exitCh             chan struct{}
 
-	recommitIntervalCh chan time.Duration
+	recommitIntervalCh chan setInterval
 	recommitInterval time.Duration
 	// mutex to avoid race between worker.RecommitInterval() and worker.SetRecommitInterval()
 	recommitIntervalMu sync.Mutex
@@ -272,7 +276,7 @@ type worker struct {
 }
 
 type setInterval struct {
-	duration time.Duration,
+	duration time.Duration
 	isExternal bool
 }
 
@@ -306,7 +310,6 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 	// Subscribe events for blockchain
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 	worker.chainSideSub = eth.BlockChain().SubscribeChainSideEvent(worker.chainSideCh)
-	worker.collator.Start(worker, worker.eth.TxPool())
 
 	// Sanitize recommit interval if the user-specified one is too short.
 	recommit := worker.config.Recommit
@@ -315,6 +318,8 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		log.Warn("Sanitizing miner recommit interval", "provided", recommit, "updated", minRecommitInterval)
 		recommit = minRecommitInterval
 	}
+
+	worker.collator.Start(worker, worker.eth.TxPool())
 
 	go worker.mainLoop()
 	go worker.newWorkLoop(recommit)
@@ -350,19 +355,24 @@ func (w *worker) setExtra(extra []byte) {
 
 // SetRecommitInterval is a method used by collator implementations to set the miner recommit interval
 func (w *worker) SetRecommitInterval(interval time.Duration) {
+	fmt.Println("internal-before")
 	select {
 	case w.recommitIntervalCh <- setInterval{duration: interval, isExternal: false}:
 	case <-w.exitCh:
 	}
+
+	fmt.Println("internal-after")
 }
 
 // SetRecommitIntervalExternal is the API used by the miner
 // to set the recommit interval when the user sets it explicityl
 func (w *worker) SetRecommitIntervalExternal(interval time.Duration) {
+	fmt.Println("external-before")
 	select {
 	case w.recommitIntervalCh <- setInterval{duration: interval, isExternal: true}:
 	case <-w.exitCh:
 	}
+	fmt.Println("external-after")
 }
 
 func (w *worker) RecommitInterval() time.Duration {
@@ -435,28 +445,6 @@ func (w *worker) close() {
 	close(w.exitCh)
 }
 
-// recalcRecommit recalculates the resubmitting interval upon feedback.
-func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) time.Duration {
-	var (
-		prevF = float64(prev.Nanoseconds())
-		next  float64
-	)
-	if inc {
-		next = prevF*(1-intervalAdjustRatio) + intervalAdjustRatio*(target+intervalAdjustBias)
-		max := float64(maxRecommitInterval.Nanoseconds())
-		if next > max {
-			next = max
-		}
-	} else {
-		next = prevF*(1-intervalAdjustRatio) + intervalAdjustRatio*(target-intervalAdjustBias)
-		min := float64(minRecommit.Nanoseconds())
-		if next < min {
-			next = min
-		}
-	}
-	return time.Duration(int64(next))
-}
-
 // newWorkLoop is a standalone goroutine to submit new sealing work upon received events.
 func (w *worker) newWorkLoop(recommit time.Duration) {
 	var (
@@ -465,7 +453,7 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 		timestamp   int64      // timestamp for each round of sealing.
 	)
 
-	minRecommit = recommit
+	minRecommit := recommit
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -519,8 +507,8 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 				}
 				commit(true, commitInterruptResubmit)
 			}
-		case setIntervalInfo := <-w.resubmitIntervalExternalCh:
-			interval := setIntervalInfo.interval
+		case setIntervalInfo := <-w.recommitIntervalCh:
+			interval := setIntervalInfo.duration
 			isExternal := setIntervalInfo.isExternal
 			// Adjust resubmit interval explicitly by user.
 			if interval < minRecommitInterval {
@@ -529,13 +517,13 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			}
 
 			if isExternal {
-				interval = w.miner.collator.RecommitIntervalSetHook(interval)
+				interval = w.collator.RecommitIntervalSetHook(interval)
 			}
 			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
 
-			w.resubmitIntervalMu.Lock()
-			w.resubmitInterval = interval
-			w.resubmitIntervalMu.Unlock()
+			w.recommitIntervalMu.Lock()
+			w.recommitInterval = interval
+			w.recommitIntervalMu.Unlock()
 
 			if w.resubmitHook != nil {
 				w.resubmitHook()
@@ -563,6 +551,7 @@ func (w *worker) mainLoop() {
 			w.commitWork(req.interrupt, req.noempty, req.timestamp)
 
 		case req := <-w.getWorkCh:
+			fmt.Println("generateWork")
 			block, err := w.generateWork(req.params)
 			if err != nil {
 				req.err = err
@@ -570,6 +559,7 @@ func (w *worker) mainLoop() {
 			} else {
 				req.result <- block
 			}
+			fmt.Println("result")
 
 		case ev := <-w.chainSideCh:
 			// Short circuit for duplicate side blocks
@@ -1066,7 +1056,6 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		start:            start,
 		commitMu:         new(sync.Mutex),
 		committed:        false,
-		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
 		shouldSeal:       false,
@@ -1101,7 +1090,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		start:            start,
 		commitMu:         new(sync.Mutex),
 		committed:        false,
-		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
 		shouldSeal:       true,
@@ -1113,12 +1101,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	bs.commitMu.Lock()
 	*bs.done = true
 	bs.commitMu.Unlock()
-
-	if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
-		if atomic.LoadInt32(bs.interrupt) != commitInterruptNewHead {
-			w.resubmitAdjustCh <- &intervalAdjust{inc: false}
-		}
-	}
 
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
 		return

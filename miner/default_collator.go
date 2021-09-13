@@ -19,8 +19,8 @@ package miner
 
 import (
 	"errors"
-	"sync"
 	"time"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,7 +30,7 @@ import (
 type DefaultCollator struct {
 	pool Pool
 	minerState MinerState
-	minRecommit time.Duration
+	minRecommit *time.Duration
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -53,6 +53,11 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 		}
 	}
 	return time.Duration(int64(next))
+}
+
+func (w *DefaultCollator) RecommitIntervalSetHook(suggested time.Duration) time.Duration {
+	w.minRecommit = &suggested
+	return suggested
 }
 
 func (w *DefaultCollator) submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) (remainingGas uint64, wasInterrupted bool) {
@@ -135,19 +140,23 @@ func (w *DefaultCollator) CollateBlock(bs BlockState) {
 			localTxs[account] = accountTxs
 		}
 	}
+
+	var remainingGas uint64
+	var interrupted bool
+
 	if len(localTxs) > 0 {
-		if _, interrupted := w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)); interrupted {
+		if remainingGas, interrupted = w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)); interrupted {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if _, interrupted := w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)); interrupted {
+		if remainingGas, interrupted = w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)); interrupted {
 			return
 		}
 	}
 
 	bs.Commit()
-	w.AdjustRecommitInterval(header.GasLimit, false)
+	w.AdjustRecommitInterval(header.GasLimit, remainingGas, false)
 
 	return
 }
@@ -159,27 +168,28 @@ func (w *DefaultCollator) AdjustRecommitInterval(gasLimit uint64, remainingGas u
 			}
 
 			recommitInterval := w.minerState.RecommitInterval()
+			fmt.Println("as")
+			before := recommitInterval
 			if inc {
-				before := recommitInterval
 				target := float64(before.Nanoseconds()) / ratio
-				recommitInterval = recalcRecommit(w.minRecommit, recommitInterval, target, true)
-				log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
+				recommitInterval = recalcRecommit(*w.minRecommit, recommitInterval, target, true)
+				log.Trace("Increase miner recommit interval", "from", before, "to", recommitInterval)
 			} else {
-				before := w.recommitInterval
-				recommitInterval = recalcRecommit(w.minRecommit, recommitInterval, float64(minRecommit.Nanoseconds()), false)
+				recommitInterval = recalcRecommit(*w.minRecommit, recommitInterval, float64((*w.minRecommit).Nanoseconds()), false)
 				log.Trace("Decrease miner recommit interval", "from", before, "to", recommitInterval)
-				w.minRecommit = recommitInterval
+				*w.minRecommit = recommitInterval
 			}
 			w.minerState.SetRecommitInterval(recommitInterval)
 }
 
 func (w *DefaultCollator) ResubmitIntervalSetHook(interval time.Duration) time.Duration {
-	w.minRecommit = interval
+	w.minRecommit = &interval
 	return interval
 }
 
-func (w *DefaultCollator) Start(pool Pool) {
+func (w *DefaultCollator) Start(minerState MinerState, pool Pool) {
 	w.pool = pool
+	w.minerState = minerState
 }
 
 func (w *DefaultCollator) Close() {
