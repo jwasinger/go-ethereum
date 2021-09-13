@@ -87,7 +87,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 
 // CollateBlock fills a block based on the highest paying transactions from the
 // transaction pool, giving precedence over local transactions.
-func (w *DefaultCollator) CollateBlock(bs BlockState) {
+func (w *DefaultCollator) CollateBlock(bs BlockState, ctx InterruptContext) {
 	header := bs.Header()
 	txs, err := w.pool.Pending(true)
 	if err != nil {

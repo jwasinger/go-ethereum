@@ -58,8 +58,18 @@ type BlockState interface {
 	Etherbase() common.Address
 }
 
+const (
+	InterruptNone int = iota
+	InterruptResubmit
+	InterruptNewHead
+)
+
+type InterruptContext interface {
+	InterruptState() int
+}
+
 type Collator interface {
-	CollateBlock(bs BlockState)
+	CollateBlock(bs BlockState, ctx InterruptContext)
 	Start(pool Pool)
 	Close()
 }
@@ -138,6 +148,25 @@ type blockState struct {
 	// calling Commit() copies the value of env to this value
 	// and forwards it to the sealer via worker.commit() if shouldSeal is true
 	resultEnv *environment
+}
+
+type interruptContext struct {
+	interrupt *int32
+}
+
+func (ctx *interruptContext) InterruptState() int {
+	if ctx.interrupt == nil {
+		return InterruptNone
+	}
+
+	switch atomic.LoadInt32(ctx.interrupt) {
+	case commitInterruptResubmit:
+		return InterruptResubmit
+	case commitInterruptNewHead:
+		return InterruptNewHead
+	default:
+		return InterruptNone
+	}
 }
 
 func (bs *blockState) Etherbase() common.Address {

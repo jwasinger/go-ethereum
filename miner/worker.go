@@ -1072,7 +1072,11 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		shouldSeal:       false,
 	}
 
-	w.collator.CollateBlock(&bs)
+	ctx := interruptContext{
+		interrupt: nil,
+	}
+
+	w.collator.CollateBlock(&bs, &ctx)
 
 	bs.commitMu.Lock()
 	*bs.done = true
@@ -1094,7 +1098,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
-
 	bs := blockState{
 		worker:           w,
 		env:              work.copy(),
@@ -1107,8 +1110,10 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		shouldSeal:       true,
 		resultEnv:        work,
 	}
-
-	w.collator.CollateBlock(&bs)
+	ctx := interruptContext{
+		interrupt,
+	}
+	w.collator.CollateBlock(&bs, &ctx)
 
 	bs.commitMu.Lock()
 	*bs.done = true
