@@ -256,6 +256,13 @@ func createMiner(t *testing.T) (*Miner, *event.TypeMux) {
 	backend := NewMockBackend(bc, pool)
 	// Create event Mux
 	mux := new(event.TypeMux)
+	// Create collator
+	collator := &DefaultCollator{
+		pool: pool,
+		minerState: nil,
+		recommitMu: sync.Mutex{},
+		recommitInterval: nil,
+	}
 	// Create Miner
-	return New(backend, &config, chainConfig, mux, engine, nil, &DefaultCollator{}, nil), mux
+	return New(backend, &config, chainConfig, mux, engine, nil, collator, nil), mux
 }

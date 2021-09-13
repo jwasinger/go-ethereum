@@ -492,7 +492,7 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 	time.Sleep(time.Second) // Ensure two tasks have been summitted due to start opt
 	atomic.StoreUint32(&start, 1)
 
-	w.setRecommitInterval(3 * time.Second)
+	w.SetRecommitInterval(3 * time.Second)
 	select {
 	case <-progress:
 	case <-time.NewTimer(time.Second).C:
@@ -513,7 +513,7 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 		t.Error("interval reset timeout")
 	}
 
-	w.setRecommitInterval(500 * time.Millisecond)
+	w.SetRecommitInterval(500 * time.Millisecond)
 	select {
 	case <-progress:
 	case <-time.NewTimer(time.Second).C:

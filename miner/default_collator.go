@@ -19,6 +19,8 @@ package miner
 
 import (
 	"errors"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -27,9 +29,32 @@ import (
 
 type DefaultCollator struct {
 	pool Pool
+	minerState MinerState
 }
 
-func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) bool {
+// recalcRecommit recalculates the resubmitting interval upon feedback.
+func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) time.Duration {
+	var (
+		prevF = float64(prev.Nanoseconds())
+		next  float64
+	)
+	if inc {
+		next = prevF*(1-intervalAdjustRatio) + intervalAdjustRatio*(target+intervalAdjustBias)
+		max := float64(maxRecommitInterval.Nanoseconds())
+		if next > max {
+			next = max
+		}
+	} else {
+		next = prevF*(1-intervalAdjustRatio) + intervalAdjustRatio*(target-intervalAdjustBias)
+		min := float64(minRecommit.Nanoseconds())
+		if next < min {
+			next = min
+		}
+	}
+	return time.Duration(int64(next))
+}
+
+func (w *DefaultCollator) submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) (remainingGas uint64, wasInterrupted bool) {
 	header := bs.Header()
 	availableGas := header.GasLimit
 	for {
@@ -71,9 +96,13 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			// Pop the unsupported transaction without shifting in the next from the account
 			log.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
 			txs.Pop()
-		case errors.Is(err, ErrInterrupt):
-			log.Trace("interrupted")
-			return true
+		case errors.Is(err, ErrNewHead):
+			log.Trace("interrupted: new canon chain head detected")
+			return availableGas, true
+		case errors.Is(err, ErrRecommit):
+			log.Trace("interrupted: recommit interval elapsed")
+			w.AdjustRecommitInterval(header.GasLimit, availableGas, true)
+			return availableGas, true
 		default:
 			// Strange error, discard the transaction and get the next in line (note, the
 			// nonce-too-high clause will prevent us from executing in vain).
@@ -82,7 +111,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 		}
 	}
 
-	return false
+	return availableGas, false
 }
 
 // CollateBlock fills a block based on the highest paying transactions from the
@@ -106,19 +135,48 @@ func (w *DefaultCollator) CollateBlock(bs BlockState) {
 		}
 	}
 	if len(localTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)) {
+		if _, interrupted := w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)); interrupted {
 			return
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)) {
+		if _, interrupted := w.submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)); interrupted {
 			return
 		}
 	}
 
 	bs.Commit()
+	w.AdjustRecommitInterval(header.GasLimit, false)
 
 	return
+}
+
+func (w *DefaultCollator) AdjustRecommitInterval(gasLimit uint64, remainingGas uint64, inc bool) {
+			ratio := float64(gasLimit-remainingGas) / float64(gasLimit)
+			if ratio < 0.1 {
+				ratio = 0.1
+			}
+
+			w.recommitMu.Lock()
+			defer w.recommitMu.Unlock()
+
+			if inc {
+				before := w.recommitInterval
+				target := float64(before.Nanoseconds()) / ratio
+				w.recommitInterval = recalcRecommit(minRecommit, w.recommitInterval, target, true)
+				log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
+			} else {
+				before := w.recommitInterval
+				w.recommitInterval = recalcRecommit(minRecommit, w.recommitInterval, float64(minRecommit.Nanoseconds()), false)
+				log.Trace("Decrease miner recommit interval", "from", before, "to", recommit)
+			}
+			w.minerState.SetRecommitInterval(w.recommitInterval)
+}
+
+func (w *DefaultCollator) ResubmitIntervalSetHook(interval time.Duration) {
+	w.recommitMu.Lock()
+	defer w.recommitMu.Unlock()
+	w.recommitInterval = interval
 }
 
 func (w *DefaultCollator) Start(pool Pool) {

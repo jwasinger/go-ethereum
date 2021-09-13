@@ -58,13 +58,21 @@ type BlockState interface {
 	Etherbase() common.Address
 }
 
+type MinerState interface {
+	SetRecommitInterval(interval time.Duration)
+	RecommitInterval() time.Duration
+}
+
 type Collator interface {
 	CollateBlock(bs BlockState)
-	Start(pool Pool)
+	RecommitIntervalSetHook(suggested time.Duration) (chosen time.Duration)
+	Start(minerState MinerState, pool Pool)
 	Close()
 }
 
 var (
+	ErrRecommit = errors.New("interrupt: recommit interval elapsed")
+	ErrNewHead = errors.New("interrupt: new canon chain head received")
 	ErrInterrupt          = errors.New("interrupt triggered")
 	ErrGasLimitReached    = errors.New("gas limit reached")
 	ErrNonceTooLow        = errors.New("tx nonce too low")
@@ -128,9 +136,6 @@ type blockState struct {
 	interrupt *int32
 	// mutex to make sure only one blockState is calling commit at a given time
 	commitMu *sync.Mutex
-	// this makes sure multiple copies of a blockState can only trigger
-	// adjustment of the recommit interval once
-	interruptHandled *int32
 	// prevents calls to worker.commit (with a given blockState) after
 	// CollateBlock call on that blockState returns. examined in commit
 	// when commitMu is held.  modified right after CollateBlock returns
@@ -150,22 +155,11 @@ func (bs *blockState) Header() *types.Header {
 
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			// TODO figure out a better heuristic for the adjust ratio here
-			// the gasRemaining/gasLimit is not a good proxy for all collators
-			// where the
-			gasLimit := bs.env.header.GasLimit
-			ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
-			if ratio < 0.1 {
-				ratio = 0.1
-			}
-			bs.worker.resubmitAdjustCh <- &intervalAdjust{
-				ratio: ratio,
-				inc:   true,
-			}
+		if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+			return ErrRecommit, nil
+		} else {
+			return ErrInterrupt, nil
 		}
-		return ErrInterrupt, nil
 	}
 
 	if bs.env.gasPool.Gas() < params.TxGas {
@@ -220,22 +214,9 @@ func (bs *blockState) Signer() types.Signer {
 
 func (bs *blockState) Commit() bool {
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			gasLimit := bs.env.header.GasLimit
-			// TODO figure out a better heuristic for the adjust ratio here
-			// the gasRemaining/gasLimit is not a good proxy for all collators
-			// where the
-			ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
-			if ratio < 0.1 {
-				ratio = 0.1
-			}
-			bs.worker.resubmitAdjustCh <- &intervalAdjust{
-				ratio: ratio,
-				inc:   true,
-			}
+		if atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
+			return false
 		}
-		return false
 	}
 
 	bs.commitMu.Lock()
@@ -275,7 +256,6 @@ func (bs *blockState) Copy() BlockState {
 		logs:             copyLogs(bs.logs),
 		interrupt:        bs.interrupt,
 		commitMu:         bs.commitMu,
-		interruptHandled: bs.interruptHandled,
 		done:             bs.done,
 		committed:        bs.committed,
 		shouldSeal:       bs.shouldSeal,

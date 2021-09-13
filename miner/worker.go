@@ -227,8 +227,10 @@ type worker struct {
 	resultCh           chan *types.Block
 	startCh            chan struct{}
 	exitCh             chan struct{}
+
 	resubmitIntervalCh chan time.Duration
-	resubmitAdjustCh   chan *intervalAdjust
+	resubmitInterval time.Duration
+	resubmitIntervalMu sync.Mutex
 
 	current      *environment                 // An environment for current running cycle.
 	localUncles  map[common.Hash]*types.Block // A set of side blocks generated locally as the possible uncle blocks.
@@ -291,7 +293,6 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		exitCh:             make(chan struct{}),
 		startCh:            make(chan struct{}, 1),
 		resubmitIntervalCh: make(chan time.Duration),
-		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
 		collator:           collator,
 	}
 	// Subscribe NewTxsEvent for tx pool
@@ -299,10 +300,11 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 	// Subscribe events for blockchain
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 	worker.chainSideSub = eth.BlockChain().SubscribeChainSideEvent(worker.chainSideCh)
-	worker.collator.Start(worker.eth.TxPool())
+	worker.collator.Start(worker, worker.eth.TxPool())
 
 	// Sanitize recommit interval if the user-specified one is too short.
 	recommit := worker.config.Recommit
+	recommit = worker.collator.RecommitIntervalSetHook(recommit)
 	if recommit < minRecommitInterval {
 		log.Warn("Sanitizing miner recommit interval", "provided", recommit, "updated", minRecommitInterval)
 		recommit = minRecommitInterval
@@ -340,12 +342,18 @@ func (w *worker) setExtra(extra []byte) {
 	w.extra = extra
 }
 
-// setRecommitInterval updates the interval for miner sealing work recommitting.
-func (w *worker) setRecommitInterval(interval time.Duration) {
+// SetRecommitInterval updates the interval for miner sealing work recommitting.
+func (w *worker) SetRecommitInterval(interval time.Duration) {
 	select {
 	case w.resubmitIntervalCh <- interval:
 	case <-w.exitCh:
 	}
+}
+
+func (w *worker) RecommitInterval() time.Duration {
+	w.recommitIntervalMu.Lock()
+	defer w.recommitIntervalMu.Ulock()
+	return w.recommitInterval
 }
 
 // disablePreseal disables pre-sealing feature
@@ -438,9 +446,11 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 func (w *worker) newWorkLoop(recommit time.Duration) {
 	var (
 		interrupt   *int32
-		minRecommit = recommit // minimal resubmit interval specified by user.
+		//minRecommit = recommit // minimal resubmit interval specified by user.
 		timestamp   int64      // timestamp for each round of sealing.
 	)
+
+	minRecommit = recommit
 
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -494,37 +504,32 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 				}
 				commit(true, commitInterruptResubmit)
 			}
-
 		case interval := <-w.resubmitIntervalCh:
+			// Set resubmit interval internally by collator
+			minRecommit, recommit = interval, interval
+			if interval < minRecommitInterval {
+				log.Warn("Sanitizing miner recommit interval", "provided", interval, "updated", minRecommitInterval)
+				interval = minRecommitInterval
+			}
+
+			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
+			if w.resubmitHook != nil {
+				w.resubmitHook(minRecommit, recommit)
+			}
+		case interval := <-w.resubmitIntervalExternalCh:
 			// Adjust resubmit interval explicitly by user.
 			if interval < minRecommitInterval {
 				log.Warn("Sanitizing miner recommit interval", "provided", interval, "updated", minRecommitInterval)
 				interval = minRecommitInterval
 			}
+
+			interval = w.miner.collator.RecommitIntervalSetHook(interval)
 			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
 			minRecommit, recommit = interval, interval
 
 			if w.resubmitHook != nil {
 				w.resubmitHook(minRecommit, recommit)
 			}
-
-		case adjust := <-w.resubmitAdjustCh:
-			// Adjust resubmit interval by feedback.
-			if adjust.inc {
-				before := recommit
-				target := float64(recommit.Nanoseconds()) / adjust.ratio
-				recommit = recalcRecommit(minRecommit, recommit, target, true)
-				log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
-			} else {
-				before := recommit
-				recommit = recalcRecommit(minRecommit, recommit, float64(minRecommit.Nanoseconds()), false)
-				log.Trace("Decrease miner recommit interval", "from", before, "to", recommit)
-			}
-
-			if w.resubmitHook != nil {
-				w.resubmitHook(minRecommit, recommit)
-			}
-
 		case <-w.exitCh:
 			return
 		}
@@ -858,17 +863,6 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		// For the first two cases, the semi-finished work will be discarded.
 		// For the third case, the semi-finished work will be submitted to the consensus engine.
 		if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
-				ratio := float64(gasLimit-env.gasPool.Gas()) / float64(gasLimit)
-				if ratio < 0.1 {
-					ratio = 0.1
-				}
-				w.resubmitAdjustCh <- &intervalAdjust{
-					ratio: ratio,
-					inc:   true,
-				}
-			}
 			return atomic.LoadInt32(interrupt) == commitInterruptNewHead
 		}
 		// If we don't have enough gas for any further transactions then we're done
@@ -948,11 +942,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		}
 		w.pendingLogsFeed.Send(cpy)
 	}
-	// Notify resubmit loop to decrease resubmitting interval if current interval is larger
-	// than the user-specified one.
-	if interrupt != nil {
-		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
-	}
+
 	return false
 }
 
