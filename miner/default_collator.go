@@ -71,8 +71,11 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			// Pop the unsupported transaction without shifting in the next from the account
 			log.Trace("Skipping unsupported transaction type", "sender", from, "type", tx.Type())
 			txs.Pop()
-		case errors.Is(err, ErrInterrupt):
-			log.Trace("interrupted")
+		case errors.Is(err, ErrInterruptRecommit):
+			log.Trace("interrupted: recommit interval elapsed")
+			return true
+		case errors.Is(err, ErrInterruptNewHead):
+			log.Trace("interrupted: new canon chain head received")
 			return true
 		default:
 			// Strange error, discard the transaction and get the next in line (note, the

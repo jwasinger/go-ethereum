@@ -312,7 +312,6 @@ func (bs *blockState) Commit() bool {
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			gasLimit := bs.env.header.GasLimit
 			var ratio float64 = 0.1
 			bs.worker.resubmitAdjustCh <- &intervalAdjust{
 				ratio: ratio,
