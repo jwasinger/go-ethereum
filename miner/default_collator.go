@@ -30,6 +30,7 @@ import (
 type DefaultCollator struct {
 	pool Pool
 	minerState MinerState
+	minRecommit time.Duration
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -157,26 +158,24 @@ func (w *DefaultCollator) AdjustRecommitInterval(gasLimit uint64, remainingGas u
 				ratio = 0.1
 			}
 
-			w.recommitMu.Lock()
-			defer w.recommitMu.Unlock()
-
+			recommitInterval := w.minerState.RecommitInterval()
 			if inc {
-				before := w.recommitInterval
+				before := recommitInterval
 				target := float64(before.Nanoseconds()) / ratio
-				w.recommitInterval = recalcRecommit(minRecommit, w.recommitInterval, target, true)
+				recommitInterval = recalcRecommit(w.minRecommit, recommitInterval, target, true)
 				log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
 			} else {
 				before := w.recommitInterval
-				w.recommitInterval = recalcRecommit(minRecommit, w.recommitInterval, float64(minRecommit.Nanoseconds()), false)
-				log.Trace("Decrease miner recommit interval", "from", before, "to", recommit)
+				recommitInterval = recalcRecommit(w.minRecommit, recommitInterval, float64(minRecommit.Nanoseconds()), false)
+				log.Trace("Decrease miner recommit interval", "from", before, "to", recommitInterval)
+				w.minRecommit = recommitInterval
 			}
-			w.minerState.SetRecommitInterval(w.recommitInterval)
+			w.minerState.SetRecommitInterval(recommitInterval)
 }
 
-func (w *DefaultCollator) ResubmitIntervalSetHook(interval time.Duration) {
-	w.recommitMu.Lock()
-	defer w.recommitMu.Unlock()
-	w.recommitInterval = interval
+func (w *DefaultCollator) ResubmitIntervalSetHook(interval time.Duration) time.Duration {
+	w.minRecommit = interval
+	return interval
 }
 
 func (w *DefaultCollator) Start(pool Pool) {

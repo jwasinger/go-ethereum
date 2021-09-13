@@ -228,9 +228,10 @@ type worker struct {
 	startCh            chan struct{}
 	exitCh             chan struct{}
 
-	resubmitIntervalCh chan time.Duration
-	resubmitInterval time.Duration
-	resubmitIntervalMu sync.Mutex
+	recommitIntervalCh chan time.Duration
+	recommitInterval time.Duration
+	// mutex to avoid race between worker.RecommitInterval() and worker.SetRecommitInterval()
+	recommitIntervalMu sync.Mutex
 
 	current      *environment                 // An environment for current running cycle.
 	localUncles  map[common.Hash]*types.Block // A set of side blocks generated locally as the possible uncle blocks.
@@ -267,7 +268,12 @@ type worker struct {
 	newTaskHook  func(*task)                        // Method to call upon receiving a new sealing task.
 	skipSealHook func(*task) bool                   // Method to decide whether skipping the sealing.
 	fullTaskHook func()                             // Method to call before pushing the full sealing task.
-	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
+	resubmitHook func() // Method to call upon updating resubmitting interval.
+}
+
+type setInterval struct {
+	duration time.Duration,
+	isExternal bool
 }
 
 func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collator, engine consensus.Engine, eth Backend, mux *event.TypeMux, isLocalBlock func(*types.Block) bool, init bool) *worker {
@@ -292,7 +298,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		resultCh:           make(chan *types.Block, resultQueueSize),
 		exitCh:             make(chan struct{}),
 		startCh:            make(chan struct{}, 1),
-		resubmitIntervalCh: make(chan time.Duration),
+		recommitIntervalCh: make(chan setInterval),
 		collator:           collator,
 	}
 	// Subscribe NewTxsEvent for tx pool
@@ -342,17 +348,26 @@ func (w *worker) setExtra(extra []byte) {
 	w.extra = extra
 }
 
-// SetRecommitInterval updates the interval for miner sealing work recommitting.
+// SetRecommitInterval is a method used by collator implementations to set the miner recommit interval
 func (w *worker) SetRecommitInterval(interval time.Duration) {
 	select {
-	case w.resubmitIntervalCh <- interval:
+	case w.recommitIntervalCh <- setInterval{duration: interval, isExternal: false}:
+	case <-w.exitCh:
+	}
+}
+
+// SetRecommitIntervalExternal is the API used by the miner
+// to set the recommit interval when the user sets it explicityl
+func (w *worker) SetRecommitIntervalExternal(interval time.Duration) {
+	select {
+	case w.recommitIntervalCh <- setInterval{duration: interval, isExternal: true}:
 	case <-w.exitCh:
 	}
 }
 
 func (w *worker) RecommitInterval() time.Duration {
 	w.recommitIntervalMu.Lock()
-	defer w.recommitIntervalMu.Ulock()
+	defer w.recommitIntervalMu.Unlock()
 	return w.recommitInterval
 }
 
@@ -504,31 +519,26 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 				}
 				commit(true, commitInterruptResubmit)
 			}
-		case interval := <-w.resubmitIntervalCh:
-			// Set resubmit interval internally by collator
-			minRecommit, recommit = interval, interval
-			if interval < minRecommitInterval {
-				log.Warn("Sanitizing miner recommit interval", "provided", interval, "updated", minRecommitInterval)
-				interval = minRecommitInterval
-			}
-
-			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
-			if w.resubmitHook != nil {
-				w.resubmitHook(minRecommit, recommit)
-			}
-		case interval := <-w.resubmitIntervalExternalCh:
+		case setIntervalInfo := <-w.resubmitIntervalExternalCh:
+			interval := setIntervalInfo.interval
+			isExternal := setIntervalInfo.isExternal
 			// Adjust resubmit interval explicitly by user.
 			if interval < minRecommitInterval {
 				log.Warn("Sanitizing miner recommit interval", "provided", interval, "updated", minRecommitInterval)
 				interval = minRecommitInterval
 			}
 
-			interval = w.miner.collator.RecommitIntervalSetHook(interval)
+			if isExternal {
+				interval = w.miner.collator.RecommitIntervalSetHook(interval)
+			}
 			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
-			minRecommit, recommit = interval, interval
+
+			w.resubmitIntervalMu.Lock()
+			w.resubmitInterval = interval
+			w.resubmitIntervalMu.Unlock()
 
 			if w.resubmitHook != nil {
-				w.resubmitHook(minRecommit, recommit)
+				w.resubmitHook()
 			}
 		case <-w.exitCh:
 			return

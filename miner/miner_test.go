@@ -260,8 +260,6 @@ func createMiner(t *testing.T) (*Miner, *event.TypeMux) {
 	collator := &DefaultCollator{
 		pool: pool,
 		minerState: nil,
-		recommitMu: sync.Mutex{},
-		recommitInterval: nil,
 	}
 	// Create Miner
 	return New(backend, &config, chainConfig, mux, engine, nil, collator, nil), mux
