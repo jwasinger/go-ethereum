@@ -860,10 +860,7 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		if interrupt != nil && atomic.LoadInt32(interrupt) != commitInterruptNone {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			if atomic.LoadInt32(interrupt) == commitInterruptResubmit {
-				ratio := float64(gasLimit-env.gasPool.Gas()) / float64(gasLimit)
-				if ratio < 0.1 {
-					ratio = 0.1
-				}
+				var ratio float64 = 0.1
 				w.resubmitAdjustCh <- &intervalAdjust{
 					ratio: ratio,
 					inc:   true,

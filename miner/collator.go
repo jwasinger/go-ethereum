@@ -47,14 +47,50 @@ type Pool interface {
 	Locals() []common.Address
 }
 
+/*
+	BlockState represents an under-construction block.  An instance of
+	BlockState is passed to CollateBlock where it can be filled with transactions
+	via BlockState.AddTransaction() and submitted for sealing via
+	BlockState.Commit().
+
+	Operations on a single BlockState instance are not threadsafe.  However,
+	instances can be copied with BlockState.Copy().
+*/
 type BlockState interface {
+	/*
+		adds a single transaction to the blockState.  Returned errors include ..,..,..
+		which signify that the transaction was invalid for the current EVM/chain state.
+
+		ErrRecommit signals that the recommit timer has elapsed.
+		ErrNewHead signals that the client has received a new canonical chain head.
+		All subsequent calls to AddTransaction fail if either newHead or the recommit timer
+		have occured.
+
+		If the recommit interval has elapsed, the BlockState can still be committed to the sealer.
+	*/
 	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
+
+	/*
+		removes a number of transactions from the block resetting the state to what
+		it was before the transactions were added.  If count is greater than the number
+		of transactions in the block,  returns
+	*/
 	RevertTransactions(count uint) error
+
+	/*
+		returns true if the Block has been made the current sealing block.
+		returns false if the newHead interrupt has been triggered.
+		can also return false if the BlockState is no longer valid (the call to CollateBlock
+		which the original instance was passed has returned).
+	*/
 	Commit() bool
 	Copy() BlockState
 	State() vm.StateReader
 	Signer() types.Signer
 	Header() *types.Header
+	/*
+		the account which will receive the block reward.
+	*/
 	Etherbase() common.Address
 }
 
@@ -64,26 +100,57 @@ const (
 	InterruptNewHead
 )
 
+/*
+InterruptContext allows for active polling to detect if a new canonical chain
+head was received or recommit timer elapse occured.
+*/
 type InterruptContext interface {
 	InterruptState() int
 }
 
 type Collator interface {
+	/*
+		the main entrypoint for constructing a block for sealing. An empty block
+		bs, is provided which can be modified/copied and committed to the sealer
+		for the duration of the call to CollateBlock.
+	*/
 	CollateBlock(bs BlockState, ctx InterruptContext)
+	/*
+		Called when the client is started after the miner worker is created.
+	*/
 	Start(pool Pool)
+	/*
+		Called when the client is closing.
+	*/
 	Close()
 }
 
 var (
-	ErrInterrupt          = errors.New("interrupt triggered")
+	ErrInterruptRecommit = errors.New("interrupt: recommit timer elapsed")
+	ErrInterruptNewHead  = errors.New("interrupt: client received new canon chain head")
+
+	// errors which indicate that a given transaction cannot be
+	// added at a given block or chain configuration.
 	ErrGasLimitReached    = errors.New("gas limit reached")
 	ErrNonceTooLow        = errors.New("tx nonce too low")
 	ErrNonceTooHigh       = errors.New("tx nonce too high")
 	ErrTxTypeNotSupported = errors.New("tx type not supported")
-	ErrStrange            = errors.New("strange error")
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
+	// error which encompasses all other reasons a given transaction
+	// could not be added to the block.
+	ErrStrange = errors.New("strange error")
 )
 
+/*
+	Loads a collator plugin and configuration (toml) from disk.
+	Expects the plugin to export a method named PluginConstructor
+	which has a signature:
+		func(config *map[string]interface{}) (Collator, CollatorAPI, error)
+
+	returns the result of calling the plugin constructor for the given
+	toml config (which is nil if a custom config filepath is not passed
+	via --minercollator.configfilepath)
+*/
 func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, error) {
 	p, err := plugin.Open(filepath)
 	if err != nil {
@@ -180,21 +247,15 @@ func (bs *blockState) Header() *types.Header {
 func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
-			// TODO figure out a better heuristic for the adjust ratio here
-			// the gasRemaining/gasLimit is not a good proxy for all collators
-			// where the
-			gasLimit := bs.env.header.GasLimit
-			ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
-			if ratio < 0.1 {
-				ratio = 0.1
-			}
+			var ratio float64 = 0.1
 			bs.worker.resubmitAdjustCh <- &intervalAdjust{
 				ratio: ratio,
 				inc:   true,
 			}
+			return ErrInterruptRecommit, nil
+		} else {
+			return ErrInterruptNewHead, nil
 		}
-		return ErrInterrupt, nil
 	}
 
 	if bs.env.gasPool.Gas() < params.TxGas {
@@ -252,13 +313,7 @@ func (bs *blockState) Commit() bool {
 		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
 			gasLimit := bs.env.header.GasLimit
-			// TODO figure out a better heuristic for the adjust ratio here
-			// the gasRemaining/gasLimit is not a good proxy for all collators
-			// where the
-			ratio := float64(gasLimit-bs.env.gasPool.Gas()) / float64(gasLimit)
-			if ratio < 0.1 {
-				ratio = 0.1
-			}
+			var ratio float64 = 0.1
 			bs.worker.resubmitAdjustCh <- &intervalAdjust{
 				ratio: ratio,
 				inc:   true,
