@@ -1062,7 +1062,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		resultEnv:        emptyEnv,
 		start:            start,
 		commitMu:         new(sync.Mutex),
-		committed:        false,
+		committed:        new(bool),
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
@@ -1100,7 +1100,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		env:              work.copy(),
 		start:            start,
 		commitMu:         new(sync.Mutex),
-		committed:        false,
+		committed:        new(bool),
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
@@ -1141,7 +1141,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		}
 		w.pendingLogsFeed.Send(cpy)
 	}
-	if bs.committed {
+	if *bs.committed {
 		w.current = bs.resultEnv
 	}
 }

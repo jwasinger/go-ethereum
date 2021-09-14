@@ -45,7 +45,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 		}
 		from, _ := types.Sender(bs.Signer(), tx)
 
-		err, receipt := bs.AddTransaction(tx)
+		err, receipts := bs.AddTransactions(types.Transactions{tx})
 		switch {
 		case errors.Is(err, ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
@@ -63,7 +63,7 @@ func submitTransactions(bs BlockState, txs *types.TransactionsByPriceAndNonce) b
 			txs.Pop()
 
 		case errors.Is(err, nil):
-			availableGas = header.GasLimit - receipt.CumulativeGasUsed
+			availableGas = header.GasLimit - receipts[0].CumulativeGasUsed
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			txs.Shift()
 

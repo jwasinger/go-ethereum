@@ -68,7 +68,7 @@ type BlockState interface {
 
 		If the recommit interval has elapsed, the BlockState can still be committed to the sealer.
 	*/
-	AddTransaction(tx *types.Transaction) (error, *types.Receipt)
+	AddTransactions(tx types.Transactions) (error, types.Receipts)
 
 	/*
 		removes a number of transactions from the block resetting the state to what
@@ -198,7 +198,7 @@ type blockState struct {
 	logs       []*types.Log
 	shouldSeal bool
 	snapshots  []int
-	committed  bool
+	committed  *bool
 
 	// shared values between multiple copies of a blockState
 
@@ -244,60 +244,78 @@ func (bs *blockState) Header() *types.Header {
 	return types.CopyHeader(bs.env.header)
 }
 
-func (bs *blockState) AddTransaction(tx *types.Transaction) (error, *types.Receipt) {
-	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-			var ratio float64 = 0.1
-			bs.worker.resubmitAdjustCh <- &intervalAdjust{
-				ratio: ratio,
-				inc:   true,
+func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Receipts) {
+	tcount := 0
+	var retErr error = nil
+
+	if len(txs) == 0 {
+		return ErrZeroTxs, nil
+	}
+
+	for _, tx := range txs {
+		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
+			if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+				var ratio float64 = 0.1
+				bs.worker.resubmitAdjustCh <- &intervalAdjust{
+					ratio: ratio,
+					inc:   true,
+				}
+				return ErrInterruptRecommit, nil
+			} else {
+				return ErrInterruptNewHead, nil
 			}
-			return ErrInterruptRecommit, nil
-		} else {
-			return ErrInterruptNewHead, nil
 		}
-	}
 
-	if bs.env.gasPool.Gas() < params.TxGas {
-		return ErrGasLimitReached, nil
-	}
-
-	// Check whether the tx is replay protected. If we're not in the EIP155 hf
-	// phase, start ignoring the sender until we do.
-	if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
-		return ErrTxTypeNotSupported, nil
-	}
-
-	// TODO can this error also be returned by commitTransaction below?
-	_, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
-	if err != nil {
-		return ErrGasFeeCapTooLow, nil
-	}
-
-	bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
-	txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
-	if err != nil {
-		switch {
-		case errors.Is(err, core.ErrGasLimitReached):
-			// this should never be reached.
-			// should be caught above
+		if bs.env.gasPool.Gas() < params.TxGas {
 			return ErrGasLimitReached, nil
-		case errors.Is(err, core.ErrNonceTooLow):
-			return ErrNonceTooLow, nil
-		case errors.Is(err, core.ErrNonceTooHigh):
-			return ErrNonceTooHigh, nil
-		case errors.Is(err, core.ErrTxTypeNotSupported):
-			// TODO check that this unspported tx type is the same as the one caught above
-			return ErrTxTypeNotSupported, nil
-		default:
-			return ErrStrange, nil
 		}
-	} else {
-		bs.logs = append(bs.logs, txLogs...)
-		bs.env.tcount++
+
+		// Check whether the tx is replay protected. If we're not in the EIP155 hf
+		// phase, start ignoring the sender until we do.
+		if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
+			return ErrTxTypeNotSupported, nil
+		}
+
+		// TODO can this error also be returned by commitTransaction below?
+		_, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
+		if err != nil {
+			return ErrGasFeeCapTooLow, nil
+		}
+
+		bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
+		txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
+		if err != nil {
+			switch {
+			case errors.Is(err, core.ErrGasLimitReached):
+				// this should never be reached.
+				// should be caught above
+				retErr = ErrGasLimitReached
+			case errors.Is(err, core.ErrNonceTooLow):
+				retErr = ErrNonceTooLow
+			case errors.Is(err, core.ErrNonceTooHigh):
+				retErr = ErrNonceTooHigh
+			case errors.Is(err, core.ErrTxTypeNotSupported):
+				// TODO check that this unspported tx type is the same as the one caught above
+				retErr = ErrTxTypeNotSupported
+			default:
+				retErr = ErrStrange
+			}
+
+			bs.logs = bs.logs[:bs.env.tcount]
+			bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-1])
+			bs.snapshots = bs.snapshots[:len(bs.snapshots)-1]
+
+			return retErr, nil
+		} else {
+			bs.logs = append(bs.logs, txLogs...)
+			tcount++
+		}
 	}
 
-	return nil, bs.env.receipts[len(bs.env.receipts)-1]
+	retReceipts := bs.env.receipts[bs.env.tcount:]
+	bs.env.tcount += tcount
+
+	return nil, retReceipts
 }
 
 func (bs *blockState) State() vm.StateReader {
@@ -330,7 +348,7 @@ func (bs *blockState) Commit() bool {
 		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}
 	bs.resultEnv = bs.env
-	bs.committed = true
+	*bs.committed = true
 	return true
 }
 
