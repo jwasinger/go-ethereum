@@ -211,6 +211,7 @@ const (
 type blockState struct {
 	env        *environment
 	start      time.Time
+	header    *types.Header
 	state     *state.StateDB // apply state changes here
 	logs       []*types.Log
 	snapshots  []int
@@ -256,26 +257,28 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 	}
 
 	for _, tx := range txs {
-		if bs.ctx.interrupt != nil && atomic.LoadInt32(bs.ctx.interrupt) != commitInterruptNone {
-			if atomic.CompareAndSwapInt32(bs.ctx.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-				var ratio float64 = 0.1
-				bs.ctx.worker.resubmitAdjustCh <- &intervalAdjust{
-					ratio: ratio,
-					inc:   true,
+		if bs.env.interrupt != nil && atomic.LoadInt32(bs.env.interrupt) != commitInterruptNone {
+			if atomic.LoadInt32(bs.env.interrupt) == commitInterruptResubmit {
+				if atomic.CompareAndSwapInt32(bs.env.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.env.interrupt) == commitInterruptResubmit {
+					var ratio float64 = 0.1
+					bs.env.worker.resubmitAdjustCh <- &intervalAdjust{
+						ratio: ratio,
+						inc:   true,
+					}
+					return ErrInterruptRecommit, nil
 				}
-				return ErrInterruptRecommit, nil
 			} else {
 				return ErrInterruptNewHead, nil
 			}
 		}
 
-		if bs.env.gasPool.Gas() < params.TxGas {
+		if bs.gasPool.Gas() < params.TxGas {
 			return ErrGasLimitReached, nil
 		}
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
-		if tx.Protected() && !bs.ctx.worker.chainConfig.IsEIP155(bs.env.header.Number) {
+		if tx.Protected() && !bs.env.worker.chainConfig.IsEIP155(bs.env.header.Number) {
 			return ErrTxTypeNotSupported, nil
 		}
 
@@ -285,7 +288,7 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 			return ErrGasFeeCapTooLow, nil
 		}
 
-		bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
+		bs.state.Prepare(tx.Hash(), bs.tcount)
 		txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
 		if err != nil {
 			switch {
@@ -322,7 +325,7 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 }
 
 func (bs *blockState) State() vm.StateReader {
-	return bs.env.state
+	return bs.state
 }
 
 func (bs *blockState) Signer() types.Signer {
@@ -349,9 +352,8 @@ func (bs *blockState) Commit() bool {
 	}
 	bs.env.bs = bs
 	if bs.env.shouldSeal {
-		bs.worker.commit(bs.env, bs.worker.fullTaskHook, true, bs.start)
+		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}
-	bs.env.committed = true
 	return true
 }
 
@@ -397,6 +399,7 @@ func copyLogs(logs []*types.Log) []*types.Log {
 func (bs *blockState) Copy() BlockState {
 	cpy := blockState{
 		worker:           bs.worker,
+		header:		  types.CopyHeader(bs.header),
 		env:              bs.env,
 		start:            bs.start,
 		logs:             copyLogs(bs.logs),

@@ -100,13 +100,11 @@ type environment struct {
 	// calling Commit() copies the value of env to this value
 	// and forwards it to the sealer via worker.commit() if shouldSeal is true
 	shouldSeal bool
-	committed  bool
 
 	// keep track of the original state object that was created for the work cycle
 	// so that we can discard the prefetcher associated with it at the end
 	originalState *types.StateDB
 
-	header    *types.Header
 	uncles    map[common.Hash]*types.Header
 	etherbase common.Address
 	bs *blockState
@@ -118,7 +116,6 @@ func (env *environment) copy() *environment {
 		signer:    env.signer,
 		ancestors: env.ancestors.Clone(),
 		family:    env.family.Clone(),
-		header:    types.CopyHeader(env.header),
 		etherbase: env.etherbase,
 		bs: bs.Copy(),
 	}
@@ -761,6 +758,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		env: nil,
 		start: time.Now(),
 		state: state,
+		header: header,
 		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
 		tcount: 0,
 	}
@@ -773,8 +771,6 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		commitMu: sync.Mutex{},
 		interruptHandled: interruptNotHandled,
 		done: false,
-		committed: false,
-		header:    header,
 		originalState: state,
 		uncles:    make(map[common.Hash]*types.Header),
 		etherbase: w.coinbase,
@@ -830,16 +826,18 @@ func (w *worker) updateSnapshot(env *environment) {
 	w.snapshotState = env.state.Copy()
 }
 
-func (w *worker) commitTransaction(env *environment, tx *types.Transaction, coinbase common.Address) ([]*types.Log, error) {
-	snap := env.state.Snapshot()
+func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Address) ([]*types.Log, error) {
+	currentEnv := w.current
+	currentBlock := w.current.bs
+	snap := currentBlock.state.Snapshot()
 
-	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *w.chain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, currentBlock.gasPool, currentBlock.state, currentEnv.header, tx, &currentEnv.header.GasUsed, *w.chain.GetVMConfig())
 	if err != nil {
-		env.state.RevertToSnapshot(snap)
+		currentBlock.state.RevertToSnapshot(snap)
 		return nil, err
 	}
-	env.txs = append(env.txs, tx)
-	env.receipts = append(env.receipts, receipt)
+	currentBlock.txs = append(currentBlock.txs, tx)
+	currentBlock.receipts = append(currentBlock.receipts, receipt)
 
 	return receipt.Logs, nil
 }
@@ -1087,8 +1085,8 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if err != nil {
 		return
 	}
+	defer work.discard()
 	work.shouldSeal = true
-	w.current = work.copy()
 	work.interrupt = interrupt
 	// Create an empty block based on temporary copied state for
 	// sealing in advance without waiting block execution finished.
@@ -1101,12 +1099,13 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	work.done = true
 	work.commitMu.Unlock()
 
+	w.current = work
+
 	if work.interrupt != nil && atomic.CompareAndSwapInt32(work.interruptHandled, interruptNotHandled, interruptIsHandled) {
 		if atomic.LoadInt32(work.interrupt) != commitInterruptNewHead {
 			w.resubmitAdjustCh <- &intervalAdjust{inc: false}
-		} else {
-			return
 		}
+		return
 	}
 
 	if !w.isRunning() && len(work.bs.logs) > 0 {
@@ -1123,9 +1122,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 			*cpy[i] = *l
 		}
 		w.pendingLogsFeed.Send(cpy)
-	}
-	if work.committed {
-		w.current = work
 	}
 }
 
