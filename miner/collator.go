@@ -191,42 +191,45 @@ const (
 	interruptIsHandled  int32 = 1
 )
 
+/*
+	workContext contains state shared by a blockState instance and all its copies.
+	it helps ensure the following invariants:
+	* calling Commit on a BlockState instance or its copies only interrupts the 
+	current sealing block if the call to CollateBlock where the instance was originally
+	passed to has not returned.
+	* if a new canon chain head is received and triggers the interrupt while CollateBlock
+	is executing, subsequent calls to Commit() or AddTransactions() will fail and return an error.
+	* if the commit interval elapses and triggers the miner work interrupt while CollateBlock
+	is executing, subsequent calls to AddTransactions() will fail  and return an error. 
+
+	TODO move the above docs somewhere appropriate
+*/
+
+
+
+// state of a pending under-construction sealing block
 type blockState struct {
-	worker     *worker
 	env        *environment
 	start      time.Time
+	state     *state.StateDB // apply state changes here
 	logs       []*types.Log
-	shouldSeal bool
 	snapshots  []int
-	committed  *bool
-
-	// shared values between multiple copies of a blockState
-
-	interrupt *int32
-	// mutex to make sure only one blockState is calling commit at a given time
-	commitMu *sync.Mutex
-	// this makes sure multiple copies of a blockState can only trigger
-	// adjustment of the recommit interval once
-	interruptHandled *int32
-	// prevents calls to worker.commit (with a given blockState) after
-	// CollateBlock call on that blockState returns. examined in commit
-	// when commitMu is held.  modified right after CollateBlock returns
-	done *bool
-	// calling Commit() copies the value of env to this value
-	// and forwards it to the sealer via worker.commit() if shouldSeal is true
-	resultEnv *environment
+	txs       []*types.Transaction
+	receipts  []*types.Receipt
+	tcount    int            // tx count in cycle
+	gasPool   *core.GasPool  // available gas used to pack transactions
 }
 
 type interruptContext struct {
 	interrupt *int32
 }
 
-func (ctx *interruptContext) InterruptState() int {
-	if ctx.interrupt == nil {
+func (e *environment) InterruptState() int {
+	if e.interrupt == nil {
 		return InterruptNone
 	}
 
-	switch atomic.LoadInt32(ctx.interrupt) {
+	switch atomic.LoadInt32(e.interrupt) {
 	case commitInterruptResubmit:
 		return InterruptResubmit
 	case commitInterruptNewHead:
@@ -253,10 +256,10 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 	}
 
 	for _, tx := range txs {
-		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-			if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+		if bs.ctx.interrupt != nil && atomic.LoadInt32(bs.ctx.interrupt) != commitInterruptNone {
+			if atomic.CompareAndSwapInt32(bs.ctx.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
 				var ratio float64 = 0.1
-				bs.worker.resubmitAdjustCh <- &intervalAdjust{
+				bs.ctx.worker.resubmitAdjustCh <- &intervalAdjust{
 					ratio: ratio,
 					inc:   true,
 				}
@@ -272,7 +275,7 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
-		if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
+		if tx.Protected() && !bs.ctx.worker.chainConfig.IsEIP155(bs.env.header.Number) {
 			return ErrTxTypeNotSupported, nil
 		}
 
@@ -339,16 +342,16 @@ func (bs *blockState) Commit() bool {
 		return false
 	}
 
-	bs.commitMu.Lock()
-	defer bs.commitMu.Unlock()
-	if *bs.done {
+	bs.env.commitMu.Lock()
+	defer bs.env.commitMu.Unlock()
+	if bs.env.done {
 		return false
 	}
-	if bs.shouldSeal {
-		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
+	bs.env.bs = bs
+	if bs.env.shouldSeal {
+		bs.worker.commit(bs.env, bs.worker.fullTaskHook, true, bs.start)
 	}
-	bs.resultEnv = bs.env
-	*bs.committed = true
+	bs.env.committed = true
 	return true
 }
 
@@ -363,22 +366,48 @@ func (bs *blockState) RevertTransactions(count uint) error {
 	} else if count == 0 {
 		return ErrZeroTxs
 	}
-	bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-int(count)])
+	bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-int(count)])
 	bs.snapshots = bs.snapshots[:len(bs.snapshots)-int(count)]
 	return nil
 }
 
+func copyLogs(logs []*types.Log) []*types.Log {
+	result := make([]*types.Log, len(logs))
+	for _, l := range logs {
+		logCopy := types.Log{
+			Address:     l.Address,
+			BlockNumber: l.BlockNumber,
+			TxHash:      l.TxHash,
+			TxIndex:     l.TxIndex,
+			Index:       l.Index,
+			Removed:     l.Removed,
+		}
+		for _, t := range l.Topics {
+			logCopy.Topics = append(logCopy.Topics, t)
+		}
+		logCopy.Data = make([]byte, len(l.Data))
+		copy(logCopy.Data[:], l.Data[:])
+
+		result = append(result, &logCopy)
+	}
+
+	return result
+}
+
 func (bs *blockState) Copy() BlockState {
-	return &blockState{
+	cpy := blockState{
 		worker:           bs.worker,
-		env:              bs.env.copy(),
+		env:              bs.env,
 		start:            bs.start,
 		logs:             copyLogs(bs.logs),
-		interrupt:        bs.interrupt,
-		commitMu:         bs.commitMu,
-		interruptHandled: bs.interruptHandled,
-		done:             bs.done,
-		committed:        bs.committed,
-		shouldSeal:       bs.shouldSeal,
+		receipts: copyReceipts(bs.receipts),
+		tcount: bs.tcount,
+		state: bs.state.Copy(),
 	}
+	if bs.gasPool != nil {
+		cpy.gasPool = new(core.GasPool)
+		*cpy.gasPool = *bs.gasPool
+	}
+	cpy.txs = make([]*types.Transaction, len(bs.txs))
+	copy(cpy.txs, bs.txs)
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The go-ethereum Authors
+// Cop&yright 2021 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -77,72 +77,59 @@ const (
 	staleThreshold = 7
 )
 
+
 // environment is the worker's current environment and holds all
 // information of the sealing block generation.
 type environment struct {
 	signer types.Signer
+	worker *worker
 
-	state     *state.StateDB // apply state changes here
 	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
 	family    mapset.Set     // family set (used for checking uncle invalidity)
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
+	interrupt *int32
+
+	// mutex to make sure only one blockState is calling commit at a given time
+	commitMu sync.Mutex
+	// this makes sure multiple copies of a blockState can only trigger
+	// adjustment of the recommit interval once
+	interruptHandled int32
+	// prevents calls to worker.commit (with a given blockState) after
+	// CollateBlock call on that blockState returns. examined in commit
+	// when commitMu is held.  modified right after CollateBlock returns
+	done bool
+	// calling Commit() copies the value of env to this value
+	// and forwards it to the sealer via worker.commit() if shouldSeal is true
+	shouldSeal bool
+	committed  bool
+
+	// keep track of the original state object that was created for the work cycle
+	// so that we can discard the prefetcher associated with it at the end
+	originalState *types.StateDB
 
 	header    *types.Header
-	txs       []*types.Transaction
-	receipts  []*types.Receipt
 	uncles    map[common.Hash]*types.Header
 	etherbase common.Address
+	bs *blockState
 }
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
 	cpy := &environment{
 		signer:    env.signer,
-		state:     env.state.Copy(),
 		ancestors: env.ancestors.Clone(),
 		family:    env.family.Clone(),
-		tcount:    env.tcount,
 		header:    types.CopyHeader(env.header),
-		receipts:  copyReceipts(env.receipts),
 		etherbase: env.etherbase,
+		bs: bs.Copy(),
 	}
-	if env.gasPool != nil {
-		cpy.gasPool = new(core.GasPool)
-		*cpy.gasPool = *env.gasPool
-	}
+
 	// The content of txs and uncles are immutable, unnecessary
 	// to do the expensive deep copy for them.
-	cpy.txs = make([]*types.Transaction, len(env.txs))
-	copy(cpy.txs, env.txs)
 	cpy.uncles = make(map[common.Hash]*types.Header)
 	for hash, uncle := range env.uncles {
 		cpy.uncles[hash] = uncle
 	}
 	return cpy
-}
-
-func copyLogs(logs []*types.Log) []*types.Log {
-	result := make([]*types.Log, len(logs))
-	for _, l := range logs {
-		logCopy := types.Log{
-			Address:     l.Address,
-			BlockNumber: l.BlockNumber,
-			TxHash:      l.TxHash,
-			TxIndex:     l.TxIndex,
-			Index:       l.Index,
-			Removed:     l.Removed,
-		}
-		for _, t := range l.Topics {
-			logCopy.Topics = append(logCopy.Topics, t)
-		}
-		logCopy.Data = make([]byte, len(l.Data))
-		copy(logCopy.Data[:], l.Data[:])
-
-		result = append(result, &logCopy)
-	}
-
-	return result
 }
 
 // unclelist returns the contained uncles as the list format.
@@ -158,10 +145,10 @@ func (env *environment) unclelist() []*types.Header {
 // always be called for all created environment instances otherwise
 // the go-routine leak can happen.
 func (env *environment) discard() {
-	if env.state == nil {
+	if env.originalState == nil {
 		return
 	}
-	env.state.StopPrefetcher()
+	env.originalState.StopPrefetcher()
 }
 
 // task contains all information for consensus engine sealing and result submitting.
@@ -576,7 +563,7 @@ func (w *worker) mainLoop() {
 			if w.isRunning() && w.current != nil && len(w.current.uncles) < 2 {
 				start := time.Now()
 				if err := w.commitUncle(w.current, ev.Block.Header()); err == nil {
-					w.commit(w.current.copy(), nil, true, start)
+					w.commit(w.current, nil, true, start)
 				}
 			}
 
@@ -601,7 +588,7 @@ func (w *worker) mainLoop() {
 			// be automatically eliminated.
 			if !w.isRunning() && w.current != nil {
 				// If block is already full, abort
-				if gp := w.current.gasPool; gp != nil && gp.Gas() < params.TxGas {
+				if gp := w.current.bs.gasPool; gp != nil && gp.Gas() < params.TxGas {
 					continue
 				}
 				w.mu.RLock()
@@ -614,7 +601,7 @@ func (w *worker) mainLoop() {
 					txs[acc] = append(txs[acc], tx)
 				}
 				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs, w.current.header.BaseFee)
-				tcount := w.current.tcount
+				tcount := w.current.bs.tcount
 				w.commitTransactions(w.current, txset, coinbase, nil)
 				// Only update the snapshot if any new transactons were added
 				// to the pending block
@@ -770,16 +757,32 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 	}
 	state.StartPrefetcher("miner")
 
+	bs := blockState{
+		env: nil,
+		start: time.Now(),
+		state: state,
+		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
+		tcount: 0,
+	}
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
-		state:     state,
+		worker: w,
 		ancestors: mapset.NewSet(),
 		family:    mapset.NewSet(),
+		interrupt: nil,
+		commitMu: sync.Mutex{},
+		interruptHandled: interruptNotHandled,
+		done: false,
+		committed: false,
 		header:    header,
+		originalState: state,
 		uncles:    make(map[common.Hash]*types.Header),
 		etherbase: w.coinbase,
-		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
+		originalState: state,
+		bs: &bs,
 	}
+	bs.env = env
+
 	// when 08 is processed ancestors contain 07 (quick block)
 	for _, ancestor := range w.chain.GetBlocksFromHash(parent.Hash(), 7) {
 		for _, uncle := range ancestor.Uncles() {
@@ -788,8 +791,6 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header) (*environmen
 		env.family.Add(ancestor.Hash())
 		env.ancestors.Add(ancestor.Hash())
 	}
-	// Keep track of transactions which return errors so they can be removed
-	env.tcount = 0
 	return env, nil
 }
 
@@ -1050,23 +1051,19 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 // generateWork generates a sealing block based on the given parameters.
 func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	start := time.Now()
-	emptyEnv, err := w.prepareWork(params)
+	env, err := w.prepareWork(params)
+	env.shouldSeal = false
 	if err != nil {
 		return nil, err
 	}
-	defer emptyEnv.discard()
+	defer env.discard()
 
 	bs := blockState{
-		worker:           w,
-		env:              emptyEnv.copy(),
-		resultEnv:        emptyEnv,
-		start:            start,
-		commitMu:         new(sync.Mutex),
-		committed:        new(bool),
-		interruptHandled: new(int32),
-		done:             new(bool),
-		interrupt:        nil,
+		env:              env,
+		start: time.Now(),
+		state: env.originalState,
 		shouldSeal:       false,
+		gasPool: new(core.GasPool).Set(env.header.GasPool)
 	}
 
 	ctx := interruptContext{
@@ -1075,11 +1072,11 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 
 	w.collator.CollateBlock(&bs, &ctx)
 
-	bs.commitMu.Lock()
-	*bs.done = true
-	bs.commitMu.Unlock()
+	env.commitMu.Lock()
+	env.done = true
+	env.commitMu.Unlock()
 
-	return w.engine.FinalizeAndAssemble(w.chain, bs.resultEnv.header, bs.resultEnv.state, bs.resultEnv.txs, bs.resultEnv.unclelist(), bs.resultEnv.receipts)
+	return w.engine.FinalizeAndAssemble(w.chain, env.header, env.bs.state, env.bs.txs, env.unclelist(), env.bs.receipts)
 }
 
 // commitWork generates several new sealing tasks based on the parent block
@@ -1090,43 +1087,29 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if err != nil {
 		return
 	}
+	work.shouldSeal = true
+	w.current = work.copy()
+	work.interrupt = interrupt
 	// Create an empty block based on temporary copied state for
 	// sealing in advance without waiting block execution finished.
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
-		w.commit(work.copy(), nil, false, start)
+		w.commit(work, nil, false, start)
 	}
-	bs := blockState{
-		worker:           w,
-		env:              work.copy(),
-		start:            start,
-		commitMu:         new(sync.Mutex),
-		committed:        new(bool),
-		interruptHandled: new(int32),
-		done:             new(bool),
-		interrupt:        interrupt,
-		shouldSeal:       true,
-		resultEnv:        work,
-	}
-	ctx := interruptContext{
-		interrupt,
-	}
-	w.collator.CollateBlock(&bs, &ctx)
+	w.collator.CollateBlock(work.bs, &work)
 
-	bs.commitMu.Lock()
-	*bs.done = true
-	bs.commitMu.Unlock()
+	work.commitMu.Lock()
+	work.done = true
+	work.commitMu.Unlock()
 
-	if bs.interrupt != nil && atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
-		if atomic.LoadInt32(bs.interrupt) != commitInterruptNewHead {
+	if work.interrupt != nil && atomic.CompareAndSwapInt32(work.interruptHandled, interruptNotHandled, interruptIsHandled) {
+		if atomic.LoadInt32(work.interrupt) != commitInterruptNewHead {
 			w.resubmitAdjustCh <- &intervalAdjust{inc: false}
+		} else {
+			return
 		}
 	}
 
-	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) == commitInterruptNewHead {
-		return
-	}
-
-	if !w.isRunning() && len(bs.logs) > 0 {
+	if !w.isRunning() && len(work.bs.logs) > 0 {
 		// We don't push the pendingLogsEvent while we are mining. The reason is that
 		// when we are mining, the worker will regenerate a mining block every 3 seconds.
 		// In order to avoid pushing the repeated pendingLog, we disable the pending log pushing.
@@ -1134,15 +1117,15 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		// make a copy, the state caches the logs and these logs get "upgraded" from pending to mined
 		// logs by filling in the block hash when the block was mined by the local miner. This can
 		// cause a race condition if a log was "upgraded" before the PendingLogsEvent is processed.
-		cpy := make([]*types.Log, len(bs.logs))
-		for i, l := range bs.logs {
+		cpy := make([]*types.Log, len(work.bs.logs))
+		for i, l := range work.bs.logs {
 			cpy[i] = new(types.Log)
 			*cpy[i] = *l
 		}
 		w.pendingLogsFeed.Send(cpy)
 	}
-	if *bs.committed {
-		w.current = bs.resultEnv
+	if work.committed {
+		w.current = work
 	}
 }
 
@@ -1155,17 +1138,18 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		if interval != nil {
 			interval()
 		}
-		// Deep copy receipts here to avoid interaction between different tasks.
-		block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, env.unclelist(), env.receipts)
+		// deep-copy the blockState here 
+		bs := env.bs.Copy()
+		block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, bs.state, bs.txs, env.unclelist(), bs.receipts)
 		if err != nil {
 			return err
 		}
 		select {
-		case w.taskCh <- &task{receipts: env.receipts, state: env.state, block: block, createdAt: time.Now()}:
+		case w.taskCh <- &task{receipts: bs.receipts, state: bs.state, block: block, createdAt: time.Now()}:
 			w.unconfirmed.Shift(block.NumberU64() - 1)
 			log.Info("Commit new sealing work", "number", block.Number(), "sealhash", w.engine.SealHash(block.Header()),
-				"uncles", len(env.uncles), "txs", env.tcount,
-				"gas", block.GasUsed(), "fees", totalFees(block, env.receipts),
+				"uncles", len(env.uncles), "txs", bs.tcount,
+				"gas", block.GasUsed(), "fees", totalFees(block, bs.receipts),
 				"elapsed", common.PrettyDuration(time.Since(start)))
 
 		case <-w.exitCh:
