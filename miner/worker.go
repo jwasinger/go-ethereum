@@ -1059,6 +1059,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	bs := blockState{
 		worker:           w,
 		env:              emptyEnv.copy(),
+		snapshots:        []int{emptyEnv.state.Snapshot()},
 		resultEnv:        nil,
 		start:            start,
 		commitMu:         new(sync.Mutex),
@@ -1101,6 +1102,7 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	}
 	bs := blockState{
 		worker:           w,
+		snapshots:        []int{work.state.Snapshot()},
 		env:              work.copy(),
 		start:            start,
 		commitMu:         new(sync.Mutex),
