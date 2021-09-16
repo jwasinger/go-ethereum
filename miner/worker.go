@@ -1059,10 +1059,10 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	bs := blockState{
 		worker:           w,
 		env:              emptyEnv.copy(),
-		resultEnv:        emptyEnv,
+		resultEnv:        nil,
 		start:            start,
 		commitMu:         new(sync.Mutex),
-		committed:        new(bool),
+		committed:        false,
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        nil,
@@ -1078,6 +1078,10 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	bs.commitMu.Lock()
 	*bs.done = true
 	bs.commitMu.Unlock()
+
+	if bs.resultEnv == nil {
+		bs.resultEnv = emptyEnv
+	}
 
 	return w.engine.FinalizeAndAssemble(w.chain, bs.resultEnv.header, bs.resultEnv.state, bs.resultEnv.txs, bs.resultEnv.unclelist(), bs.resultEnv.receipts)
 }
@@ -1100,12 +1104,12 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		env:              work.copy(),
 		start:            start,
 		commitMu:         new(sync.Mutex),
-		committed:        new(bool),
+		committed:        false,
 		interruptHandled: new(int32),
 		done:             new(bool),
 		interrupt:        interrupt,
 		shouldSeal:       true,
-		resultEnv:        work,
+		resultEnv:        nil,
 	}
 	ctx := interruptContext{
 		interrupt,
@@ -1141,8 +1145,11 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 		}
 		w.pendingLogsFeed.Send(cpy)
 	}
-	if *bs.committed {
+
+	if bs.resultEnv != nil {
 		w.current = bs.resultEnv
+	} else {
+		w.current = work
 	}
 }
 

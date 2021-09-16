@@ -128,6 +128,7 @@ type Collator interface {
 var (
 	ErrInterruptRecommit = errors.New("interrupt: recommit timer elapsed")
 	ErrInterruptNewHead  = errors.New("interrupt: client received new canon chain head")
+	ErrCommitted         = errors.New("can't mutate BlockState after calling Commit()")
 
 	// errors which indicate that a given transaction cannot be
 	// added at a given block or chain configuration.
@@ -198,10 +199,11 @@ type blockState struct {
 	logs       []*types.Log
 	shouldSeal bool
 	snapshots  []int
-	committed  *bool
+	committed  bool
 
 	// shared values between multiple copies of a blockState
 
+	// miner interrupt
 	interrupt *int32
 	// mutex to make sure only one blockState is calling commit at a given time
 	commitMu *sync.Mutex
@@ -247,6 +249,10 @@ func (bs *blockState) Header() *types.Header {
 func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Receipts) {
 	tcount := 0
 	var retErr error = nil
+
+	if bs.committed {
+		return ErrCommitted, nil
+	}
 
 	if len(txs) == 0 {
 		return ErrZeroTxs, nil
@@ -330,7 +336,12 @@ func (bs *blockState) Signer() types.Signer {
 	return bs.env.signer
 }
 
+// TODO change return from bool to error
 func (bs *blockState) Commit() bool {
+	if bs.committed {
+		return false
+	}
+
 	if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
 		if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
 			// Notify resubmit loop to increase resubmitting interval due to too frequent commits.
@@ -352,7 +363,7 @@ func (bs *blockState) Commit() bool {
 		bs.worker.commit(bs.env.copy(), bs.worker.fullTaskHook, true, bs.start)
 	}
 	bs.resultEnv = bs.env
-	*bs.committed = true
+	bs.committed = true
 	return true
 }
 
@@ -362,7 +373,9 @@ var (
 )
 
 func (bs *blockState) RevertTransactions(count uint) error {
-	if int(count) > len(bs.snapshots) {
+	if bs.committed {
+		return ErrCommitted
+	} else if int(count) > len(bs.snapshots) {
 		return ErrTooManyTxs
 	} else if count == 0 {
 		return ErrZeroTxs
@@ -384,5 +397,6 @@ func (bs *blockState) Copy() BlockState {
 		done:             bs.done,
 		committed:        bs.committed,
 		shouldSeal:       bs.shouldSeal,
+		resultEnv:        bs.resultEnv,
 	}
 }
