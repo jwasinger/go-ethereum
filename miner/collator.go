@@ -254,11 +254,13 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 
 	for _, tx := range txs {
 		if bs.interrupt != nil && atomic.LoadInt32(bs.interrupt) != commitInterruptNone {
-			if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) && atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
-				var ratio float64 = 0.1
-				bs.worker.resubmitAdjustCh <- &intervalAdjust{
-					ratio: ratio,
-					inc:   true,
+			if atomic.LoadInt32(bs.interrupt) == commitInterruptResubmit {
+				if atomic.CompareAndSwapInt32(bs.interruptHandled, interruptNotHandled, interruptIsHandled) {
+					var ratio float64 = 0.1
+					bs.worker.resubmitAdjustCh <- &intervalAdjust{
+						ratio: ratio,
+						inc:   true,
+					}
 				}
 				return ErrInterruptRecommit, nil
 			} else {
