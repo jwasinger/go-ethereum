@@ -284,7 +284,8 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 			return ErrGasFeeCapTooLow, nil
 		}
 
-		bs.env.state.Prepare(tx.Hash(), bs.env.tcount)
+		snapshot := bs.env.state.Snapshot()
+		bs.env.state.Prepare(tx.Hash(), bs.env.tcount+tcount)
 		txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
 		if err != nil {
 			switch {
@@ -303,13 +304,14 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 				retErr = ErrStrange
 			}
 
-			bs.logs = bs.logs[:bs.env.tcount]
-			bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-1])
-			bs.snapshots = bs.snapshots[:len(bs.snapshots)-1]
+			bs.logs = bs.logs[:len(bs.logs)-tcount]
+			bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-tcount])
+			bs.snapshots = bs.snapshots[:len(bs.snapshots)-tcount]
 
 			return retErr, nil
 		} else {
 			bs.logs = append(bs.logs, txLogs...)
+			bs.snapshots = append(bs.snapshots, snapshot)
 			tcount++
 		}
 	}
