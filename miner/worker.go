@@ -51,9 +51,6 @@ const (
 	// chainSideChanSize is the size of channel listening to ChainSideEvent.
 	chainSideChanSize = 10
 
-	// resubmitAdjustChanSize is the size of resubmitting interval adjustment channel.
-	resubmitAdjustChanSize = 10
-
 	// sealingLogAtDepth is the number of confirmations before logging successful sealing.
 	sealingLogAtDepth = 7
 
@@ -83,13 +80,13 @@ type environment struct {
 	signer types.Signer
 	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
 	family    mapset.Set     // family set (used for checking uncle invalidity)
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
 	coinbase  common.Address
 	header   *types.Header
 
 	uncles   map[common.Hash]*types.Header
     current *collatorBlockState
+    cycleCtx context.Context
+    cancelCycle func()
 }
 
 type collatorBlockState {
@@ -98,6 +95,8 @@ type collatorBlockState {
 	receipts []*types.Receipt
     env *environment
     committed bool
+	tcount    int            // tx count in cycle
+	gasPool   *core.GasPool  // available gas used to pack transactions
 }
 
 // copy creates a deep copy of environment.
@@ -209,7 +208,6 @@ type worker struct {
 	startCh            chan struct{}
 	exitCh             chan struct{}
 	resubmitIntervalCh chan time.Duration
-	resubmitAdjustCh   chan *intervalAdjust
 
 	current      *environment                 // An environment for current running cycle.
 	localUncles  map[common.Hash]*types.Block // A set of side blocks generated locally as the possible uncle blocks.
@@ -273,7 +271,6 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, engine consensus
 		exitCh:             make(chan struct{}),
 		startCh:            make(chan struct{}, 1),
 		resubmitIntervalCh: make(chan time.Duration),
-		resubmitAdjustCh:   make(chan *intervalAdjust, resubmitAdjustChanSize),
 	}
 	// Subscribe NewTxsEvent for tx pool
 	worker.txsSub = eth.TxPool().SubscribeNewTxsEvent(worker.txsCh)
@@ -415,29 +412,15 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 
 // newWorkLoop is a standalone goroutine to submit new sealing work upon received events.
 func (w *worker) newWorkLoop(recommit time.Duration) {
-	var (
-		interrupt   *int32
-		minRecommit = recommit // minimal resubmit interval specified by user.
-		timestamp   int64      // timestamp for each round of sealing.
-	)
-
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	<-timer.C // discard the initial tick
+    var timestamp int64
 
 	// commit aborts in-flight transaction execution with given signal and resubmits a new one.
-	commit := func(noempty bool, s int32) {
-		if interrupt != nil {
-			atomic.StoreInt32(interrupt, s)
-		}
-		interrupt = new(int32)
+	commit := func(noempty bool) {
 		select {
-		case w.newWorkCh <- &newWorkReq{interrupt: interrupt, noempty: noempty, timestamp: timestamp}:
+		case w.newWorkCh <- &newWorkReq{noempty: noempty, timestamp: timestamp}:
 		case <-w.exitCh:
 			return
 		}
-		timer.Reset(recommit)
-		atomic.StoreInt32(&w.newTxs, 0)
 	}
 	// clearPending cleans the stale pending tasks.
 	clearPending := func(number uint64) {
@@ -455,24 +438,12 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 		case <-w.startCh:
 			clearPending(w.chain.CurrentBlock().NumberU64())
 			timestamp = time.Now().Unix()
-			commit(false, commitInterruptNewHead)
+			commit(false)
 
 		case head := <-w.chainHeadCh:
 			clearPending(head.Block.NumberU64())
 			timestamp = time.Now().Unix()
-			commit(false, commitInterruptNewHead)
-
-		case <-timer.C:
-			// If sealing is running resubmit a new work cycle periodically to pull in
-			// higher priced transactions. Disable this overhead for pending blocks.
-			if w.isRunning() && (w.chainConfig.Clique == nil || w.chainConfig.Clique.Period > 0) {
-				// Short circuit if no new transaction arrives.
-				if atomic.LoadInt32(&w.newTxs) == 0 {
-					timer.Reset(recommit)
-					continue
-				}
-				commit(true, commitInterruptResubmit)
-			}
+			commit(false)
 
 		case interval := <-w.resubmitIntervalCh:
 			// Adjust resubmit interval explicitly by user.
@@ -482,23 +453,6 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			}
 			log.Info("Miner recommit interval update", "from", minRecommit, "to", interval)
 			minRecommit, recommit = interval, interval
-
-			if w.resubmitHook != nil {
-				w.resubmitHook(minRecommit, recommit)
-			}
-
-		case adjust := <-w.resubmitAdjustCh:
-			// Adjust resubmit interval by feedback.
-			if adjust.inc {
-				before := recommit
-				target := float64(recommit.Nanoseconds()) / adjust.ratio
-				recommit = recalcRecommit(minRecommit, recommit, target, true)
-				log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
-			} else {
-				before := recommit
-				recommit = recalcRecommit(minRecommit, recommit, float64(minRecommit.Nanoseconds()), false)
-				log.Trace("Decrease miner recommit interval", "from", before, "to", recommit)
-			}
 
 			if w.resubmitHook != nil {
 				w.resubmitHook(minRecommit, recommit)
@@ -736,7 +690,7 @@ func (w *worker) resultLoop() {
 }
 
 // makeEnv creates a new environment for the sealing block.
-func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase common.Address) (*environment, error) {
+func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase common.Address) (*environment, *collatorBlockState, error) {
 	// Retrieve the parent state to execute on top and start a prefetcher for
 	// the miner to speed block sealing up a bit. Note since the sealing block
 	// can be created upon the arbitrary parent block, but the state of parent
@@ -748,16 +702,29 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 	}
 	state.StartPrefetcher("miner")
 
+    bs := &collatorBlockState{
+		state:     state,
+        gasPool: new(core.GasPool).AddGas(header.gasLimit),
+        tcount: 0,
+    }
+
+    ctx, cancel := context.WithCancel(context.Background())
+
 	// Note the passed coinbase may be different with header.Coinbase.
 	env := &environment{
 		signer:    types.MakeSigner(w.chainConfig, header.Number),
-		state:     state,
 		coinbase:  coinbase,
 		ancestors: mapset.NewSet(),
 		family:    mapset.NewSet(),
 		header:    header,
 		uncles:    make(map[common.Hash]*types.Header),
+        current: bs,
+        cycleCtx: ctx,
+        cancelCycle: cancel,
 	}
+
+    bs.env = env
+
 	// when 08 is processed ancestors contain 07 (quick block)
 	for _, ancestor := range w.chain.GetBlocksFromHash(parent.Hash(), 7) {
 		for _, uncle := range ancestor.Uncles() {
@@ -766,9 +733,10 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 		env.family.Add(ancestor.Hash())
 		env.ancestors.Add(ancestor.Hash())
 	}
-	// Keep track of transactions which return errors so they can be removed
-	env.tcount = 0
-	return env, nil
+
+    // have to copy the empty blockState b/c the collator needs a scratch blockState to modify (current env can only be mutated by holding currentMu)
+    // this is because we may respond to uncles arriving before collator finishes and need a copy of the empty blockState to finalize a new block.
+	return env, bs.Copy(), nil
 }
 
 // commitUncle adds the given block to uncle block set, returns error if failed to add.
@@ -1067,28 +1035,28 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	}
 	defer work.discard()
 
+    /*
 	if err := w.fillTransactions(nil, work); err != nil {
 		return nil, err
 	}
-	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
+    */
+
+    w.collator.CollateBlock(work)
+	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.current.state, work.current.txs, work.unclelist(), work.receipts)
 }
 
 // commitWork generates several new sealing tasks based on the parent block
 // and submit them to the sealer.
 func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
-    // TODO stop the previous workCycle
-    // * grab prevCycle.commitMu
-    // * prevCycle.cancelFunc()
-    // * release prevCycle.commitMu
-
     w.currentMu.Lock()
-    w.current.cancelCycle()
-    w.currentMu.Unlock()
+    defer w.currentMu.Unlock()
 
-    // TODO stop prev cycle prefetcher
-	if w.current != nil {
-		w.current.discard()
-	}
+    if w.current != nil {
+            // Swap out the old work with the new one, terminating any leftover
+            // prefetcher processes in the mean time and starting a new one.
+            w.current.cancelCycle()
+		    w.current.discard()
+    }
 
 	start := time.Now()
 	work, err := w.prepareWork(&generateParams{timestamp: uint64(timestamp)})
@@ -1100,16 +1068,6 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
-
-    /*
-    // pseudocode
-    w.collator.workCycleCancel()
-    ctx, w.collator.workCycleCancel := context.WithCancel(context.Background())
-    w.collator.newBlockCh <- CollatorWork{ctx: ctx, bs: freshBlockState}
-    */
-
-	// Swap out the old work with the new one, terminating any leftover
-	// prefetcher processes in the mean time and starting a new one.
 
 	w.current = work
 }
