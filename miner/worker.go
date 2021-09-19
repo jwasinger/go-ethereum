@@ -81,18 +81,23 @@ const (
 // information of the sealing block generation.
 type environment struct {
 	signer types.Signer
-
-	state     *state.StateDB // apply state changes here
 	ancestors mapset.Set     // ancestor set (used for checking uncle parent validity)
 	family    mapset.Set     // family set (used for checking uncle invalidity)
 	tcount    int            // tx count in cycle
 	gasPool   *core.GasPool  // available gas used to pack transactions
 	coinbase  common.Address
-
 	header   *types.Header
+
+	uncles   map[common.Hash]*types.Header
+    current *collatorBlockState
+}
+
+type collatorBlockState {
+	state     *state.StateDB
 	txs      []*types.Transaction
 	receipts []*types.Receipt
-	uncles   map[common.Hash]*types.Header
+    env *environment
+    committed bool
 }
 
 // copy creates a deep copy of environment.
@@ -210,6 +215,7 @@ type worker struct {
 	localUncles  map[common.Hash]*types.Block // A set of side blocks generated locally as the possible uncle blocks.
 	remoteUncles map[common.Hash]*types.Block // A set of side blocks as the possible uncle blocks.
 	unconfirmed  *unconfirmedBlocks           // A set of locally mined blocks pending canonicalness confirmations.
+    currentMu sync.RWMutex // lock used to synchronize multiple updates to the current work cycle environment
 
 	mu       sync.RWMutex // The lock used to protect the coinbase and extra fields
 	coinbase common.Address
@@ -548,9 +554,11 @@ func (w *worker) mainLoop() {
 			// sealing block for higher profit.
 			if w.isRunning() && w.current != nil && len(w.current.uncles) < 2 {
 				start := time.Now()
+                w.currentMu.Lock()
 				if err := w.commitUncle(w.current, ev.Block.Header()); err == nil {
 					w.commit(w.current.copy(), nil, true, start)
 				}
+                w.currentMu.Unlock()
 			}
 
 		case <-cleanTicker.C:
@@ -1068,6 +1076,20 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 // commitWork generates several new sealing tasks based on the parent block
 // and submit them to the sealer.
 func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
+    // TODO stop the previous workCycle
+    // * grab prevCycle.commitMu
+    // * prevCycle.cancelFunc()
+    // * release prevCycle.commitMu
+
+    w.currentMu.Lock()
+    w.current.cancelCycle()
+    w.currentMu.Unlock()
+
+    // TODO stop prev cycle prefetcher
+	if w.current != nil {
+		w.current.discard()
+	}
+
 	start := time.Now()
 	work, err := w.prepareWork(&generateParams{timestamp: uint64(timestamp)})
 	if err != nil {
@@ -1078,17 +1100,17 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
-	// Fill pending transactions from the txpool
-	if err := w.fillTransactions(interrupt, work); err != nil {
-		return
-	}
-	w.commit(work.copy(), w.fullTaskHook, true, start)
+
+    /*
+    // pseudocode
+    w.collator.workCycleCancel()
+    ctx, w.collator.workCycleCancel := context.WithCancel(context.Background())
+    w.collator.newBlockCh <- CollatorWork{ctx: ctx, bs: freshBlockState}
+    */
 
 	// Swap out the old work with the new one, terminating any leftover
 	// prefetcher processes in the mean time and starting a new one.
-	if w.current != nil {
-		w.current.discard()
-	}
+
 	w.current = work
 }
 
