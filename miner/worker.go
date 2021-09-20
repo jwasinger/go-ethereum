@@ -103,22 +103,12 @@ type collatorBlockState {
 func (env *environment) copy() *environment {
 	cpy := &environment{
 		signer:    env.signer,
-		state:     env.state.Copy(),
 		ancestors: env.ancestors.Clone(),
 		family:    env.family.Clone(),
-		tcount:    env.tcount,
 		coinbase:  env.coinbase,
 		header:    types.CopyHeader(env.header),
-		receipts:  copyReceipts(env.receipts),
+        current:   env.current.Copy(),
 	}
-	if env.gasPool != nil {
-		gasPool := *env.gasPool
-		cpy.gasPool = &gasPool
-	}
-	// The content of txs and uncles are immutable, unnecessary
-	// to do the expensive deep copy for them.
-	cpy.txs = make([]*types.Transaction, len(env.txs))
-	copy(cpy.txs, env.txs)
 	cpy.uncles = make(map[common.Hash]*types.Header)
 	for hash, uncle := range env.uncles {
 		cpy.uncles[hash] = uncle
@@ -914,7 +904,7 @@ type generateParams struct {
 // prepareWork constructs the sealing task according to the given parameters,
 // either based on the last chain head or specified parent. In this function
 // the pending transactions are not filled yet, only the empty task returned.
-func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
+func (w *worker) prepareWork(genParams *generateParams) (*environment, *collatorBlockState, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -968,7 +958,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		return nil, err
 	}
 	// Could potentially happen if starting to mine in an odd state.
-	env, err := w.makeEnv(parent, header, w.coinbase)
+	env, bs, err := w.makeEnv(parent, header, w.coinbase)
 	if err != nil {
 		log.Error("Failed to create sealing context", "err", err)
 		return nil, err
@@ -991,7 +981,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		commitUncles(w.localUncles)
 		commitUncles(w.remoteUncles)
 	}
-	return env, nil
+	return env, bs, nil
 }
 
 // fillTransactions retrieves the pending transactions from the txpool and fills them
@@ -1029,19 +1019,13 @@ func (w *worker) fillTransactions(interrupt *int32, env *environment) error {
 
 // generateWork generates a sealing block based on the given parameters.
 func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
-	work, err := w.prepareWork(params)
+	work, bs, err := w.prepareWork(params)
 	if err != nil {
 		return nil, err
 	}
 	defer work.discard()
 
-    /*
-	if err := w.fillTransactions(nil, work); err != nil {
-		return nil, err
-	}
-    */
-
-    w.collator.CollateBlock(work)
+    w.collator.CollateBlock(bs)
 	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.current.state, work.current.txs, work.unclelist(), work.receipts)
 }
 
@@ -1049,8 +1033,6 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 // and submit them to the sealer.
 func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
     w.currentMu.Lock()
-    defer w.currentMu.Unlock()
-
     if w.current != nil {
             // Swap out the old work with the new one, terminating any leftover
             // prefetcher processes in the mean time and starting a new one.
@@ -1068,8 +1050,10 @@ func (w *worker) commitWork(interrupt *int32, noempty bool, timestamp int64) {
 	if !noempty && atomic.LoadUint32(&w.noempty) == 0 {
 		w.commit(work.copy(), nil, false, start)
 	}
-
 	w.current = work
+    w.currentMu.Unlock()
+
+    w.collator.blockCh <- BlockCollatorWork{Block: bs, Ctx: work.cycleCtx}
 }
 
 // commit runs any post-transaction state modifications, assembles the final block
