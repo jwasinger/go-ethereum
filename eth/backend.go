@@ -111,6 +111,19 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Warn("Sanitizing invalid miner gas price", "provided", config.Miner.GasPrice, "updated", ethconfig.Defaults.Miner.GasPrice)
 		config.Miner.GasPrice = new(big.Int).Set(ethconfig.Defaults.Miner.GasPrice)
 	}
+
+	var minerCollator miner.Collator
+	var minerCollatorAPI miner.CollatorAPI
+
+	if config.Miner.UseCustomCollator {
+		log.Info("using custom mining collator")
+		var err error
+		minerCollator, minerCollatorAPI, err = miner.LoadCollator(config.Miner.CollatorPath, config.Miner.CollatorConfigPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if config.NoPruning && config.TrieDirtyCache > 0 {
 		if config.SnapshotCache > 0 {
 			config.TrieCleanCache += config.TrieDirtyCache * 3 / 5
@@ -225,7 +238,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
+	eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock, minerCollator, minerCollatorAPI)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
@@ -296,6 +309,15 @@ func (s *Ethereum) APIs() []rpc.API {
 
 	// Append any APIs exposed explicitly by the consensus engine
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
+
+	if s.config.Miner.UseCustomCollator && s.miner.API != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "minercollator",
+			Version:   s.miner.API.Version(),
+			Service:   s.miner.API.Service(),
+			Public:    true,
+		})
+	}
 
 	// Append all the local APIs and return
 	return append(apis, []rpc.API{

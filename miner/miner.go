@@ -51,6 +51,9 @@ type Config struct {
 	GasPrice   *big.Int       // Minimum gas price for mining a transaction
 	Recommit   time.Duration  // The time interval for miner to re-create mining work.
 	Noverify   bool           // Disable remote mining solution verification(only useful in ethash).
+	UseCustomCollator  bool
+	CollatorPath       string
+	CollatorConfigPath string
 }
 
 // Miner creates blocks and searches for proof-of-work values.
@@ -63,9 +66,10 @@ type Miner struct {
 	exitCh   chan struct{}
 	startCh  chan common.Address
 	stopCh   chan struct{}
+	API CollatorAPI
 }
 
-func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(block *types.Block) bool) *Miner {
+func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(block *types.Block) bool, collator Collator, collatorAPI CollatorAPI) *Miner {
 	miner := &Miner{
 		eth:     eth,
 		mux:     mux,
@@ -73,7 +77,8 @@ func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *even
 		exitCh:  make(chan struct{}),
 		startCh: make(chan common.Address),
 		stopCh:  make(chan struct{}),
-		worker:  newWorker(config, chainConfig, engine, eth, mux, isLocalBlock, true),
+		API:     collatorAPI,
+		worker:  newWorker(config, chainConfig, collator, engine, eth, mux, isLocalBlock, true),
 	}
 	go miner.update()
 
@@ -149,6 +154,7 @@ func (miner *Miner) Start(coinbase common.Address) {
 }
 
 func (miner *Miner) Stop() {
+	miner.worker.collator.Close()
 	miner.stopCh <- struct{}{}
 }
 

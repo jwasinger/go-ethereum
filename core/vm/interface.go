@@ -76,6 +76,22 @@ type StateDB interface {
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 }
 
+type StateReader interface {
+	GetBalance(common.Address) *big.Int
+	GetNonce(common.Address) uint64
+	GetCodeHash(common.Address) common.Hash
+	GetCode(common.Address) []byte
+	GetCodeSize(common.Address) int
+	GetRefund() uint64
+	GetCommittedState(common.Address, common.Hash) common.Hash
+	GetState(common.Address, common.Hash) common.Hash
+	HasSuicided(common.Address) bool
+	Exist(common.Address) bool
+	Empty(common.Address) bool
+	AddressInAccessList(addr common.Address) bool
+	SlotInAccessList(addr common.Address, slot common.Hash) (addressOk bool, slotOk bool)
+}
+
 // CallContext provides a basic interface for the EVM calling conventions. The EVM
 // depends on this context being implemented for doing subcalls and initialising new EVM contracts.
 type CallContext interface {
