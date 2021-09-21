@@ -81,7 +81,7 @@ type Collator interface {
     CollateBlocks(miner MinerState, blockCh chan-> BlockCollatorWork, exitCh chan-> struct{})
 }
 
-type collatorBlockState struct {
+type blockState struct {
     env *environment
     committed bool
     shouldSeal bool
@@ -116,13 +116,12 @@ func (bs *collatorBlockState) Commit() {
     if bs.committed {
         return
     }
-    bs.env.worker.currentMu.Lock()
-    defer bs.env.worker.currentMu.Unlock()
+    bs.env.worker.mu.Lock()
+    defer bs.env.worker.mu.Unlock()
     if bs.env.ctx != nil && bs.env.ctx.Done() {
         return
     }
 
-    // todo make next 2 lines a function of environment (e.g. commitBS())...?
     bs.env.current = bs
     if bs.shouldSeal {
         bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
@@ -267,26 +266,16 @@ func (bs *blockState) RevertTransactions(count uint) error {
 	return nil
 }
 
-// TODO move this to be a method of environment
-/*
-func (bs *collatorBlockState) Interrupted() bool {
-	if bs.env.ctx != nil {
-			select {
-			case <-bs.env.ctx.Done():
-				return true
-			default:
-				return false
-			}
-	}
-
-	return false
-}
-*/
-
 func (bs *blockState) State() vm.StateReader {
-	return bs.env.state
+	return bs.state
 }
 
 func (bs *blockState) Signer() types.Signer {
 	return bs.env.signer
+}
+
+func (bs *blockState) Etherbase() common.Address {
+	bs.env.mu.Lock()
+	defer bs.env.mu.Unlock()
+	return bs.env.etherbase
 }

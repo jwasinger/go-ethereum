@@ -3,6 +3,7 @@ type DefaultCollator struct {
     recommit time.Duration
     minRecommit time.Duration
     miner MinerState
+    exitCh chan-> struct{}
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -185,13 +186,9 @@ func (c* DefaultCollator) workCycle() {
                 case <-timer.C:
 					// If mining is running resubmit a new work cycle periodically to pull in
 					// higher priced transactions. Disable this overhead for pending blocks.
-					if c.miner.IsRunning() {
-						chainConfig := c.miner.ChainConfig()
-						if chainConfig.Clique == nil || chainConfig.Clique.Period > 0 {
-							c.adjustRecommit(bs, false)
-						} else {
-							return
-						}
+				    chainConfig := c.miner.ChainConfig()
+					if c.miner.IsRunning() && (chainConfig.Clique == nil || chainConfig.Clique.Period > 0) {
+                        c.adjustRecommit(bs, false)
 					} else {
 						return
 					}
@@ -208,7 +205,9 @@ func (c *DefaultCollator) SetRecommit(interval time.Duration) {
     c.recommit, c.minRecommit = interval, interval
 }
 
-func (c *DefaultCollator) CollateBlocks(blockCh chan-> BlockCollatorWork, exitCh chan-> struct{}) {
+func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh chan-> BlockCollatorWork, exitCh chan-> struct{}) {
+    c.miner = miner
+    c.exitCh = exitCh
     for {
             select {
             case <-exitCh;
