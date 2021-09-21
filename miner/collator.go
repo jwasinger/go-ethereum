@@ -53,7 +53,17 @@ type BlockState interface {
 	Etherbase() common.Address
 }
 
-BlockCollatorWork struct {
+type MinerState interface {
+    IsRunning() bool
+    ChainConfig() params.ChainConfig
+    // TODO method to get fresh block?
+}
+
+type minerState struct {
+    chainConfig
+}
+
+type BlockCollatorWork struct {
     Ctx context.Context
     Block *BlockState
 }
@@ -79,8 +89,7 @@ type collatorBlockState struct {
 }
 
 var (
-	ErrInterrupted  = errors.New("interrupt: miner work cycle was interrupted by arrival of new chain head")
-	ErrCommitted         = errors.New("can't mutate BlockState after calling Commit()")
+	ErrAlreadyCommitted         = errors.New("can't mutate BlockState after calling Commit()")
 
 	// errors which indicate that a given transaction cannot be
 	// added at a given block or chain configuration.
@@ -178,14 +187,10 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 	}
 
 	if bs.committed {
-		return ErrCommitted, nil
+		return ErrAlreadyCommitted, nil
 	}
 
 	for _, tx := range txs {
-		if bs.Interrupted() {
-			return ErrInterrupted, nil
-		}
-
 		if bs.env.gasPool.Gas() < params.TxGas {
 			return ErrGasLimitReached, nil
 		}
@@ -243,8 +248,6 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 func (bs *blockState) RevertTransactions(count uint) error {
 	if bs.committed {
 		return ErrCommitted
-	} else if bs.Interrupted() {
-		return ErrInterrupted
 	} else if int(count) > len(bs.snapshots) {
 		return ErrTooManyTxs
 	} else if count == 0 {
@@ -256,6 +259,7 @@ func (bs *blockState) RevertTransactions(count uint) error {
 }
 
 // TODO move this to be a method of environment
+/*
 func (bs *collatorBlockState) Interrupted() bool {
 	if bs.env.ctx != nil {
 			select {
@@ -268,6 +272,7 @@ func (bs *collatorBlockState) Interrupted() bool {
 
 	return false
 }
+*/
 
 func (bs *blockState) State() vm.StateReader {
 	return bs.env.state
