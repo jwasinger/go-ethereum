@@ -55,12 +55,21 @@ type BlockState interface {
 
 type MinerState interface {
     IsRunning() bool
-    ChainConfig() params.ChainConfig
-    // TODO method to get fresh block?
+    ChainConfig() *params.ChainConfig
 }
 
 type minerState struct {
-    chainConfig
+    // keep a copy of ChainConfig here, if collator chooses (erroneously) to modify chainConfig, the chainConfig used by the miner doesn't get changed
+    chainConfig *params.ChainConfig
+    worker *worker
+}
+
+func (m *minerState) ChainConfig() *params.ChainConfig {
+    return m.chainConfig
+}
+
+func (m *minerState) IsRunning() bool {
+    return m.worker.IsRunning()
 }
 
 type BlockCollatorWork struct {
@@ -69,7 +78,7 @@ type BlockCollatorWork struct {
 }
 
 type Collator interface {
-    CollateBlocks(blockCh chan-> BlockCollatorWork, exitCh chan-> struct{})
+    CollateBlocks(miner MinerState, blockCh chan-> BlockCollatorWork, exitCh chan-> struct{})
 }
 
 type collatorBlockState struct {

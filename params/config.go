@@ -324,6 +324,40 @@ type ChainConfig struct {
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
 type EthashConfig struct{}
 
+func CopyChainConfig(c *ChainConfig) ChainConfig {
+	cpy := ChainConfig{
+		ChainID:             new(big.Int).Set(c.ChainID),
+		HomesteadBlock:      new(big.Int).Set(c.HomesteadBlock),
+		DAOForkBlock:        new(big.Int).Set(c.DAOForkBlock),
+		DAOForkSupport:      c.DAOForkSupport,
+		EIP150Block:         new(big.Int).Set(c.EIP150Block),
+		EIP150Hash:          c.EIP150Hash,
+		EIP155Block:         new(big.Int).Set(c.EIP155Block),
+		EIP158Block:         new(big.Int).Set(c.EIP158Block),
+		ByzantiumBlock:      new(big.Int).Set(c.ByzantiumBlock),
+		ConstantinopleBlock: new(big.Int).Set(c.ConstantinopleBlock),
+		PetersburgBlock:     new(big.Int).Set(c.PetersburgBlock),
+		IstanbulBlock:       new(big.Int).Set(c.IstanbulBlock),
+		MuirGlacierBlock:    new(big.Int).Set(c.MuirGlacierBlock),
+		BerlinBlock:         new(big.Int).Set(c.BerlinBlock),
+		LondonBlock:         new(big.Int).Set(c.LondonBlock),
+		CatalystBlock:       new(big.Int).Set(c.CatalystBlock),
+	}
+
+	if c.Ethash != nil {
+		cpy.Ethash = EthashConfig{}
+	}
+
+	if c.Clique != nil {
+		cpy.Clique = CliqueConfig{
+			Period: c.Period,
+			Epoch:  c.Epoch,
+		}
+	}
+
+	return &cpy
+}
+
 // String implements the stringer interface, returning the consensus engine details.
 func (c *EthashConfig) String() string {
 	return "ethash"
