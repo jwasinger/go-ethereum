@@ -1,3 +1,23 @@
+package miner
+
+import (
+	"errors"
+	//	"math"
+	//"math/big"
+	"os"
+	"plugin"
+	"time"
+    "context"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/naoina/toml"
+)
+
 type CollatorAPI interface {
 	Version() string
 	Service() interface{}
@@ -7,6 +27,41 @@ type CollatorAPI interface {
 type Pool interface {
 	Pending(bool) (map[common.Address]types.Transactions, error)
 	Locals() []common.Address
+}
+
+func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, error) {
+	p, err := plugin.Open(filepath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	v, err := p.Lookup("PluginConstructor")
+	if err != nil {
+		return nil, nil, errors.New("Symbol 'APIExport' not found")
+	}
+
+	pluginConstructor, ok := v.(func(config *map[string]interface{}) (Collator, CollatorAPI, error))
+	if !ok {
+		return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
+	}
+
+	f, err := os.Open(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+
+	config := make(map[string]interface{})
+	if err := toml.NewDecoder(f).Decode(&config); err != nil {
+		return nil, nil, err
+	}
+
+	collator, collatorAPI, err := pluginConstructor(&config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return collator, collatorAPI, nil
 }
 
 /*
@@ -53,9 +108,22 @@ type BlockState interface {
 	Etherbase() common.Address
 }
 
+type collatorBlockState struct {
+	state     *state.StateDB
+	txs      []*types.Transaction
+	receipts []*types.Receipt
+    env *environment
+    committed bool
+	tcount    int            // tx count in cycle
+	gasPool   *core.GasPool  // available gas used to pack transactions
+    logs []*types.Log
+    snapshots []int
+}
+
 type MinerState interface {
     IsRunning() bool
     ChainConfig() *params.ChainConfig
+    GetNewScratchBlock() (context.Context, BlockState)
 }
 
 type minerState struct {
@@ -69,7 +137,7 @@ func (m *minerState) ChainConfig() *params.ChainConfig {
 }
 
 func (m *minerState) IsRunning() bool {
-    return m.worker.IsRunning()
+    return m.worker.isRunning()
 }
 
 type BlockCollatorWork struct {
@@ -78,23 +146,7 @@ type BlockCollatorWork struct {
 }
 
 type Collator interface {
-    CollateBlocks(miner MinerState, blockCh chan-> BlockCollatorWork, exitCh chan-> struct{})
-}
-
-type blockState struct {
-    env *environment
-    committed bool
-    shouldSeal bool
-	state     *state.StateDB
-	txs      []*types.Transaction
-	receipts []*types.Receipt
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
-
-	start      time.Time
-	logs       []*types.Log
-	committed  bool
-	snapshots  []int
+    CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
 }
 
 var (
@@ -107,6 +159,7 @@ var (
 	ErrNonceTooHigh       = errors.New("tx nonce too high")
 	ErrTxTypeNotSupported = errors.New("tx type not supported")
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
+    ErrZeroTxs = errors.New("zero transactions")
 	// error which encompasses all other reasons a given transaction
 	// could not be added to the block.
 	ErrStrange = errors.New("strange error")
@@ -116,14 +169,14 @@ func (bs *collatorBlockState) Commit() {
     if bs.committed {
         return
     }
-    bs.env.worker.mu.Lock()
-    defer bs.env.worker.mu.Unlock()
-    if bs.env.ctx != nil && bs.env.ctx.Done() {
+    bs.env.worker.curEnvMu.Lock()
+    defer bs.env.worker.curEnvMu.Unlock()
+    if bs.env.cycleCtx != nil && bs.env.cycleCtx.Done() {
         return
     }
 
     bs.env.current = bs
-    if bs.shouldSeal {
+    if bs.env.shouldSeal {
         bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
     }
 
@@ -166,7 +219,6 @@ func copyReceipts(receipts []*types.Receipt) []*types.Receipt {
 func (bs *collatorBlockState) Copy() *collatorBlockState {
 	cpy := collatorBlockState{
 		env: bs.env,
-		shouldSeal: bs.shouldSeal,
 		state: bs.state.Copy(),
         tcount: bs.tcount,
         committed: bs.committed,
@@ -174,19 +226,33 @@ func (bs *collatorBlockState) Copy() *collatorBlockState {
 		receipts: copyReceipts(bs.receipts),
 	}
 
-    if env.gasPool != nil {
+    if bs.gasPool != nil {
             cpy.gasPool = new(core.GasPool)
-            cpy.gasPool = *env.gasPool
+            *cpy.gasPool = *bs.gasPool
     }
     cpy.txs = make([]*types.Transaction, len(bs.txs))
     copy(cpy.txs, bs.txs)
-	cpy.snapshots = make([]int, len(bs.snapshots)
+	cpy.snapshots = make([]int, len(bs.snapshots))
 	copy(cpy.snapshots, bs.snapshots)
 
     return &cpy
 }
 
-func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Receipts) {
+func (bs *collatorBlockState) commitTransaction(tx *types.Transaction) ([]*types.Log, error) {
+	snap := env.state.Snapshot()
+
+	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *w.chain.GetVMConfig())
+	if err != nil {
+		env.state.RevertToSnapshot(snap)
+		return nil, err
+	}
+	env.txs = append(env.txs, tx)
+	env.receipts = append(env.receipts, receipt)
+
+	return receipt.Logs, nil
+}
+
+func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, types.Receipts) {
 	tcount := 0
 	var retErr error = nil
 
@@ -199,25 +265,25 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 	}
 
 	for _, tx := range txs {
-		if bs.env.gasPool.Gas() < params.TxGas {
+		if bs.gasPool.Gas() < params.TxGas {
 			return ErrGasLimitReached, nil
 		}
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
-		if tx.Protected() && !bs.worker.chainConfig.IsEIP155(bs.env.header.Number) {
+		if tx.Protected() && !bs.env.worker.chainConfig.IsEIP155(bs.header.Number) {
 			return ErrTxTypeNotSupported, nil
 		}
 
 		// TODO can this error also be returned by commitTransaction below?
-		_, err := tx.EffectiveGasTip(bs.env.header.BaseFee)
+		_, err := tx.EffectiveGasTip(bs.header.BaseFee)
 		if err != nil {
 			return ErrGasFeeCapTooLow, nil
 		}
 
-		snapshot := bs.env.state.Snapshot()
-		bs.env.state.Prepare(tx.Hash(), bs.env.tcount+tcount)
-		txLogs, err := bs.worker.commitTransaction(bs.env, tx, bs.env.etherbase)
+		snapshot := bs.state.Snapshot()
+		bs.state.Prepare(tx.Hash(), bs.tcount+tcount)
+		txLogs, err := bs.env.worker.commitTransaction(bs.env, tx, bs.etherbase)
 		if err != nil {
 			switch {
 			case errors.Is(err, core.ErrGasLimitReached):
@@ -253,7 +319,7 @@ func (bs *blockState) AddTransactions(txs types.Transactions) (error, types.Rece
 	return nil, retReceipts
 }
 
-func (bs *blockState) RevertTransactions(count uint) error {
+func (bs *collatorBlockState) RevertTransactions(count uint) error {
 	if bs.committed {
 		return ErrCommitted
 	} else if int(count) > len(bs.snapshots) {
@@ -266,16 +332,14 @@ func (bs *blockState) RevertTransactions(count uint) error {
 	return nil
 }
 
-func (bs *blockState) State() vm.StateReader {
+func (bs *collatorBlockState) State() vm.StateReader {
 	return bs.state
 }
 
-func (bs *blockState) Signer() types.Signer {
+func (bs *collatorBlockState) Signer() types.Signer {
 	return bs.env.signer
 }
 
-func (bs *blockState) Etherbase() common.Address {
-	bs.env.mu.Lock()
-	defer bs.env.mu.Unlock()
+func (bs *collatorBlockState) Etherbase() common.Address {
 	return bs.env.etherbase
 }

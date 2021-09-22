@@ -69,19 +69,12 @@ type environment struct {
 
 	uncles   map[common.Hash]*types.Header
     current *collatorBlockState
+    worker *worker
     cycleCtx context.Context
     cancelCycle func()
+    shouldSeal bool
 }
 
-type collatorBlockState {
-	state     *state.StateDB
-	txs      []*types.Transaction
-	receipts []*types.Receipt
-    env *environment
-    committed bool
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
-}
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
@@ -188,7 +181,8 @@ type worker struct {
 	remoteUncles map[common.Hash]*types.Block // A set of side blocks as the possible uncle blocks.
 	unconfirmed  *unconfirmedBlocks           // A set of locally mined blocks pending canonicalness confirmations.
 
-	mu       sync.RWMutex // lock used to synchronize multiple updates to the current work cycle environment
+    curEnvMu sync.Mutex // used to guard updates to the current pending block
+	mu       sync.RWMutex
 	coinbase common.Address
 	extra    []byte
 
@@ -292,7 +286,7 @@ func (w *worker) setExtra(extra []byte) {
 // setRecommitInterval updates the interval for miner sealing work recommitting.
 func (w *worker) setRecommitInterval(interval time.Duration) {
     if w.isDefaultCollator {
-            defaultCollator, _ := w.collator.(DefaultCollator*)
+            defaultCollator, _ := w.collator.(*DefaultCollator)
             defaultCollator.SetRecommit(interval)
     } else {
         log.Warn("setRecommitInterval has no effect unless using the default collator")
@@ -447,11 +441,11 @@ func (w *worker) mainLoop() {
 			// sealing block for higher profit.
 			if w.isRunning() && w.current != nil && len(w.current.uncles) < 2 {
 				start := time.Now()
-                w.mu.Lock()
+                w.currentEnvMu.Lock()
 				if err := w.commitUncle(w.current, ev.Block.Header()); err == nil {
 					w.commit(w.current.copy(), nil, true, start)
 				}
-                w.mu.Unlock()
+                w.currentEnvMu.Unlock()
 			}
 
 		case <-cleanTicker.C:
@@ -607,6 +601,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 	state.StartPrefetcher("miner")
 
     bs := &collatorBlockState{
+        worker: w,
 		state:     state,
         gasPool: new(core.GasPool).AddGas(header.gasLimit),
         tcount: 0,
@@ -786,7 +781,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 // commitWork generates several new sealing tasks based on the parent block
 // and submit them to the sealer.
 func (w *worker) commitWork(noempty bool, timestamp int64) {
-    w.mu.Lock()
+    w.currentEnvMu.Lock()
     if w.current != nil {
             // Swap out the old work with the new one, terminating any leftover
             // prefetcher processes in the mean time and starting a new one.
@@ -805,7 +800,7 @@ func (w *worker) commitWork(noempty bool, timestamp int64) {
 		w.commit(work.copy(), nil, false, start)
 	}
 	w.current = work
-    w.mu.Unlock()
+    w.currentEnvMu.Unlock()
 
     w.collator.blockCh <- BlockCollatorWork{Block: bs, Ctx: work.cycleCtx}
 }

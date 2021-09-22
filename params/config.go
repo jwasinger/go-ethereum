@@ -345,17 +345,17 @@ func CopyChainConfig(c *ChainConfig) ChainConfig {
 	}
 
 	if c.Ethash != nil {
-		cpy.Ethash = EthashConfig{}
+		cpy.Ethash = &EthashConfig{}
 	}
 
 	if c.Clique != nil {
-		cpy.Clique = CliqueConfig{
-			Period: c.Period,
-			Epoch:  c.Epoch,
+		cpy.Clique = &CliqueConfig{
+			Period: c.Clique.Period,
+			Epoch:  c.Clique.Epoch,
 		}
 	}
 
-	return &cpy
+	return cpy
 }
 
 // String implements the stringer interface, returning the consensus engine details.

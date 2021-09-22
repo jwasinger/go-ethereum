@@ -1,9 +1,21 @@
+package miner
+
+import (
+	"errors"
+    "time"
+    "sync"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+)
+
 type DefaultCollator struct {
     recommitMu sync.Mutex
     recommit time.Duration
     minRecommit time.Duration
     miner MinerState
-    exitCh chan-> struct{}
+    exitCh <-chan struct{}
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -115,7 +127,7 @@ func submitTransactions(ctx context.Context, bs BlockState, txs *types.Transacti
 	return
 }
 
-func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, timer time.Timer, exitch <-chan struct) {
+func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, timer time.Timer, exitch <-chan struct{}) {
 	header := bs.Header()
 	txs, err := c.pool.Pending(true)
 	if err != nil {
@@ -205,12 +217,12 @@ func (c *DefaultCollator) SetRecommit(interval time.Duration) {
     c.recommit, c.minRecommit = interval, interval
 }
 
-func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh chan-> BlockCollatorWork, exitCh chan-> struct{}) {
+func (c *DefaultCollator) CollateBlocks(miner MinerState) {
     c.miner = miner
     c.exitCh = exitCh
     for {
             select {
-            case <-exitCh;
+            case <-exitCh:
                 return
             case cycleWork := <-blockCh:
                 c.workCycle(cycleWork)
