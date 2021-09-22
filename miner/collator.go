@@ -106,6 +106,7 @@ type BlockState interface {
 		the account which will receive the block reward.
 	*/
 	Etherbase() common.Address
+    GasPool() core.GasPool
 }
 
 type collatorBlockState struct {
@@ -118,12 +119,12 @@ type collatorBlockState struct {
 	gasPool   *core.GasPool  // available gas used to pack transactions
     logs []*types.Log
     snapshots []int
+	header   *types.Header
 }
 
 type MinerState interface {
     IsRunning() bool
     ChainConfig() *params.ChainConfig
-    GetNewScratchBlock() (context.Context, BlockState)
 }
 
 type minerState struct {
@@ -142,7 +143,7 @@ func (m *minerState) IsRunning() bool {
 
 type BlockCollatorWork struct {
     Ctx context.Context
-    Block *BlockState
+    Block BlockState
 }
 
 type Collator interface {
@@ -160,19 +161,25 @@ var (
 	ErrTxTypeNotSupported = errors.New("tx type not supported")
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
     ErrZeroTxs = errors.New("zero transactions")
+    ErrTooManyTxs = errors.New("applying txs to block would go over the block gas limit")
 	// error which encompasses all other reasons a given transaction
 	// could not be added to the block.
 	ErrStrange = errors.New("strange error")
 )
 
-func (bs *collatorBlockState) Commit() {
+func (bs *collatorBlockState) Commit() bool {
     if bs.committed {
-        return
+        return false
     }
     bs.env.worker.curEnvMu.Lock()
     defer bs.env.worker.curEnvMu.Unlock()
-    if bs.env.cycleCtx != nil && bs.env.cycleCtx.Done() {
-        return
+
+    if bs.env.cycleCtx != nil {
+        select {
+        case <-bs.env.cycleCtx.Done():
+            return false
+        default:
+        }
     }
 
     bs.env.current = bs
@@ -181,6 +188,7 @@ func (bs *collatorBlockState) Commit() {
     }
 
     bs.committed = true
+    return true
 }
 
 func copyLogs(logs []*types.Log) []*types.Log {
@@ -216,7 +224,11 @@ func copyReceipts(receipts []*types.Receipt) []*types.Receipt {
 	return result
 }
 
-func (bs *collatorBlockState) Copy() *collatorBlockState {
+func (bs *collatorBlockState) Copy() BlockState {
+    return bs.copy()
+}
+
+func (bs *collatorBlockState) copy() *collatorBlockState {
 	cpy := collatorBlockState{
 		env: bs.env,
 		state: bs.state.Copy(),
@@ -224,6 +236,7 @@ func (bs *collatorBlockState) Copy() *collatorBlockState {
         committed: bs.committed,
 		logs: copyLogs(bs.logs),
 		receipts: copyReceipts(bs.receipts),
+        header: types.CopyHeader(bs.header),
 	}
 
     if bs.gasPool != nil {
@@ -239,15 +252,15 @@ func (bs *collatorBlockState) Copy() *collatorBlockState {
 }
 
 func (bs *collatorBlockState) commitTransaction(tx *types.Transaction) ([]*types.Log, error) {
-	snap := env.state.Snapshot()
+	snap := bs.state.Snapshot()
 
-	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *w.chain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(bs.env.worker.chainConfig, bs.env.worker.chain, &bs.env.coinbase, bs.gasPool, bs.state, bs.header, tx, &bs.header.GasUsed, *bs.env.worker.chain.GetVMConfig())
 	if err != nil {
-		env.state.RevertToSnapshot(snap)
+		bs.state.RevertToSnapshot(snap)
 		return nil, err
 	}
-	env.txs = append(env.txs, tx)
-	env.receipts = append(env.receipts, receipt)
+	bs.txs = append(bs.txs, tx)
+	bs.receipts = append(bs.receipts, receipt)
 
 	return receipt.Logs, nil
 }
@@ -283,7 +296,7 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 
 		snapshot := bs.state.Snapshot()
 		bs.state.Prepare(tx.Hash(), bs.tcount+tcount)
-		txLogs, err := bs.env.worker.commitTransaction(bs.env, tx, bs.etherbase)
+		txLogs, err := bs.commitTransaction(tx)
 		if err != nil {
 			switch {
 			case errors.Is(err, core.ErrGasLimitReached):
@@ -302,7 +315,7 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 			}
 
 			bs.logs = bs.logs[:len(bs.logs)-tcount]
-			bs.env.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-tcount])
+			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-tcount])
 			bs.snapshots = bs.snapshots[:len(bs.snapshots)-tcount]
 
 			return retErr, nil
@@ -313,15 +326,15 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 		}
 	}
 
-	retReceipts := bs.env.receipts[bs.env.tcount:]
-	bs.env.tcount += tcount
+	retReceipts := bs.receipts[bs.tcount:]
+	bs.tcount += tcount
 
 	return nil, retReceipts
 }
 
 func (bs *collatorBlockState) RevertTransactions(count uint) error {
 	if bs.committed {
-		return ErrCommitted
+		return ErrAlreadyCommitted
 	} else if int(count) > len(bs.snapshots) {
 		return ErrTooManyTxs
 	} else if count == 0 {
@@ -341,5 +354,17 @@ func (bs *collatorBlockState) Signer() types.Signer {
 }
 
 func (bs *collatorBlockState) Etherbase() common.Address {
-	return bs.env.etherbase
+	return bs.env.coinbase
+}
+
+func (bs *collatorBlockState) GasPool() core.GasPool {
+    return *bs.gasPool
+}
+
+func (bs *collatorBlockState) discard() {
+    bs.state.StopPrefetcher()
+}
+
+func (bs *collatorBlockState) Header() *types.Header {
+    return types.CopyHeader(bs.header)
 }

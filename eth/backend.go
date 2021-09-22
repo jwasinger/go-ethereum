@@ -122,7 +122,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
+	} else {
+        minerCollator = &miner.DefaultCollator{}
+    }
 
 	if config.NoPruning && config.TrieDirtyCache > 0 {
 		if config.SnapshotCache > 0 {
@@ -310,11 +312,11 @@ func (s *Ethereum) APIs() []rpc.API {
 	// Append any APIs exposed explicitly by the consensus engine
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
 
-	if s.config.Miner.UseCustomCollator && s.miner.API != nil {
+	if s.config.Miner.UseCustomCollator && s.miner.CollatorAPI != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "minercollator",
-			Version:   s.miner.API.Version(),
-			Service:   s.miner.API.Service(),
+			Version:   s.miner.CollatorAPI.Version(),
+			Service:   s.miner.CollatorAPI.Service(),
 			Public:    true,
 		})
 	}

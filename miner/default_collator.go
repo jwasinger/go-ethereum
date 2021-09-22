@@ -4,10 +4,29 @@ import (
 	"errors"
     "time"
     "sync"
+    "context"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+)
+
+const (
+	// minRecommitInterval is the minimal time interval to recreate the mining block with
+	// any newly arrived transactions.
+	minRecommitInterval = 1 * time.Second
+
+	// maxRecommitInterval is the maximum time interval to recreate the mining block with
+	// any newly arrived transactions.
+	maxRecommitInterval = 15 * time.Second
+
+	// intervalAdjustRatio is the impact a single interval adjustment has on sealing work
+	// resubmitting interval.
+	intervalAdjustRatio = 0.1
+
+	// intervalAdjustBias is applied during the new resubmit interval calculation in favor of
+	// increasing upper limit or decreasing lower limit so that the limit can be reachable.
+	intervalAdjustBias = 200 * 1000.0 * 1000.0
 )
 
 type DefaultCollator struct {
@@ -16,6 +35,7 @@ type DefaultCollator struct {
     minRecommit time.Duration
     miner MinerState
     exitCh <-chan struct{}
+    pool Pool
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -43,37 +63,40 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 func (c *DefaultCollator) adjustRecommit(bs BlockState, inc bool) {
 	c.recommitMu.Lock()
 	defer c.recommitMu.Unlock()
+	header := bs.Header()
+	gasLimit := header.GasLimit
+    gasPool := bs.GasPool()
 	if inc {
-		before := recommit
-		ratio := float64(gasLimit-w.current.gasPool.Gas()) / float64(gasLimit)
+		before := c.recommit
+		ratio := float64(gasLimit-gasPool.Gas()) / float64(gasLimit)
 		if ratio < 0.1 {
 			ratio = 0.1
 		}
 
-		target := float64(recommit.Nanoseconds()) / ratio
-		c.recommit = recalcRecommit(minRecommit, recommit, target, true)
-		log.Trace("Increase miner recommit interval", "from", before, "to", recommit)
+		target := float64(c.recommit.Nanoseconds()) / ratio
+		c.recommit = recalcRecommit(c.minRecommit, c.recommit, target, true)
+		log.Trace("Increase miner recommit interval", "from", before, "to", c.recommit)
 	} else {
-		before := recommit
-		c.recommit = recalcRecommit(minRecommit, recommit, float64(minRecommit.Nanoseconds()), false)
-		log.Trace("Decrease miner recommit interval", "from", before, "to", recommit)
+		before := c.recommit
+		c.recommit = recalcRecommit(c.minRecommit, c.recommit, float64(c.minRecommit.Nanoseconds()), false)
+		log.Trace("Decrease miner recommit interval", "from", before, "to", c.recommit)
 	}
 }
 
-func submitTransactions(ctx context.Context, bs BlockState, txs *types.TransactionsByPriceAndNonce) {
+func submitTransactions(ctx context.Context, bs BlockState, txs *types.TransactionsByPriceAndNonce, timer *time.Timer) bool {
 	header := bs.Header()
 	availableGas := header.GasLimit
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		default:
 		}
 
 		if timer != nil {
 			select {
 			case <-timer.C:
-				return
+				return false
 			default:
 			}
 		}
@@ -124,10 +147,10 @@ func submitTransactions(ctx context.Context, bs BlockState, txs *types.Transacti
 		}
 	}
 
-	return
+	return false
 }
 
-func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, timer time.Timer, exitch <-chan struct{}) {
+func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, timer *time.Timer) {
 	header := bs.Header()
 	txs, err := c.pool.Pending(true)
 	if err != nil {
@@ -146,30 +169,31 @@ func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, t
 		}
 	}
 	if len(localTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee)) {
-			return true
+		if submitTransactions(ctx, bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), localTxs, header.BaseFee), timer) {
+			return
 		}
 	}
 	if len(remoteTxs) > 0 {
-		if submitTransactions(bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee)) {
-			return true
+		if submitTransactions(ctx, bs, types.NewTransactionsByPriceAndNonce(bs.Signer(), remoteTxs, header.BaseFee), timer) {
+			return
 		}
 	}
 
 	bs.Commit()
-
-	return
 }
 
-func (c* DefaultCollator) workCycle() {
+func (c* DefaultCollator) workCycle(work BlockCollatorWork) {
+        ctx := work.Ctx
+        emptyBs := work.Block
+
         for {
-                c.recommitMu.Rlock()
+                c.recommitMu.Lock()
                 curRecommit := c.recommit
                 c.recommitMu.Unlock()
                 timer := time.NewTimer(curRecommit)
 
                 bs := emptyBs.Copy()
-                c.fillTransactions(bs, timer)
+                c.fillTransactions(ctx, bs, timer)
                 bs.Commit()
                 shouldContinue := false
 
@@ -193,7 +217,7 @@ func (c* DefaultCollator) workCycle() {
                 }
 
                 select {
-                case ctx.Done():
+                case <-ctx.Done():
                     return
                 case <-timer.C:
 					// If mining is running resubmit a new work cycle periodically to pull in
@@ -211,18 +235,18 @@ func (c* DefaultCollator) workCycle() {
 }
 
 func (c *DefaultCollator) SetRecommit(interval time.Duration) {
-    c.recommitMu.WLock()
+    c.recommitMu.Lock()
     defer c.recommitMu.Unlock()
 
     c.recommit, c.minRecommit = interval, interval
 }
 
-func (c *DefaultCollator) CollateBlocks(miner MinerState) {
+func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{}) {
     c.miner = miner
     c.exitCh = exitCh
     for {
             select {
-            case <-exitCh:
+            case <-c.exitCh:
                 return
             case cycleWork := <-blockCh:
                 c.workCycle(cycleWork)

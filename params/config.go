@@ -324,8 +324,8 @@ type ChainConfig struct {
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
 type EthashConfig struct{}
 
-func CopyChainConfig(c *ChainConfig) ChainConfig {
-	cpy := ChainConfig{
+func CopyChainConfig(c *ChainConfig) *ChainConfig {
+	cpy := &ChainConfig{
 		ChainID:             new(big.Int).Set(c.ChainID),
 		HomesteadBlock:      new(big.Int).Set(c.HomesteadBlock),
 		DAOForkBlock:        new(big.Int).Set(c.DAOForkBlock),
