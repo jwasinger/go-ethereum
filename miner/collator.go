@@ -4,16 +4,16 @@ import (
 	"errors"
 	//	"math"
 	//"math/big"
+	"context"
 	"os"
 	"plugin"
 	"time"
-    "context"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/naoina/toml"
 )
@@ -106,52 +106,52 @@ type BlockState interface {
 		the account which will receive the block reward.
 	*/
 	Etherbase() common.Address
-    GasPool() core.GasPool
+	GasPool() core.GasPool
 }
 
 type collatorBlockState struct {
 	state     *state.StateDB
-	txs      []*types.Transaction
-	receipts []*types.Receipt
-    env *environment
-    committed bool
-	tcount    int            // tx count in cycle
-	gasPool   *core.GasPool  // available gas used to pack transactions
-    logs []*types.Log
-    snapshots []int
-	header   *types.Header
+	txs       []*types.Transaction
+	receipts  []*types.Receipt
+	env       *environment
+	committed bool
+	tcount    int           // tx count in cycle
+	gasPool   *core.GasPool // available gas used to pack transactions
+	logs      []*types.Log
+	snapshots []int
+	header    *types.Header
 }
 
 type MinerState interface {
-    IsRunning() bool
-    ChainConfig() *params.ChainConfig
+	IsRunning() bool
+	ChainConfig() *params.ChainConfig
 }
 
 type minerState struct {
-    // keep a copy of ChainConfig here, if collator chooses (erroneously) to modify chainConfig, the chainConfig used by the miner doesn't get changed
-    chainConfig *params.ChainConfig
-    worker *worker
+	// keep a copy of ChainConfig here, if collator chooses (erroneously) to modify chainConfig, the chainConfig used by the miner doesn't get changed
+	chainConfig *params.ChainConfig
+	worker      *worker
 }
 
 func (m *minerState) ChainConfig() *params.ChainConfig {
-    return m.chainConfig
+	return m.chainConfig
 }
 
 func (m *minerState) IsRunning() bool {
-    return m.worker.isRunning()
+	return m.worker.isRunning()
 }
 
 type BlockCollatorWork struct {
-    Ctx context.Context
-    Block BlockState
+	Ctx   context.Context
+	Block BlockState
 }
 
 type Collator interface {
-    CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
+	CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
 }
 
 var (
-	ErrAlreadyCommitted         = errors.New("can't mutate BlockState after calling Commit()")
+	ErrAlreadyCommitted = errors.New("can't mutate BlockState after calling Commit()")
 
 	// errors which indicate that a given transaction cannot be
 	// added at a given block or chain configuration.
@@ -160,35 +160,35 @@ var (
 	ErrNonceTooHigh       = errors.New("tx nonce too high")
 	ErrTxTypeNotSupported = errors.New("tx type not supported")
 	ErrGasFeeCapTooLow    = errors.New("gas fee cap too low")
-    ErrZeroTxs = errors.New("zero transactions")
-    ErrTooManyTxs = errors.New("applying txs to block would go over the block gas limit")
+	ErrZeroTxs            = errors.New("zero transactions")
+	ErrTooManyTxs         = errors.New("applying txs to block would go over the block gas limit")
 	// error which encompasses all other reasons a given transaction
 	// could not be added to the block.
 	ErrStrange = errors.New("strange error")
 )
 
 func (bs *collatorBlockState) Commit() bool {
-    if bs.committed {
-        return false
-    }
-    bs.env.worker.curEnvMu.Lock()
-    defer bs.env.worker.curEnvMu.Unlock()
+	if bs.committed {
+		return false
+	}
+	bs.env.worker.curEnvMu.Lock()
+	defer bs.env.worker.curEnvMu.Unlock()
 
-    if bs.env.cycleCtx != nil {
-        select {
-        case <-bs.env.cycleCtx.Done():
-            return false
-        default:
-        }
-    }
+	if bs.env.cycleCtx != nil {
+		select {
+		case <-bs.env.cycleCtx.Done():
+			return false
+		default:
+		}
+	}
 
-    bs.env.current = bs
-    if bs.env.shouldSeal {
-        bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
-    }
+	bs.env.current = bs
+	if bs.env.shouldSeal {
+		bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
+	}
 
-    bs.committed = true
-    return true
+	bs.committed = true
+	return true
 }
 
 func copyLogs(logs []*types.Log) []*types.Log {
@@ -225,30 +225,30 @@ func copyReceipts(receipts []*types.Receipt) []*types.Receipt {
 }
 
 func (bs *collatorBlockState) Copy() BlockState {
-    return bs.copy()
+	return bs.copy()
 }
 
 func (bs *collatorBlockState) copy() *collatorBlockState {
 	cpy := collatorBlockState{
-		env: bs.env,
-		state: bs.state.Copy(),
-        tcount: bs.tcount,
-        committed: bs.committed,
-		logs: copyLogs(bs.logs),
-		receipts: copyReceipts(bs.receipts),
-        header: types.CopyHeader(bs.header),
+		env:       bs.env,
+		state:     bs.state.Copy(),
+		tcount:    bs.tcount,
+		committed: bs.committed,
+		logs:      copyLogs(bs.logs),
+		receipts:  copyReceipts(bs.receipts),
+		header:    types.CopyHeader(bs.header),
 	}
 
-    if bs.gasPool != nil {
-            cpy.gasPool = new(core.GasPool)
-            *cpy.gasPool = *bs.gasPool
-    }
-    cpy.txs = make([]*types.Transaction, len(bs.txs))
-    copy(cpy.txs, bs.txs)
+	if bs.gasPool != nil {
+		cpy.gasPool = new(core.GasPool)
+		*cpy.gasPool = *bs.gasPool
+	}
+	cpy.txs = make([]*types.Transaction, len(bs.txs))
+	copy(cpy.txs, bs.txs)
 	cpy.snapshots = make([]int, len(bs.snapshots))
 	copy(cpy.snapshots, bs.snapshots)
 
-    return &cpy
+	return &cpy
 }
 
 func (bs *collatorBlockState) commitTransaction(tx *types.Transaction) ([]*types.Log, error) {
@@ -358,13 +358,13 @@ func (bs *collatorBlockState) Etherbase() common.Address {
 }
 
 func (bs *collatorBlockState) GasPool() core.GasPool {
-    return *bs.gasPool
+	return *bs.gasPool
 }
 
 func (bs *collatorBlockState) discard() {
-    bs.state.StopPrefetcher()
+	bs.state.StopPrefetcher()
 }
 
 func (bs *collatorBlockState) Header() *types.Header {
-    return types.CopyHeader(bs.header)
+	return types.CopyHeader(bs.header)
 }

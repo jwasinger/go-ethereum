@@ -1,10 +1,10 @@
 package miner
 
 import (
+	"context"
 	"errors"
-    "time"
-    "sync"
-    "context"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,12 +30,12 @@ const (
 )
 
 type DefaultCollator struct {
-    recommitMu sync.Mutex
-    recommit time.Duration
-    minRecommit time.Duration
-    miner MinerState
-    exitCh <-chan struct{}
-    pool Pool
+	recommitMu  sync.Mutex
+	recommit    time.Duration
+	minRecommit time.Duration
+	miner       MinerState
+	exitCh      <-chan struct{}
+	pool        Pool
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -65,7 +65,7 @@ func (c *DefaultCollator) adjustRecommit(bs BlockState, inc bool) {
 	defer c.recommitMu.Unlock()
 	header := bs.Header()
 	gasLimit := header.GasLimit
-    gasPool := bs.GasPool()
+	gasPool := bs.GasPool()
 	if inc {
 		before := c.recommit
 		ratio := float64(gasLimit-gasPool.Gas()) / float64(gasLimit)
@@ -182,74 +182,74 @@ func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, t
 	bs.Commit()
 }
 
-func (c* DefaultCollator) workCycle(work BlockCollatorWork) {
-        ctx := work.Ctx
-        emptyBs := work.Block
+func (c *DefaultCollator) workCycle(work BlockCollatorWork) {
+	ctx := work.Ctx
+	emptyBs := work.Block
 
-        for {
-                c.recommitMu.Lock()
-                curRecommit := c.recommit
-                c.recommitMu.Unlock()
-                timer := time.NewTimer(curRecommit)
+	for {
+		c.recommitMu.Lock()
+		curRecommit := c.recommit
+		c.recommitMu.Unlock()
+		timer := time.NewTimer(curRecommit)
 
-                bs := emptyBs.Copy()
-                c.fillTransactions(ctx, bs, timer)
-                bs.Commit()
-                shouldContinue := false
+		bs := emptyBs.Copy()
+		c.fillTransactions(ctx, bs, timer)
+		bs.Commit()
+		shouldContinue := false
 
-                select {
-                    case <-timer.C:
-                        select {
-                        case <-ctx.Done():
-                            return
-                        case <-c.exitCh:
-                            return
-						default:
-                        }
+		select {
+		case <-timer.C:
+			select {
+			case <-ctx.Done():
+				return
+			case <-c.exitCh:
+				return
+			default:
+			}
 
-                        c.adjustRecommit(bs, true)
-                        shouldContinue = true
-                    default:
-                }
+			c.adjustRecommit(bs, true)
+			shouldContinue = true
+		default:
+		}
 
-                if shouldContinue {
-                    continue
-                }
+		if shouldContinue {
+			continue
+		}
 
-                select {
-                case <-ctx.Done():
-                    return
-                case <-timer.C:
-					// If mining is running resubmit a new work cycle periodically to pull in
-					// higher priced transactions. Disable this overhead for pending blocks.
-				    chainConfig := c.miner.ChainConfig()
-					if c.miner.IsRunning() && (chainConfig.Clique == nil || chainConfig.Clique.Period > 0) {
-                        c.adjustRecommit(bs, false)
-					} else {
-						return
-					}
-                case <-c.exitCh:
-                    return
-                }
-        }
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			// If mining is running resubmit a new work cycle periodically to pull in
+			// higher priced transactions. Disable this overhead for pending blocks.
+			chainConfig := c.miner.ChainConfig()
+			if c.miner.IsRunning() && (chainConfig.Clique == nil || chainConfig.Clique.Period > 0) {
+				c.adjustRecommit(bs, false)
+			} else {
+				return
+			}
+		case <-c.exitCh:
+			return
+		}
+	}
 }
 
 func (c *DefaultCollator) SetRecommit(interval time.Duration) {
-    c.recommitMu.Lock()
-    defer c.recommitMu.Unlock()
+	c.recommitMu.Lock()
+	defer c.recommitMu.Unlock()
 
-    c.recommit, c.minRecommit = interval, interval
+	c.recommit, c.minRecommit = interval, interval
 }
 
 func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{}) {
-    c.miner = miner
-    c.exitCh = exitCh
-    for {
-            select {
-            case <-c.exitCh:
-                return
-            case cycleWork := <-blockCh:
-                c.workCycle(cycleWork)
-            }
-    }
+	c.miner = miner
+	c.exitCh = exitCh
+	for {
+		select {
+		case <-c.exitCh:
+			return
+		case cycleWork := <-blockCh:
+			c.workCycle(cycleWork)
+		}
+	}
 }

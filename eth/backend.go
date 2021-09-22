@@ -123,8 +123,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			return nil, err
 		}
 	} else {
-        minerCollator = &miner.DefaultCollator{}
-    }
+		minerCollator = &miner.DefaultCollator{}
+	}
 
 	if config.NoPruning && config.TrieDirtyCache > 0 {
 		if config.SnapshotCache > 0 {
