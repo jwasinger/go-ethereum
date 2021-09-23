@@ -37,12 +37,12 @@ func LoadCollator(filepath string, configPath string) (Collator, CollatorAPI, er
 
 	v, err := p.Lookup("PluginConstructor")
 	if err != nil {
-		return nil, nil, errors.New("Symbol 'APIExport' not found")
+		return nil, nil, errors.New("symbol 'APIExport' not found")
 	}
 
 	pluginConstructor, ok := v.(func(config *map[string]interface{}) (Collator, CollatorAPI, error))
 	if !ok {
-		return nil, nil, errors.New("Expected symbol 'API' to be of type 'CollatorAPI")
+		return nil, nil, errors.New("expected symbol 'API' to be of type 'CollatorAPI")
 	}
 
 	f, err := os.Open(configPath)

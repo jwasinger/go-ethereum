@@ -115,7 +115,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	var minerCollator miner.Collator
 	var minerCollatorAPI miner.CollatorAPI
 
-	if config.Miner.UseCustomCollator {
+	if config.Miner.CollatorPath != "" {
 		log.Info("using custom mining collator")
 		var err error
 		minerCollator, minerCollatorAPI, err = miner.LoadCollator(config.Miner.CollatorPath, config.Miner.CollatorConfigPath)
@@ -313,7 +313,7 @@ func (s *Ethereum) APIs() []rpc.API {
 	// Append any APIs exposed explicitly by the consensus engine
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
 
-	if s.config.Miner.UseCustomCollator && s.miner.CollatorAPI != nil {
+	if s.config.Miner.CollatorPath != "" && s.miner.CollatorAPI != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "minercollator",
 			Version:   s.miner.CollatorAPI.Version(),
