@@ -147,7 +147,7 @@ type BlockCollatorWork struct {
 }
 
 type Collator interface {
-	CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
+	CollateBlocks(miner MinerState, pool Pool, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
 }
 
 var (
@@ -168,9 +168,6 @@ var (
 )
 
 func (bs *collatorBlockState) Commit() bool {
-	if bs.committed {
-		return false
-	}
 	bs.env.worker.curEnvMu.Lock()
 	defer bs.env.worker.curEnvMu.Unlock()
 
@@ -183,11 +180,8 @@ func (bs *collatorBlockState) Commit() bool {
 	}
 
 	bs.env.current = bs
-	if bs.env.shouldSeal {
-		bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
-	}
+	bs.env.worker.commit(bs.env.copy(), nil, true, time.Now())
 
-	bs.committed = true
 	return true
 }
 
@@ -230,13 +224,12 @@ func (bs *collatorBlockState) Copy() BlockState {
 
 func (bs *collatorBlockState) copy() *collatorBlockState {
 	cpy := collatorBlockState{
-		env:       bs.env,
-		state:     bs.state.Copy(),
-		tcount:    bs.tcount,
-		committed: bs.committed,
-		logs:      copyLogs(bs.logs),
-		receipts:  copyReceipts(bs.receipts),
-		header:    types.CopyHeader(bs.header),
+		env:      bs.env,
+		state:    bs.state.Copy(),
+		tcount:   bs.tcount,
+		logs:     copyLogs(bs.logs),
+		receipts: copyReceipts(bs.receipts),
+		header:   types.CopyHeader(bs.header),
 	}
 
 	if bs.gasPool != nil {
@@ -271,10 +264,6 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 
 	if len(txs) == 0 {
 		return ErrZeroTxs, nil
-	}
-
-	if bs.committed {
-		return ErrAlreadyCommitted, nil
 	}
 
 	for _, tx := range txs {
@@ -315,7 +304,7 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 			}
 
 			bs.logs = bs.logs[:len(bs.logs)-tcount]
-			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-tcount])
+			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
 			bs.snapshots = bs.snapshots[:len(bs.snapshots)-tcount]
 
 			return retErr, nil
@@ -333,9 +322,7 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 }
 
 func (bs *collatorBlockState) RevertTransactions(count uint) error {
-	if bs.committed {
-		return ErrAlreadyCommitted
-	} else if int(count) > len(bs.snapshots) {
+	if int(count) > len(bs.snapshots) {
 		return ErrTooManyTxs
 	} else if count == 0 {
 		return ErrZeroTxs

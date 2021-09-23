@@ -123,6 +123,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			return nil, err
 		}
 	} else {
+		panic("TODO fix config setting here: miner gets instantiated later but we create the DefaultCollator here.  but it should be created after the recommit is potentially sanitized in the miner")
 		minerCollator = &miner.DefaultCollator{}
 	}
 

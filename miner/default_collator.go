@@ -30,12 +30,13 @@ const (
 )
 
 type DefaultCollator struct {
-	recommitMu  sync.Mutex
-	recommit    time.Duration
-	minRecommit time.Duration
-	miner       MinerState
-	exitCh      <-chan struct{}
-	pool        Pool
+	recommitMu   sync.Mutex
+	recommit     time.Duration
+	minRecommit  time.Duration
+	miner        MinerState
+	exitCh       <-chan struct{}
+	pool         Pool
+	resubmitHook func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
 }
 
 // recalcRecommit recalculates the resubmitting interval upon feedback.
@@ -60,15 +61,11 @@ func recalcRecommit(minRecommit, prev time.Duration, target float64, inc bool) t
 	return time.Duration(int64(next))
 }
 
-func (c *DefaultCollator) adjustRecommit(bs BlockState, inc bool) {
+func (c *DefaultCollator) adjustRecommit(ratio float64, inc bool) {
 	c.recommitMu.Lock()
 	defer c.recommitMu.Unlock()
-	header := bs.Header()
-	gasLimit := header.GasLimit
-	gasPool := bs.GasPool()
 	if inc {
 		before := c.recommit
-		ratio := float64(gasLimit-gasPool.Gas()) / float64(gasLimit)
 		if ratio < 0.1 {
 			ratio = 0.1
 		}
@@ -80,6 +77,10 @@ func (c *DefaultCollator) adjustRecommit(bs BlockState, inc bool) {
 		before := c.recommit
 		c.recommit = recalcRecommit(c.minRecommit, c.recommit, float64(c.minRecommit.Nanoseconds()), false)
 		log.Trace("Decrease miner recommit interval", "from", before, "to", c.recommit)
+	}
+
+	if c.resubmitHook != nil {
+		c.resubmitHook(c.minRecommit, c.recommit)
 	}
 }
 
@@ -178,8 +179,6 @@ func (c *DefaultCollator) fillTransactions(ctx context.Context, bs BlockState, t
 			return
 		}
 	}
-
-	bs.Commit()
 }
 
 func (c *DefaultCollator) workCycle(work BlockCollatorWork) {
@@ -207,7 +206,12 @@ func (c *DefaultCollator) workCycle(work BlockCollatorWork) {
 			default:
 			}
 
-			c.adjustRecommit(bs, true)
+			header := bs.Header()
+			gasLimit := header.GasLimit
+			gasPool := bs.GasPool()
+			ratio := float64(gasLimit-gasPool.Gas()) / float64(gasLimit)
+
+			c.adjustRecommit(ratio, true)
 			shouldContinue = true
 		default:
 		}
@@ -224,7 +228,7 @@ func (c *DefaultCollator) workCycle(work BlockCollatorWork) {
 			// higher priced transactions. Disable this overhead for pending blocks.
 			chainConfig := c.miner.ChainConfig()
 			if c.miner.IsRunning() && (chainConfig.Clique == nil || chainConfig.Clique.Period > 0) {
-				c.adjustRecommit(bs, false)
+				c.adjustRecommit(0.0, false)
 			} else {
 				return
 			}
@@ -241,9 +245,13 @@ func (c *DefaultCollator) SetRecommit(interval time.Duration) {
 	c.recommit, c.minRecommit = interval, interval
 }
 
-func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{}) {
+func (c *DefaultCollator) CollateBlocks(miner MinerState, pool Pool, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{}) {
 	c.miner = miner
 	c.exitCh = exitCh
+	c.pool = pool
+	// TODO move this to constructor
+	c.recommitMu = sync.Mutex{}
+
 	for {
 		select {
 		case <-c.exitCh:
@@ -252,4 +260,13 @@ func (c *DefaultCollator) CollateBlocks(miner MinerState, blockCh <-chan BlockCo
 			c.workCycle(cycleWork)
 		}
 	}
+}
+
+func NewDefaultCollator(recommit time.Duration) *DefaultCollator {
+	if recommit < minRecommitInterval {
+		log.Warn("Sanitizing miner recommit interval", "provided", recommit, "updated", minRecommitInterval)
+		recommit = minRecommitInterval
+	}
+
+	return &DefaultCollator{recommit: recommit, minRecommit: recommit}
 }

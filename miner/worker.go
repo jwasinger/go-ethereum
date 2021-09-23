@@ -237,6 +237,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		resubmitIntervalCh: make(chan time.Duration),
 		collatorBlockCh:    make(chan BlockCollatorWork),
 		collator:           collator,
+		curEnvMu:           sync.Mutex{},
 	}
 
 	if _, ok := collator.(*DefaultCollator); ok {
@@ -265,8 +266,7 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		worker:      worker,
 		chainConfig: params.CopyChainConfig(worker.chainConfig),
 	}
-	//
-	go worker.collator.CollateBlocks(&minerState, worker.collatorBlockCh, worker.exitCh)
+	go worker.collator.CollateBlocks(&minerState, eth.TxPool(), worker.collatorBlockCh, worker.exitCh)
 
 	// Submit first work to initialize pending state.
 	if init {
@@ -613,10 +613,11 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 	state.StartPrefetcher("miner")
 
 	bs := &collatorBlockState{
-		header:  header,
-		state:   state,
-		gasPool: new(core.GasPool).AddGas(header.GasLimit),
-		tcount:  0,
+		header:    header,
+		state:     state,
+		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
+		tcount:    0,
+		snapshots: []int{state.Snapshot()},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -631,6 +632,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 		current:     bs,
 		cycleCtx:    ctx,
 		cancelCycle: cancel,
+		worker:      w,
 	}
 
 	bs.env = env

@@ -326,22 +326,51 @@ type EthashConfig struct{}
 
 func CopyChainConfig(c *ChainConfig) *ChainConfig {
 	cpy := &ChainConfig{
-		ChainID:             new(big.Int).Set(c.ChainID),
-		HomesteadBlock:      new(big.Int).Set(c.HomesteadBlock),
-		DAOForkBlock:        new(big.Int).Set(c.DAOForkBlock),
-		DAOForkSupport:      c.DAOForkSupport,
-		EIP150Block:         new(big.Int).Set(c.EIP150Block),
-		EIP150Hash:          c.EIP150Hash,
-		EIP155Block:         new(big.Int).Set(c.EIP155Block),
-		EIP158Block:         new(big.Int).Set(c.EIP158Block),
-		ByzantiumBlock:      new(big.Int).Set(c.ByzantiumBlock),
-		ConstantinopleBlock: new(big.Int).Set(c.ConstantinopleBlock),
-		PetersburgBlock:     new(big.Int).Set(c.PetersburgBlock),
-		IstanbulBlock:       new(big.Int).Set(c.IstanbulBlock),
-		MuirGlacierBlock:    new(big.Int).Set(c.MuirGlacierBlock),
-		BerlinBlock:         new(big.Int).Set(c.BerlinBlock),
-		LondonBlock:         new(big.Int).Set(c.LondonBlock),
-		CatalystBlock:       new(big.Int).Set(c.CatalystBlock),
+		DAOForkSupport: c.DAOForkSupport,
+		EIP150Hash:     c.EIP150Hash,
+	}
+
+	if c.ChainID != nil {
+		cpy.ChainID = new(big.Int).Set(c.ChainID)
+	}
+	if c.HomesteadBlock != nil {
+		cpy.HomesteadBlock = new(big.Int).Set(c.HomesteadBlock)
+	}
+	if c.DAOForkBlock != nil {
+		cpy.DAOForkBlock = new(big.Int).Set(c.DAOForkBlock)
+	}
+	if c.EIP150Block != nil {
+		cpy.EIP150Block = new(big.Int).Set(c.EIP150Block)
+	}
+	if c.EIP155Block != nil {
+		cpy.EIP155Block = new(big.Int).Set(c.EIP155Block)
+	}
+	if c.EIP158Block != nil {
+		cpy.EIP158Block = new(big.Int).Set(c.EIP158Block)
+	}
+	if c.ByzantiumBlock != nil {
+		cpy.ByzantiumBlock = new(big.Int).Set(c.ByzantiumBlock)
+	}
+	if c.ConstantinopleBlock != nil {
+		cpy.ConstantinopleBlock = new(big.Int).Set(c.ConstantinopleBlock)
+	}
+	if c.PetersburgBlock != nil {
+		cpy.PetersburgBlock = new(big.Int).Set(c.PetersburgBlock)
+	}
+	if c.IstanbulBlock != nil {
+		cpy.IstanbulBlock = new(big.Int).Set(c.IstanbulBlock)
+	}
+	if c.MuirGlacierBlock != nil {
+		cpy.MuirGlacierBlock = new(big.Int).Set(c.MuirGlacierBlock)
+	}
+	if c.BerlinBlock != nil {
+		cpy.BerlinBlock = new(big.Int).Set(c.BerlinBlock)
+	}
+	if c.LondonBlock != nil {
+		cpy.LondonBlock = new(big.Int).Set(c.LondonBlock)
+	}
+	if c.CatalystBlock != nil {
+		cpy.CatalystBlock = new(big.Int).Set(c.CatalystBlock)
 	}
 
 	if c.Ethash != nil {
