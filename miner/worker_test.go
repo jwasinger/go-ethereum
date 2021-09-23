@@ -452,7 +452,8 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 		index    = 0
 		start    uint32
 	)
-	w.resubmitHook = func(minInterval time.Duration, recommitInterval time.Duration) {
+	collator, _ := w.collator.(*DefaultCollator)
+	collator.resubmitHook = func(minInterval time.Duration, recommitInterval time.Duration) {
 		// Short circuit if interval checking hasn't started.
 		if atomic.LoadUint32(&start) == 0 {
 			return
@@ -490,8 +491,6 @@ func testAdjustInterval(t *testing.T, chainConfig *params.ChainConfig, engine co
 
 	time.Sleep(time.Second) // Ensure two tasks have been summitted due to start opt
 	atomic.StoreUint32(&start, 1)
-
-	collator, _ := w.collator.(*DefaultCollator)
 
 	w.setRecommitInterval(3 * time.Second)
 	select {

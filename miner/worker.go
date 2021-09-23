@@ -204,10 +204,9 @@ type worker struct {
 	isLocalBlock func(block *types.Block) bool // Function used to determine whether the specified block is mined by local miner.
 
 	// Test hooks
-	newTaskHook     func(*task)                        // Method to call upon receiving a new sealing task.
-	skipSealHook    func(*task) bool                   // Method to decide whether skipping the sealing.
-	fullTaskHook    func()                             // Method to call before pushing the full sealing task.
-	resubmitHook    func(time.Duration, time.Duration) // Method to call upon updating resubmitting interval.
+	newTaskHook     func(*task)      // Method to call upon receiving a new sealing task.
+	skipSealHook    func(*task) bool // Method to decide whether skipping the sealing.
+	fullTaskHook    func()           // Method to call before pushing the full sealing task.
 	collator        Collator
 	collatorBlockCh chan BlockCollatorWork
 }
@@ -781,14 +780,13 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, *collator
 
 // generateWork generates a sealing block based on the given parameters.
 func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
-	work, _, err := w.prepareWork(params)
+	work, bs, err := w.prepareWork(params)
 	if err != nil {
 		return nil, err
 	}
 	defer work.discard()
 
-	panic("TODO")
-	// w.collator.CollateBlock(bs)
+	w.collator.CollateBlock(bs, w.eth.TxPool())
 	return w.engine.FinalizeAndAssemble(w.chain, work.current.header, work.current.state, work.current.txs, work.unclelist(), work.current.receipts)
 }
 

@@ -239,10 +239,19 @@ func (c *DefaultCollator) workCycle(work BlockCollatorWork) {
 }
 
 func (c *DefaultCollator) SetRecommit(interval time.Duration) {
+	if interval < minRecommitInterval {
+		log.Warn("Sanitizing miner recommit interval", "provided", interval, "updated", minRecommitInterval)
+		interval = minRecommitInterval
+	}
+
 	c.recommitMu.Lock()
 	defer c.recommitMu.Unlock()
 
 	c.recommit, c.minRecommit = interval, interval
+
+	if c.resubmitHook != nil {
+		c.resubmitHook(c.minRecommit, c.recommit)
+	}
 }
 
 func (c *DefaultCollator) CollateBlocks(miner MinerState, pool Pool, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{}) {
@@ -260,6 +269,12 @@ func (c *DefaultCollator) CollateBlocks(miner MinerState, pool Pool, blockCh <-c
 			c.workCycle(cycleWork)
 		}
 	}
+}
+
+func (c *DefaultCollator) CollateBlock(bs BlockState, pool Pool) {
+	c.pool = pool // TODO weird to set this here
+	c.fillTransactions(context.Background(), bs, nil)
+	bs.Commit()
 }
 
 func NewDefaultCollator(recommit time.Duration) *DefaultCollator {

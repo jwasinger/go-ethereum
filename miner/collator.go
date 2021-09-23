@@ -148,6 +148,7 @@ type BlockCollatorWork struct {
 
 type Collator interface {
 	CollateBlocks(miner MinerState, pool Pool, blockCh <-chan BlockCollatorWork, exitCh <-chan struct{})
+	CollateBlock(bs BlockState, pool Pool)
 }
 
 var (
@@ -284,6 +285,8 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 		}
 
 		snapshot := bs.state.Snapshot()
+		bs.snapshots = append(bs.snapshots, snapshot)
+
 		bs.state.Prepare(tx.Hash(), bs.tcount+tcount)
 		txLogs, err := bs.commitTransaction(tx)
 		if err != nil {
@@ -305,12 +308,11 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 
 			bs.logs = bs.logs[:len(bs.logs)-tcount]
 			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
-			bs.snapshots = bs.snapshots[:len(bs.snapshots)-tcount]
+			bs.snapshots = bs.snapshots[:len(bs.snapshots)-(tcount+1)]
 
 			return retErr, nil
 		} else {
 			bs.logs = append(bs.logs, txLogs...)
-			bs.snapshots = append(bs.snapshots, snapshot)
 			tcount++
 		}
 	}
