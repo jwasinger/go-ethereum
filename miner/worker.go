@@ -155,8 +155,6 @@ type worker struct {
 
 	// Subscriptions
 	mux          *event.TypeMux
-	txsCh        chan core.NewTxsEvent
-	txsSub       event.Subscription
 	chainHeadCh  chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
 	chainSideCh  chan core.ChainSideEvent
@@ -224,7 +222,6 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 		remoteUncles:       make(map[common.Hash]*types.Block),
 		unconfirmed:        newUnconfirmedBlocks(eth.BlockChain(), sealingLogAtDepth),
 		pendingTasks:       make(map[common.Hash]*task),
-		txsCh:              make(chan core.NewTxsEvent, txChanSize),
 		chainHeadCh:        make(chan core.ChainHeadEvent, chainHeadChanSize),
 		chainSideCh:        make(chan core.ChainSideEvent, chainSideChanSize),
 		newWorkCh:          make(chan *newWorkReq),
@@ -244,7 +241,6 @@ func newWorker(config *Config, chainConfig *params.ChainConfig, collator Collato
 	}
 
 	// Subscribe NewTxsEvent for tx pool
-	worker.txsSub = eth.TxPool().SubscribeNewTxsEvent(worker.txsCh)
 	// Subscribe events for blockchain
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 	worker.chainSideSub = eth.BlockChain().SubscribeChainSideEvent(worker.chainSideCh)
@@ -412,7 +408,6 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 // the received event. It can support two modes: automatically generate task and
 // submit it or return task according to given parameters for various proposes.
 func (w *worker) mainLoop() {
-	defer w.txsSub.Unsubscribe()
 	defer w.chainHeadSub.Unsubscribe()
 	defer w.chainSideSub.Unsubscribe()
 
@@ -474,8 +469,6 @@ func (w *worker) mainLoop() {
 
 		// System stopped
 		case <-w.exitCh:
-			return
-		case <-w.txsSub.Err():
 			return
 		case <-w.chainHeadSub.Err():
 			return

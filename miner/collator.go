@@ -269,19 +269,22 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 
 	for _, tx := range txs {
 		if bs.gasPool.Gas() < params.TxGas {
-			return ErrGasLimitReached, nil
+			retErr = ErrGasLimitReached
+			break
 		}
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !bs.env.worker.chainConfig.IsEIP155(bs.header.Number) {
-			return ErrTxTypeNotSupported, nil
+			retErr = ErrTxTypeNotSupported
+			break
 		}
 
 		// TODO can this error also be returned by commitTransaction below?
 		_, err := tx.EffectiveGasTip(bs.header.BaseFee)
 		if err != nil {
-			return ErrGasFeeCapTooLow, nil
+			retErr = ErrGasFeeCapTooLow
+			break
 		}
 
 		snapshot := bs.state.Snapshot()
@@ -306,20 +309,25 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 				retErr = ErrStrange
 			}
 
-			bs.logs = bs.logs[:len(bs.logs)-tcount]
-			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
-			bs.snapshots = bs.snapshots[:len(bs.snapshots)-(tcount+1)]
-
-			return retErr, nil
+			break
 		} else {
 			bs.logs = append(bs.logs, txLogs...)
 			tcount++
 		}
 	}
 
-	retReceipts := bs.receipts[bs.tcount:]
-	bs.tcount += tcount
+	var retReceipts []*types.Receipt
 
+	if retErr != nil {
+		bs.logs = bs.logs[:len(bs.logs)-tcount]
+		bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
+		bs.snapshots = bs.snapshots[:len(bs.snapshots)-(tcount+1)]
+
+		return retErr, nil
+	} else {
+		retReceipts = bs.receipts[bs.tcount:]
+		bs.tcount += tcount
+	}
 	return nil, retReceipts
 }
 
