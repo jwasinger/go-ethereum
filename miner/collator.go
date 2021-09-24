@@ -320,7 +320,12 @@ func (bs *collatorBlockState) AddTransactions(txs types.Transactions) (error, ty
 
 	if retErr != nil {
 		bs.logs = bs.logs[:len(bs.logs)-tcount]
-		bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
+		if tcount != 0 {
+			// first transaction in the sequence failed so the state will already be reverted
+			// to what it was before the sequence was applied
+			bs.state.RevertToSnapshot(bs.snapshots[len(bs.snapshots)-(tcount+1)])
+		}
+
 		bs.snapshots = bs.snapshots[:len(bs.snapshots)-(tcount+1)]
 
 		return retErr, nil

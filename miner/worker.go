@@ -609,7 +609,7 @@ func (w *worker) makeEnv(parent *types.Block, header *types.Header, coinbase com
 		state:     state,
 		gasPool:   new(core.GasPool).AddGas(header.GasLimit),
 		tcount:    0,
-		snapshots: []int{state.Snapshot()},
+		snapshots: []int{},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
