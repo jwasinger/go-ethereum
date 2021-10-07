@@ -110,6 +110,11 @@ type PluginContract struct {
 type PluginTracer struct {
 	plugin *plugin.Plugin
 	tracer PluginAPI
+    ctx PluginTracerContext
+
+    traceCallFrames bool
+    interrupt *int32
+    reason error
 }
 
 func NewPluginTracer(path string) (*PluginTracer, error) {
@@ -135,7 +140,7 @@ func (t *PluginTracer) CaptureStart(env *vm.EVM, from common.Address, to common.
     t.ctx = Context{
         From: from,
         To: to,
-        Input: input, // TODO copy here?
+        Input: common.CopyBytes(input),
         Gas: gas,
         GasPrice: env.TxContext.GasPrice,
         Value: value,
@@ -143,7 +148,6 @@ func (t *PluginTracer) CaptureStart(env *vm.EVM, from common.Address, to common.
     if create {
         t.ctx.Type = "CREATE"
     }
-    t.db = env.db
     t.activePrecompiles = vm.ActivePrecompiles(rules)
 
     // Compute intrinsic gas                                                                         
@@ -183,18 +187,8 @@ func (t *PluginTracer) CaptureState(env *vm.EVM, pc uint64, op vm.OpCode, gas, c
         Cost: uint(cost),
         Depth: uint(depth),
         Refund: uint(env.StateDB.GetRefund()),
-        Error: nil,
+        Error: err,
     }
-
-/*
-	// TODO wat do here
-
-    t.errorValue := nil
-    if err != nil {
-        t.errorValue = new(string)
-        *t.errorValue = err.Error()
-    }
-*/
 
     t.tracer.Step(log, env.StateDB)
 }
@@ -203,16 +197,16 @@ func (t *PluginTracer) CaptureFault(env *vm.EVM, pc uint64, op vm.OpCode, gas, c
 	if t.Error != nil {
 		return
 	}
-	/* TODO Wat do here?  err vs errVal??? */
+    t.Error = err
 }
 
 func (t *PluginTracer) CaptureEnd(output []byte, gasUsed uint64, t time.Duration, err error) {
-	t.Ctx.Output = output // TODO copy here?
-	t.Ctx.Gasused = gasUsed
-	t.Ctx.time = t
+	t.ctx.Output = common.CopyBytes(output)
+	t.ctx.Gasused = gasUsed
+	t.ctx.time = t
 
 	if err != nil {
-		t.Ctx.Error = err
+		t.ctx.Error = err
 	}
 }
 
@@ -221,14 +215,11 @@ func (t *PluginTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 	if !t.traceCallFrames {
 		return
 	}
-/*
-	// TODO wat do here
     if jst.err != nil {
-        return 
-    }  
-*/
+        return
+    }
     // If tracing was interrupted, set the error and stop 
-    if atomic.LoadUint32(&jst.interrupt) > 0 {
+    if atomic.LoadUint32(&t.interrupt) > 0 {
         jst.err = jst.reason
         return
     }
@@ -253,8 +244,8 @@ func (t *PluginTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
         return
     }
     // If tracing was interrupted, set the error and stop
-    if atomic.LoadUint32(&jst.interrupt) > 0 {
-        jst.err = jst.reason
+    if atomic.LoadUint32(&t.interrupt) > 0 {
+        t.err = t.reason
         return
     }
 
@@ -274,4 +265,9 @@ func (t *PluginTracer) GetResult() (json.RawMessage, error) {
     }
 
     return result
+}
+
+func (t *PluginTracer) Stop(err error) {
+    t.reason = err
+    atomic.StoreUint32(&t.interrupt, 1)
 }
