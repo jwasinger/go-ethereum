@@ -1,0 +1,27 @@
+{
+  "name": "go-ethereum-verkle",
+  "version": "1.0.0",
+  "description": "Official Golang implementation of the Ethereum protocol.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gballet/go-ethereum.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gballet/go-ethereum/issues"
+  },
+  "homepage": "https://github.com/gballet/go-ethereum#readme",
+  "dependencies": {
+    "web3": "^1.6.0"
+  }
+}

@@ -370,8 +370,8 @@ func DefaultVerkleGenesisBlock() *Genesis {
 		GasLimit:   0x2fefd8,
 		Difficulty: big.NewInt(1),
 		Alloc: map[common.Address]GenesisAccount{
-			common.BytesToAddress([]byte{97, 118, 97, 209, 72, 165, 43, 239, 81, 162, 104, 199, 40, 179, 162, 27, 88, 249, 67, 6}): {
-				Balance: big.NewInt(0).Lsh(big.NewInt(1), 27),
+			common.BytesToAddress([]byte{52, 166, 0, 169, 41, 196, 57, 252, 201, 253, 135, 191, 73, 63, 234, 69, 58, 221, 61, 95}): {
+				Balance: big.NewInt(0).Lsh(big.NewInt(1), 50),
 			},
 		},
 	}
