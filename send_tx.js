@@ -19,7 +19,6 @@ web3.eth.getAccounts(function(error, result) {
 		web3.eth.sendTransaction(
 			{
 			from:"34a600a929c439fcc9fd87bf493fea453add3d5f",
-			to:"34a600a929c439fcc9fd87bf493fea453add3d5a",
-			value:  "0",
-			data: "0xdf"
+			value:  "1",
+			data: "0x60026000f3"
 				}).then(console.log)
