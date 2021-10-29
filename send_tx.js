@@ -19,19 +19,33 @@ web3.eth.getAccounts(function(error, result) {
 
 async function pollPending() {
 	for (;;) {
-		web3.eth.getPendingTransactions().then((f) => {console.log(f.length)})
-		await new Promise(r => setTimeout(r, 20));
+		let pending = await new Promise((resolve, reject) => {
+			web3.eth.getPendingTransactions().then((f) => resolve(f))})
+		if (pending.length == 0) {
+			console.log("no more pending")
+			return
+		} else {
+			console.log("pending: ", pending.length)
+		}
+
+		await new Promise(r => setTimeout(r, 1000));
 	}
 }
 
-for (let i = 0; i < 1; i++) {
-		web3.eth.sendTransaction(
-			{
-			from:"34a600a929c439fcc9fd87bf493fea453add3d5f",
-			to:"34a600a929c439fcc9fd87bf493fea453add3d50",
-			value:  "1"//,
-			//data: "0x60026000f3"
-				})
+async function main() {
+	for (;;) {
+		console.log("sending more txs...")
+		for (let i = 0; i < 1024; i++) {
+				web3.eth.sendTransaction(
+					{
+					from:"34a600a929c439fcc9fd87bf493fea453add3d5f",
+					to:"34a600a929c439fcc9fd87bf493fea453add3d50",
+					value:  "1"//,
+					//data: "0x60026000f3"
+						})
+		}
+		await pollPending()
+	}
 }
 
-pollPending()
+main().then(() => {console.log("done")})
