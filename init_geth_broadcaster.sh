@@ -1,0 +1,6 @@
+#! /usr/bin/env bash
+
+rm -rf .data-broadcaster
+
+./build/bin/geth --datadir .data-broadcaster init genesis.json
+./build/bin/geth --datadir .data-broadcaster account import vanity-sk.txt --password=vanity-sk-pw.txt
