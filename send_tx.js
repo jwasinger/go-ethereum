@@ -17,33 +17,42 @@ web3.eth.getAccounts(function(error, result) {
 });
 */
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function sendTxs(tx, count) {
+	let promises = []
+	for (let i = 0; i < count; i++) {
+		promises.push(new Promise((resolve, reject) => {web3.eth.sendTransaction(tx).then((x,y) => resolve())}))
+	}
+	return Promise.all(promises)
+}
+
 async function pollPending() {
 	for (;;) {
 		let pending = await new Promise((resolve, reject) => {
 			web3.eth.getPendingTransactions().then((f) => resolve(f))})
+
 		if (pending.length == 0) {
 			console.log("no more pending")
 			return
 		} else {
 			console.log("pending: ", pending.length)
 		}
-
-		await new Promise(r => setTimeout(r, 1000));
+		await sleep(1000)
 	}
 }
 
 async function main() {
 	for (;;) {
 		console.log("sending more txs...")
-		for (let i = 0; i < 1024; i++) {
-				web3.eth.sendTransaction(
-					{
-					from:"34a600a929c439fcc9fd87bf493fea453add3d5f",
-					to:"34a600a929c439fcc9fd87bf493fea453add3d50",
-					value:  "1"//,
-					//data: "0x60026000f3"
-						})
-		}
+		await sendTxs({
+			from:"34a600a929c439fcc9fd87bf493fea453add3d5f",
+			to:"34a600a929c439fcc9fd87bf493fea453add3d50",
+			value:  "1"//,
+			//data: "0x60026000f3"
+		}, 4096)
 		await pollPending()
 	}
 }
