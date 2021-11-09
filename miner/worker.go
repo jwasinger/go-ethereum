@@ -91,9 +91,6 @@ type environment struct {
 	header   *types.Header
 	txs      []*types.Transaction
 	receipts []*types.Receipt
-
-	// list of all locations touched by the transactions in this block
-	witness *types.AccessWitness
 }
 
 // task contains all information for consensus engine sealing and result submitting.
@@ -678,7 +675,6 @@ func (w *worker) makeCurrent(parent *types.Block, header *types.Header) error {
 		family:    mapset.NewSet(),
 		uncles:    mapset.NewSet(),
 		header:    header,
-		witness:   types.NewAccessWitness(),
 	}
 	// when 08 is processed ancestors contain 07 (quick block)
 	for _, ancestor := range w.chain.GetBlocksFromHash(parent.Hash(), 7) {
@@ -828,10 +824,10 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 		w.current.state.Prepare(tx.Hash(), w.current.tcount)
 
 		logs, accs, err := w.commitTransaction(tx, coinbase)
-		if w.current.witness == nil {
-			w.current.witness = accs
+		if w.current.state.Witness() == nil {
+			w.current.state.SetWitness(accs)
 		} else {
-			w.current.witness.Merge(accs)
+			w.current.state.Witness().Merge(accs)
 		}
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
@@ -1027,14 +1023,14 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 	// Deep copy receipts here to avoid interaction between different tasks.
 	receipts := copyReceipts(w.current.receipts)
 	s := w.current.state.Copy()
-	block, err := w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts, w.current.witness)
+	block, err := w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts)
 	if err != nil {
 		return err
 	}
 	if tr := s.GetTrie(); tr.IsVerkle() {
 		vtr := tr.(*trie.VerkleTrie)
 		// Generate the proof if we are using a verkle tree
-		p, err := vtr.ProveAndSerialize(w.current.witness.Keys(), w.current.witness.KeyVals())
+		p, err := vtr.ProveAndSerialize(w.current.state.Witness().Keys(), w.current.state.Witness().KeyVals())
 		w.current.header.VerkleProof = p
 		if err != nil {
 			return err

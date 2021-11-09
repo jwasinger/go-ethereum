@@ -102,6 +102,8 @@ type StateDB struct {
 	// Per-transaction access list
 	accessList *accessList
 
+	witness *types.AccessWitness
+
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
 	journal        *journal
@@ -161,6 +163,14 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		}
 	}
 	return sdb, nil
+}
+
+func (s *StateDB) Witness() *types.AccessWitness {
+	return s.witness
+}
+
+func (s *StateDB) SetWitness(aw *types.AccessWitness) {
+	s.witness = aw
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
