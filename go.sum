@@ -129,6 +129,10 @@ github.com/gballet/go-verkle v0.0.0-20211104191954-be222c700cef h1:O4NwKqt5uqp7S
 github.com/gballet/go-verkle v0.0.0-20211104191954-be222c700cef/go.mod h1:L6d5ap3CST0lu768emSpf7gabD/9BIDvid1/wqY28U8=
 github.com/gballet/go-verkle v0.0.0-20211104194516-d8e4556c9e50 h1:sFVDtntCBIrCosj1OVFm7OyIWBczeAgn1E2+wZg+C0U=
 github.com/gballet/go-verkle v0.0.0-20211104194516-d8e4556c9e50/go.mod h1:L6d5ap3CST0lu768emSpf7gabD/9BIDvid1/wqY28U8=
+github.com/gballet/go-verkle v0.0.0-20211108170921-052ca49ddeec h1:z/BDajhRqoLNZGjNtHk0J0GptJuma1x1mwFVCzIi+aE=
+github.com/gballet/go-verkle v0.0.0-20211108170921-052ca49ddeec/go.mod h1:BASlDXGXxlAP/xls4A48nC+QVn3jLiP0s4RTmMgh/IE=
+github.com/gballet/go-verkle v0.0.0-20211108173141-3d812b8722d3 h1:YuCllCO2PQ1U2RXeJBbWEd5LLJCk+Ha4FRo+j7reX78=
+github.com/gballet/go-verkle v0.0.0-20211108173141-3d812b8722d3/go.mod h1:BASlDXGXxlAP/xls4A48nC+QVn3jLiP0s4RTmMgh/IE=
 github.com/getkin/kin-openapi v0.53.0/go.mod h1:7Yn5whZr5kJi6t+kShccXS8ae1APpYTW6yheSwk8Yi4=
 github.com/getkin/kin-openapi v0.61.0/go.mod h1:7Yn5whZr5kJi6t+kShccXS8ae1APpYTW6yheSwk8Yi4=
 github.com/ghodss/yaml v1.0.0/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeMEF04=
@@ -528,6 +532,8 @@ golang.org/x/sys v0.0.0-20211103235746-7861aae1554b h1:1VkfZQv42XQlA/jchYumAnv1U
 golang.org/x/sys v0.0.0-20211103235746-7861aae1554b/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20211107104306-e0b2ad06fe42 h1:G2DDmludOQZoWbpCr7OKDxnl478ZBGMcOhrv+ooX/Q4=
 golang.org/x/sys v0.0.0-20211107104306-e0b2ad06fe42/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20211109065445-02f5c0300f6e h1:i6Vklmyu+fZMFYpum+sR4ZWABGW7MyIxfJZXYvcnbns=
+golang.org/x/sys v0.0.0-20211109065445-02f5c0300f6e/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/term v0.0.0-20201117132131-f5c789dd3221/go.mod h1:Nr5EML6q2oocZ2LXRh80K7BxOlk5/8JxuGnuhpl+muw=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
