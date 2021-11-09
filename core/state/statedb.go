@@ -148,6 +148,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		journal:             newJournal(),
 		accessList:          newAccessList(),
 		hasher:              crypto.NewKeccakState(),
+		witness:             types.NewAccessWitness(),
 	}
 	if sdb.snaps == nil && tr.IsVerkle() {
 		sdb.snaps, err = snapshot.New(db.TrieDB().DiskDB(), db.TrieDB(), 1, root, false, true, false, true)
@@ -751,6 +752,8 @@ func (s *StateDB) Copy() *StateDB {
 	// However, it doesn't cost us much to copy an empty list, so we do it anyway
 	// to not blow up if we ever decide copy it in the middle of a transaction
 	state.accessList = s.accessList.Copy()
+
+	state.witness = s.witness.Copy()
 
 	// If there's a prefetcher running, make an inactive copy of it that can
 	// only access data but does not actively preload (since the user will not
