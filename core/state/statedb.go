@@ -754,8 +754,6 @@ func (s *StateDB) Copy() *StateDB {
 	// to not blow up if we ever decide copy it in the middle of a transaction
 	state.accessList = s.accessList.Copy()
 
-	state.witness = s.witness.Copy()
-
 	// If there's a prefetcher running, make an inactive copy of it that can
 	// only access data but does not actively preload (since the user will not
 	// know that they need to explicitly terminate an active copy).
