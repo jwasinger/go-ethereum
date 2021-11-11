@@ -188,7 +188,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 	if genesis == nil {
 		storedcfg := rawdb.ReadChainConfig(db, stored)
 		if storedcfg == nil {
-			panic("this should never be reached: if genesis is nil, the config is already present or 'geth init' is being called which will create it")
+			panic("this should never be reached: if genesis is nil, the config is already present or 'geth init' is being called which created it (in the code above, which means genesis != nil)")
 		}
 
 		if storedcfg.CancunBlock != nil {
