@@ -239,13 +239,13 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			// Touch the account data
             // TODO gas accounting / balance check before recursing into the contract creation
 			var data [32]byte
-			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyVersion(addr.Bytes()), data[:])
+			evm.Accesses.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:])
 			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyNonce(addr[:]), data[:])
+			evm.Accesses.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:])
 			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyCodeSize(addr[:]), data[:])
-			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
-            evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
+			evm.Accesses.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:])
+			evm.Accesses.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
+            evm.Accesses.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
 
 			addrCopy := addr
 			// If the account has no code, we can abort here
