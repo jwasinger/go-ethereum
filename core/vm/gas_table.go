@@ -93,7 +93,7 @@ func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 	slot := stack.Back(0)
 	if evm.accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		usedGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 	}
 
 	return usedGas, nil
@@ -129,7 +129,7 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 
 			// TODO make a version of GetTreeKeyCodeChunk without the bigint
 			index := trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(chunk))
-			statelessGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			statelessGas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 		}
 
 	}
@@ -160,7 +160,7 @@ func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 		for ; chunk < endChunk; chunk++ {
 			// TODO(@gballet) make a version of GetTreeKeyCodeChunk without the bigint
 			index := trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(chunk))
-			statelessGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			statelessGas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 		}
 
 	}
@@ -175,7 +175,7 @@ func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySiz
 		where := stack.Back(0)
 		addr := contract.Address()
 		index := trieUtils.GetTreeKeyStorageSlot(addr[:], where)
-		usedGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 	}
 
 	return usedGas, nil
@@ -426,7 +426,8 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		// Charge witness costs
 		for i := trieUtils.VersionLeafKey; i <= trieUtils.CodeSizeLeafKey; i++ {
 			index := trieUtils.GetTreeKeyAccountLeaf(address[:], byte(i))
-			gas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+            // TODO what-do here
+			gas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 		}
 	}
 

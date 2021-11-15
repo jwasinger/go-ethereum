@@ -21,15 +21,22 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+type VerkleTrie interface {
+    TryGet(key []byte) ([]byte, error)
+}
+
 // AccessWitness lists the locations of the state that are being accessed
 // during the production of a block.
 // TODO(@gballet) this doesn't fully support deletions
 type AccessWitness struct {
 	// Branches flags if a given branch has been loaded
-	Branches map[[31]byte]struct{}
+	ReadBranches map[[31]byte]struct{}
 
 	// Chunks contains the initial value of each address
-	Chunks map[common.Hash][]byte
+	ReadChunks map[common.Hash][]byte
+
+    WriteBranches map[[31]byte]struct{}
+    WriteChunks map[common.Hash][]byte
 
 	// The initial value isn't always available at the time an
 	// address is touched, this map references addresses that
@@ -39,56 +46,98 @@ type AccessWitness struct {
 
 func NewAccessWitness() *AccessWitness {
 	return &AccessWitness{
-		Branches:  make(map[[31]byte]struct{}),
-		Chunks:    make(map[common.Hash][]byte),
+		ReadBranches:  make(map[[31]byte]struct{}),
+		ReadChunks:    make(map[common.Hash][]byte),
+		WriteBranches:  make(map[[31]byte]struct{}),
+		WriteChunks:    make(map[common.Hash][]byte),
 		Undefined: make(map[common.Hash]struct{}),
 	}
 }
 
+func (aw *AccessWitness) TouchAddressOnRead(addr, value []byte) (bool, bool) {
+    return aw.touchAddress(addr, value, false)
+}
+
+func (aw *AccessWitness) TouchAddressOnWrite(addr, value []byte) (bool, bool) {
+    return aw.touchAddress(addr, value, true)
+}
+
 // TouchAddress adds any missing addr to the witness and returns respectively
 // true if the stem or the stub weren't arleady present.
-func (aw *AccessWitness) TouchAddress(addr, value []byte) (bool, bool) {
-	var (
-		stem        [31]byte
-		newStem     bool
-		newSelector bool
-	)
-	copy(stem[:], addr[:31])
+func (aw *AccessWitness) touchAddress(addr, value []byte, isWrite bool) (bool, bool) {
+    var (
+        stem        [31]byte
+        newStem     bool
+        newSelector bool
+    )
 
-	// Check for the presence of the stem
-	if _, newStem := aw.Branches[stem]; !newStem {
-		aw.Branches[stem] = struct{}{}
-	}
+	var branches map[[31]byte]struct{}
+    var chunks map[common.Hash][]byte
 
-	// Check for the presence of the selector
-	if _, newSelector := aw.Chunks[common.BytesToHash(addr)]; !newSelector {
-		if value == nil {
-			aw.Undefined[common.BytesToHash(addr)] = struct{}{}
-		} else {
-			if _, ok := aw.Undefined[common.BytesToHash(addr)]; !ok {
-				delete(aw.Undefined, common.BytesToHash(addr))
-			}
-			aw.Chunks[common.BytesToHash(addr)] = value
-		}
-	}
+    if isWrite {
+        branches = aw.WriteBranches
+        chunks = aw.WriteChunks
+    } else {
+        branches = aw.ReadBranches
+        chunks = aw.ReadChunks
+    }
 
-	return newStem, newSelector
+    copy(stem[:], addr[:31])
+
+    // Check for the presence of the stem
+    if _, newStem := branches[stem]; !newStem {
+        branches[stem] = struct{}{}
+    }
+
+    // Check for the presence of the selector
+    if _, newSelector := chunks[common.BytesToHash(addr)]; !newSelector {
+        if value == nil {
+            aw.Undefined[common.BytesToHash(addr)] = struct{}{}
+        } else {
+            if _, ok := aw.Undefined[common.BytesToHash(addr)]; !ok {
+                delete(aw.Undefined, common.BytesToHash(addr))
+            }
+            chunks[common.BytesToHash(addr)] = value
+        }
+    }
+
+    return newStem, newSelector
 }
+
 
 // TouchAddressAndChargeGas checks if a location has already been touched in
 // the current witness, and charge extra gas if that isn't the case. This is
 // meant to only be called on a tx-context access witness (i.e. before it is
 // merged), not a block-context witness: witness costs are charged per tx.
-func (aw *AccessWitness) TouchAddressAndChargeGas(addr, value []byte) uint64 {
+func (aw *AccessWitness) TouchAddressOnReadAndChargeGas(addr, value []byte) uint64 {
 	var gas uint64
 
-	nstem, nsel := aw.TouchAddress(addr, value)
+	nstem, nsel := aw.TouchAddressOnRead(addr, value)
 	if nstem {
-		gas += params.WitnessBranchCost
+		gas += params.WitnessBranchReadCost
 	}
 	if nsel {
-		gas += params.WitnessChunkCost
+		gas += params.WitnessChunkReadCost
 	}
+	return gas
+}
+
+// TODO provide an interface to lookup if the chunk was nil and apply CHUNK_EDIT_COST in here?
+func (aw *AccessWitness) TouchAddressOnWriteAndChargeGas(vtr VerkleTrie, addr, value []byte) uint64 {
+	var gas uint64
+
+	nstem, nsel := aw.TouchAddressOnWrite(addr, value)
+	if nstem {
+		gas += params.WitnessBranchWriteCost
+	}
+
+	if nsel {
+		gas += params.WitnessChunkWriteCost
+        if _, err := vtr.TryGet(addr); err != nil {
+            gas += params.WitnessChunkFillCost
+        }
+	}
+
 	return gas
 }
 
@@ -101,15 +150,27 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 		panic("undefined value in witness")
 	}
 
-	for k := range other.Branches {
-		if _, ok := aw.Branches[k]; !ok {
-			aw.Branches[k] = struct{}{}
+	for k := range other.ReadBranches {
+		if _, ok := aw.ReadBranches[k]; !ok {
+			aw.ReadBranches[k] = struct{}{}
 		}
 	}
 
-	for k, chunk := range other.Chunks {
-		if _, ok := aw.Chunks[k]; !ok {
-			aw.Chunks[k] = chunk
+	for k, chunk := range other.ReadChunks {
+		if _, ok := aw.ReadChunks[k]; !ok {
+			aw.ReadChunks[k] = chunk
+		}
+	}
+
+	for k := range other.WriteBranches {
+		if _, ok := aw.WriteBranches[k]; !ok {
+			aw.WriteBranches[k] = struct{}{}
+		}
+	}
+
+	for k, chunk := range other.WriteChunks {
+		if _, ok := aw.WriteChunks[k]; !ok {
+			aw.WriteChunks[k] = chunk
 		}
 	}
 }

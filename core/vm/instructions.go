@@ -345,7 +345,7 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		interpreter.evm.TxContext.Accesses.TouchAddress(index, uint256.NewInt(cs).Bytes())
+		interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, uint256.NewInt(cs).Bytes())
 	}
 	slot.SetUint64(cs)
 	return nil, nil
@@ -399,7 +399,7 @@ func touchEachChunks(start, end uint64, code []byte, contract *Contract, evm *EV
 			end = uint64(len(code))
 		}
 		copy(value[1:], code[chunk*31:end])
-		evm.Accesses.TouchAddress(index, value[:])
+		evm.Accesses.TouchAddressOnReadAndChargeGas(index, value[:])
 	}
 }
 
@@ -420,7 +420,6 @@ func copyCodeFromAccesses(addr common.Address, codeOffset, codeEnd, memOffset ui
 		// TODO make a version of GetTreeKeyCodeChunk without the bigint
 		index := common.BytesToHash(trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(chunk)))
 		h := in.evm.accesses[index]
-		//in.evm.Accesses.TouchAddress(index.Bytes(), h[1+start:1+end])
 		scope.Memory.Set(memOffset+offset, end-start, h[1+start:end])
 		offset += 31 - start
 	}
@@ -581,7 +580,7 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	// Get the initial value as it might not be present
 
 	index := trieUtils.GetTreeKeyStorageSlot(scope.Contract.Address().Bytes(), loc)
-	interpreter.evm.TxContext.Accesses.TouchAddress(index, val.Bytes())
+	interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, val.Bytes())
 	return nil, nil
 }
 
@@ -923,7 +922,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			}
 			copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-			interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -960,7 +959,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		value[0] = byte(count)
 		copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 		index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-		interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+		interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 
 		// in the case of PUSH32, the end data might be two chunks away,
 		// so also get the middle chunk.
@@ -973,7 +972,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			value[0] = byte(count)
 			copy(value[1:], scope.Contract.Code[chunk*31:(chunk+1)*31])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-			interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, nil)
 
 		}
 

@@ -390,6 +390,11 @@ func (s *StateDB) HasSuicided(addr common.Address) bool {
 	return false
 }
 
+// Dirty-hack:  need the raw trie to check for non-existence of a chunk in verkle when charging write costs
+func (s *StateDB) GetTrie() Trie {
+    return s.trie
+}
+
 /*
  * SETTERS
  */
