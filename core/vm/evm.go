@@ -220,6 +220,13 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		}
 	}
 
+    trie := evm.GetTrie()
+
+    if !value.IsZero() {
+        evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
+        evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyBalance(caller.Address()), evm.StateDB.GetBalance(caller.Address()).Bytes())
+    }
+
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
 	} else {
@@ -231,15 +238,14 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		} else {
 			// Touch the account data
             // TODO gas accounting / balance check before recursing into the contract creation
-            trie := evm.GetTrie()
 			var data [32]byte
-			evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyVersion(addr.Bytes()), data[:])
+			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyVersion(addr.Bytes()), data[:])
 			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-			evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyNonce(addr[:]), data[:])
-			evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
+			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyNonce(addr[:]), data[:])
 			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-			evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyCodeSize(addr[:]), data[:])
-			evm.Accesses.TouchAddressOnWriteAndChargeGas(&trie, utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
+			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyCodeSize(addr[:]), data[:])
+			evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
+            evm.Accesses.TouchAddressOnReadAndChargeGas(&trie, utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
 
 			addrCopy := addr
 			// If the account has no code, we can abort here
