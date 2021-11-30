@@ -170,6 +170,18 @@ func (evm *EVM) Interpreter() *EVMInterpreter {
 	return evm.interpreter
 }
 
+// try to consume an amount of gas, if the amount consumed
+// is greater than the amount left, set amount left to 0 and return false
+func tryConsumeGas(gasLeft *uint64, gasConsumed uint64) bool {
+	if gasConsumed > *gasLeft {
+		*gas = 0
+		return false
+	}
+
+	*gasLeft -= gasConsumed
+	return true
+}
+
 // Call executes the contract associated with the addr with the given input as
 // parameters. It also handles any necessary value transfer required and takes
 // the necessary steps to create accounts and reverses the state in case of an
@@ -234,13 +246,28 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		} else {
 			// Touch the account data
 			var data [32]byte
-			evm.Accesses.TouchAddress(utils.GetTreeKeyVersion(addr.Bytes()), data[:])
+			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:]), false) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return []byte{}, ErrOutOfGas, gas
+			}
 			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-			evm.Accesses.TouchAddress(utils.GetTreeKeyNonce(addr[:]), data[:])
-			evm.Accesses.TouchAddress(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
+			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:], false)) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return []byte{}, ErrOutOfGas, gas
+			}
+			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes()), false) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return []byte{}, ErrOutOfGas, gas
+			}
 			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-			evm.Accesses.TouchAddress(utils.GetTreeKeyCodeSize(addr[:]), data[:])
-			evm.Accesses.TouchAddress(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
+			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:]), false) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return []byte{}, ErrOutOfGas, gas
+			}
+			if !tryConsumeGas(evm.Accesses.TouchAddress(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return []byte{}, ErrOutOfGas, gas
+			}
 
 			addrCopy := addr
 			// If the account has no code, we can abort here

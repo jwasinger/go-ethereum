@@ -26,7 +26,12 @@ import (
 // TODO(@gballet) this doesn't fully support deletions
 type AccessWitness struct {
 	// Branches flags if a given branch has been loaded
-	Branches map[[31]byte]struct{}
+	// for the byte value:
+	//	the first bit is set if the branch has been edited
+	//	the second bit is set if the branch has been read
+	Branches map[[31]byte]byte
+
+	LeavesAccesses map[common.Hash]byte
 
 	// Chunks contains the initial value of each address
 	Chunks map[common.Hash][]byte
@@ -37,6 +42,7 @@ type AccessWitness struct {
 	Undefined map[common.Hash]struct{}
 }
 
+
 func NewAccessWitness() *AccessWitness {
 	return &AccessWitness{
 		Branches:  make(map[[31]byte]struct{}),
@@ -45,23 +51,61 @@ func NewAccessWitness() *AccessWitness {
 	}
 }
 
+const (
+	AccessWitnessReadFlag = 1
+	AccessWitnessWriteFlag = 2
+)
+
+func (aw *AccessWitness) touchAddressOnWrite(addr, value []byte) (bool, bool) {
+	var stem        [31]byte
+	copy(stem[:], addr[:31])
+
+	var stemWrite, chunkWrite, chunkFill bool
+
+	// NOTE: stem, selector access flags already exist in their
+	// respective maps because this function is called at the end of 
+	// processing a read access event
+
+	if !(aw.Branches[stem] & AccessWitnessWriteFlag) {
+		stemWrite = true
+		aw.Branches[stem] |= AccessWitnessWriteFlag
+	}
+
+	if aw.LeafAccesses[common.BytesToHash(addr)] & AccessWitnessWriteFlag {
+		chunkWrite = true
+		aw.LeafAccesses[common.BytesToHash(addr)] |= AccessWitnessWriteFlag
+	}
+
+	// TODO charge chunk filling costs if the leaf was previously empty in the state
+	/*
+	if chunkWrite {
+		if _, err := verkleDb.TryGet(addr); err != nil {
+			chunkFill = true
+		}
+	}
+	*/
+
+	return stemWrite, chunkWrite, chunkFill
+}
+
 // TouchAddress adds any missing addr to the witness and returns respectively
 // true if the stem or the stub weren't arleady present.
-func (aw *AccessWitness) TouchAddress(addr, value []byte) (bool, bool) {
+func (aw *AccessWitness) TouchAddress(addr, value []byte, isWrite bool) (bool, bool, bool, bool, bool) {
 	var (
 		stem        [31]byte
-		newStem     bool
-		newSelector bool
+		stemRead bool
+		selectorRead bool
 	)
 	copy(stem[:], addr[:31])
 
 	// Check for the presence of the stem
-	if _, newStem := aw.Branches[stem]; !newStem {
-		aw.Branches[stem] = struct{}{}
+	if _, hasStem := aw.Branches[stem]; !hasStem {
+		stemRead = true
+		aw.Branches[stem] = AccessWitnessReadFlag
 	}
 
 	// Check for the presence of the selector
-	if _, newSelector := aw.Chunks[common.BytesToHash(addr)]; !newSelector {
+	if _, hasSelector := aw.Chunks[common.BytesToHash(addr)]; !hasSelector {
 		if value == nil {
 			aw.Undefined[common.BytesToHash(addr)] = struct{}{}
 		} else {
@@ -70,25 +114,50 @@ func (aw *AccessWitness) TouchAddress(addr, value []byte) (bool, bool) {
 			}
 			aw.Chunks[common.BytesToHash(addr)] = value
 		}
+
+		if accessFlags, hasAccessFlags = :aw.LeafAccesses; hasAccessFlags {
+			if !(aw.LeafAccesses[common.BytesToHash(addr)] & AccessWitnessRead)
+				aw.LeafAccesses[common.BytesToHash(addr)] |= AccessWitnessRead
+			}
+		} else {
+			aw.LeafAccesses[common.BytesToHash(addr)] = AccessWitnessRead
+
+		}
 	}
 
-	return newStem, newSelector
+	var stemWrite, chunkWrite, chunkFill bool
+
+	if isWrite {
+		stemWrite, selectorWrite, chunkFill := aw.touchAddressOnWrite(addr, value)
+	}
+
+	return stemRead, selectorRead, stemWrite, selectorWrite, chunkFill
 }
 
 // TouchAddressAndChargeGas checks if a location has already been touched in
 // the current witness, and charge extra gas if that isn't the case. This is
 // meant to only be called on a tx-context access witness (i.e. before it is
 // merged), not a block-context witness: witness costs are charged per tx.
-func (aw *AccessWitness) TouchAddressAndChargeGas(addr, value []byte) uint64 {
+func (aw *AccessWitness) TouchAddressAndChargeGas(addr, value []byte, isWrite bool) uint64 {
 	var gas uint64
 
-	nstem, nsel := aw.TouchAddress(addr, value)
-	if nstem {
-		gas += params.WitnessBranchCost
+	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.TouchAddress(addr, value, isWrite)
+	if stemRead {
+		gas += params.WitnessBranchReadCost
 	}
-	if nsel {
-		gas += params.WitnessChunkCost
+	if selectorRead {
+		gas += params.WitnessChunkReadCost
 	}
+	if stemWrite {
+		gas += params.WitnessBranchWriteCost
+	}
+	if selectorWrite {
+		gas += params.WitnessChunkWriteCost
+	}
+	if selectorFill {
+		gas += params.WitnessChunkFillCost
+	}
+
 	return gas
 }
 
@@ -104,13 +173,19 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 
 	for k := range other.Branches {
 		if _, ok := aw.Branches[k]; !ok {
-			aw.Branches[k] = struct{}{}
+			aw.Branches[k] = other.Branches[k]
 		}
 	}
 
 	for k, chunk := range other.Chunks {
 		if _, ok := aw.Chunks[k]; !ok {
 			aw.Chunks[k] = chunk
+		}
+	}
+
+	for k, leafAccessFlags := range other.LeafAccesses {
+		if _, ok := aw.LeafAccesses[k]; !ok {
+			aw.LeafAccesses[k] = leafAccessFlags
 		}
 	}
 }
