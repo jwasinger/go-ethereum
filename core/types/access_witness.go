@@ -21,6 +21,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+type VerkleStem [31]byte
+
+type ChunkValue struct {
+	mode byte
+	value []byte
+}
+
 // AccessWitness lists the locations of the state that are being accessed
 // during the production of a block.
 // TODO(@gballet) this doesn't fully support deletions
@@ -29,25 +36,16 @@ type AccessWitness struct {
 	// for the byte value:
 	//	the first bit is set if the branch has been edited
 	//	the second bit is set if the branch has been read
-	Branches map[[31]byte]byte
-
-	LeavesAccesses map[common.Hash]byte
+	Branches map[VerkleStem]byte
 
 	// Chunks contains the initial value of each address
-	Chunks map[common.Hash][]byte
-
-	// The initial value isn't always available at the time an
-	// address is touched, this map references addresses that
-	// were touched but can not yet be put in Chunks.
-	Undefined map[common.Hash]struct{}
+	Chunks map[common.Hash]ChunkValue
 }
-
 
 func NewAccessWitness() *AccessWitness {
 	return &AccessWitness{
-		Branches:  make(map[[31]byte]struct{}),
-		Chunks:    make(map[common.Hash][]byte),
-		Undefined: make(map[common.Hash]struct{}),
+		Branches:  make(map[VerkleStem]struct{}),
+		Chunks:    make(map[common.Hash]ChunkValue),
 	}
 }
 
@@ -56,11 +54,22 @@ const (
 	AccessWitnessWriteFlag = 2
 )
 
-func (aw *AccessWitness) touchAddressOnWrite(addr, value []byte) (bool, bool) {
-	var stem        [31]byte
-	copy(stem[:], addr[:31])
+// because of the way Geth's EVM is implemented, the gas cost of an operation
+// may be needed before the value of the leaf-key can be retrieved. Hence, we
+// break witness access (for the purpose of gas accounting), and filling witness
+// values into two methods
+func (aw *AccessWitness) SetLeafValue(addr, value []byte) {
+	if chunk, exists := aw.Chunks[addr]; exists {
+		chunk.value = value
+	} else {
+		panic(fmt.Sprintf("address not in access witness: %x", addr))
+	}
+}
 
+func (aw *AccessWitness) touchAddressOnWrite(addr, value []byte) (bool, bool, bool) {
+	var stem        VerkleStem
 	var stemWrite, chunkWrite, chunkFill bool
+	copy(stem[:], addr[:31])
 
 	// NOTE: stem, selector access flags already exist in their
 	// respective maps because this function is called at the end of 
@@ -71,9 +80,9 @@ func (aw *AccessWitness) touchAddressOnWrite(addr, value []byte) (bool, bool) {
 		aw.Branches[stem] |= AccessWitnessWriteFlag
 	}
 
-	if aw.LeafAccesses[common.BytesToHash(addr)] & AccessWitnessWriteFlag {
+	if aw.Chunks[common.BytesToHash(addr)] & AccessWitnessWriteFlag {
 		chunkWrite = true
-		aw.LeafAccesses[common.BytesToHash(addr)] |= AccessWitnessWriteFlag
+		aw.Chunks[common.BytesToHash(addr)].mode |= AccessWitnessWriteFlag
 	}
 
 	// TODO charge chunk filling costs if the leaf was previously empty in the state
@@ -90,7 +99,7 @@ func (aw *AccessWitness) touchAddressOnWrite(addr, value []byte) (bool, bool) {
 
 // TouchAddress adds any missing addr to the witness and returns respectively
 // true if the stem or the stub weren't arleady present.
-func (aw *AccessWitness) TouchAddress(addr, value []byte, isWrite bool) (bool, bool, bool, bool, bool) {
+func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bool, bool, bool) {
 	var (
 		stem        [31]byte
 		stemRead bool
@@ -104,24 +113,15 @@ func (aw *AccessWitness) TouchAddress(addr, value []byte, isWrite bool) (bool, b
 		aw.Branches[stem] = AccessWitnessReadFlag
 	}
 
-	// Check for the presence of the selector
+	// always charge read cost whether the access event is read/write
+	// literal interpretation of the spec
+	selectorRead = true
+
+	// Check for the presence of the leaf selector
 	if _, hasSelector := aw.Chunks[common.BytesToHash(addr)]; !hasSelector {
-		if value == nil {
-			aw.Undefined[common.BytesToHash(addr)] = struct{}{}
-		} else {
-			if _, ok := aw.Undefined[common.BytesToHash(addr)]; !ok {
-				delete(aw.Undefined, common.BytesToHash(addr))
-			}
-			aw.Chunks[common.BytesToHash(addr)] = value
-		}
-
-		if accessFlags, hasAccessFlags = :aw.LeafAccesses; hasAccessFlags {
-			if !(aw.LeafAccesses[common.BytesToHash(addr)] & AccessWitnessRead)
-				aw.LeafAccesses[common.BytesToHash(addr)] |= AccessWitnessRead
-			}
-		} else {
-			aw.LeafAccesses[common.BytesToHash(addr)] = AccessWitnessRead
-
+		aw.Chunks[common.BytesToHash(addr)] = ChunkValue{
+			AccessWitnessReadFlag,
+			nil,
 		}
 	}
 
@@ -134,11 +134,7 @@ func (aw *AccessWitness) TouchAddress(addr, value []byte, isWrite bool) (bool, b
 	return stemRead, selectorRead, stemWrite, selectorWrite, chunkFill
 }
 
-// TouchAddressAndChargeGas checks if a location has already been touched in
-// the current witness, and charge extra gas if that isn't the case. This is
-// meant to only be called on a tx-context access witness (i.e. before it is
-// merged), not a block-context witness: witness costs are charged per tx.
-func (aw *AccessWitness) TouchAddressAndChargeGas(addr, value []byte, isWrite bool) uint64 {
+func (aw *AccessWitness) touchAddressAndChargeGas(addr, value []byte, isWrite bool) uint64 {
 	var gas uint64
 
 	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.TouchAddress(addr, value, isWrite)
@@ -159,6 +155,14 @@ func (aw *AccessWitness) TouchAddressAndChargeGas(addr, value []byte, isWrite bo
 	}
 
 	return gas
+}
+
+func (aw *AccessWitness) TouchAddressOnWriteAndChargeGas(addr []byte) uint64 {
+	touchAddressAndChargeGas(addr, true)
+}
+
+func (aw *AccessWitness) TouchAddressOnReadAndChargeGas(addr []byte) uint64 {
+	touchAddressAndChargeGas(addr, false)
 }
 
 // Merge is used to merge the witness that got generated during the execution
