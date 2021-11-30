@@ -174,7 +174,7 @@ func (evm *EVM) tryTouchWitnessAndConsumeGas(key, value []byte, gasLeft *uint64)
 	gasConsumed := evm.Accesses.TouchAddressOnReadAndChargeGas(key)
 
 	if gasConsumed > *gasLeft {
-		*gas = 0
+		*gasLeft = 0
 		return false
 	}
 
@@ -248,32 +248,27 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		} else {
 			// Touch the account data
 			var data [32]byte
-			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:], gas)
-			{
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:], &gas) {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				return []byte{}, ErrOutOfGas, gas
+				return []byte{}, gas, ErrOutOfGas
 			}
 			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyNonce(addr.Bytes()), data[:], gas)
-			{
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyNonce(addr.Bytes()), data[:], &gas) {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				return []byte{}, ErrOutOfGas, gas
+				return []byte{}, gas, ErrOutOfGas
 			}
-			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyBalance(addr.Bytes()), data[:], gas)
-			{
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyBalance(addr.Bytes()), data[:], &gas) {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				return []byte{}, ErrOutOfGas, gas
+				return []byte{}, gas, ErrOutOfGas
 			}
 			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeSize(addr.Bytes()), data[:], gas)
-			{
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeSize(addr.Bytes()), data[:], &gas) {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				return []byte{}, ErrOutOfGas, gas
+				return []byte{}, gas, ErrOutOfGas
 			}
-			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeKeccak(addr.Bytes()), data[:], gas)
-			{
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeKeccak(addr.Bytes()), data[:], &gas) {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				return []byte{}, ErrOutOfGas, gas
+				return []byte{}, gas, ErrOutOfGas
 			}
 
 			addrCopy := addr

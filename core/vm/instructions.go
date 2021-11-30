@@ -345,7 +345,7 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		interpreter.evm.TxContext.Accesses.SetLeafValue(indx), uint256.NewInt(cs).Bytes())
+		interpreter.evm.TxContext.Accesses.SetLeafValue(index, uint256.NewInt(cs).Bytes())
 	}
 	slot.SetUint64(cs)
 	return nil, nil
@@ -400,7 +400,7 @@ func touchEachChunks(start, end uint64, code []byte, contract *Contract, evm *EV
 			end = uint64(len(code))
 		}
 		copy(value[1:], code[chunk*31:end])
-		evm.Accesses.SetLeafValues(index, value[:])
+		evm.Accesses.SetLeafValue(index, value[:])
 	}
 }
 
@@ -925,7 +925,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
 			interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index)
-			interpreter.evm.TxContext.Accesses.SetLeafValue(index, value)
+			interpreter.evm.TxContext.Accesses.SetLeafValue(index, value[:])
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -962,8 +962,8 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		value[0] = byte(count)
 		copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 		index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-		interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index)
-		interpreter.evm.TxContext.Accesses.SetLeafValue(index, value)
+		interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index)
+		interpreter.evm.TxContext.Accesses.SetLeafValue(index, value[:])
 
 		// in the case of PUSH32, the end data might be two chunks away,
 		// so also get the middle chunk. There is a boundary condition
@@ -983,7 +983,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			copy(value[1:], scope.Contract.Code[chunk*31:end])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
 			interpreter.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index)
-			interpreter.evm.TxContext.Accesses.SetLeafValue(index, value)
+			interpreter.evm.TxContext.Accesses.SetLeafValue(index, value[:])
 
 		}
 
