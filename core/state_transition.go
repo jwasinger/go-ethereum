@@ -301,9 +301,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if st.gas < gas {
-		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, gas)
-	}
+
 	if st.evm.TxContext.Accesses != nil {
 		if msg.To() != nil {
 			toBalance := trieUtils.GetTreeKeyBalance(msg.To().Bytes())
@@ -330,6 +328,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.evm.TxContext.Accesses.SetLeafValue(fromNonce, preFN[:])
 		gas += st.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(fromBalance)
 		st.evm.TxContext.Accesses.SetLeafValue(fromBalance, preFB[:])
+	}
+	if st.gas < gas {
+		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, gas)
 	}
 	st.gas -= gas
 
