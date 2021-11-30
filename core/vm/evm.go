@@ -170,13 +170,15 @@ func (evm *EVM) Interpreter() *EVMInterpreter {
 	return evm.interpreter
 }
 
-// try to consume an amount of gas, if the amount consumed
-// is greater than the amount left, set amount left to 0 and return false
-func tryConsumeGas(gasLeft *uint64, gasConsumed uint64) bool {
+func (evm *EVM) tryTouchWitnessAndConsumeGas(key, value []byte, gasLeft *uint64) bool {
+	gasConsumed := evm.Accesses.TouchAddressOnReadAndChargeGas(key)
+
 	if gasConsumed > *gasLeft {
 		*gas = 0
 		return false
 	}
+
+	evm.Accesses.SetLeafValue(key, value)
 
 	*gasLeft -= gasConsumed
 	return true
@@ -246,25 +248,30 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		} else {
 			// Touch the account data
 			var data [32]byte
-			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:]), false) {
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:], gas)
+			{
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return []byte{}, ErrOutOfGas, gas
 			}
 			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:], false)) {
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyNonce(addr.Bytes()), data[:], gas)
+			{
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return []byte{}, ErrOutOfGas, gas
 			}
-			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes()), false) {
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyBalance(addr.Bytes()), data[:], gas)
+			{
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return []byte{}, ErrOutOfGas, gas
 			}
 			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-			if !tryConsumeGas(evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:]), false) {
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeSize(addr.Bytes()), data[:], gas)
+			{
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return []byte{}, ErrOutOfGas, gas
 			}
-			if !tryConsumeGas(evm.Accesses.TouchAddress(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())) {
+			if !evm.tryTouchWitnessAndConsumeGas(utils.GetTreeKeyCodeKeccak(addr.Bytes()), data[:], gas)
+			{
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return []byte{}, ErrOutOfGas, gas
 			}

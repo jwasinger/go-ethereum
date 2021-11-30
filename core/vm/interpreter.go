@@ -227,7 +227,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				value[0] = byte(count)
 				copy(value[1:], contract.Code[chunk*31:end])
 			}
-			contract.Gas -= in.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, value[:])
+			contract.Gas -= in.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index, value[:])
+			in.evm.TxContext.SetLeafValue(index, value[:])
 		}
 
 		if inWitness {

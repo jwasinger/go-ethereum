@@ -309,7 +309,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			toBalance := trieUtils.GetTreeKeyBalance(msg.To().Bytes())
 			pre := st.state.GetBalance(*msg.To())
 			if !msg.Value().Cmp(big.NewInt(0)) != 0 {
-				gas += st.evm.TxContext.Accesses.TouchAddressAndChargeGas(toBalance, pre.Bytes(), true)
+				gas += st.evm.TxContext.Accesses.TouchAddressOnWriteAndChargeGas(toBalance)
+				st.evmTxContext.Accesses.SetLeafValue(toBalance, pre.Bytes())
 			}
 
 			// NOTE: Nonce also needs to be charged, because it is needed for execution
@@ -317,15 +318,18 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			var preTN [8]byte
 			fromNonce := trieUtils.GetTreeKeyNonce(msg.To().Bytes())
 			binary.BigEndian.PutUint64(preTN[:], st.state.GetNonce(*msg.To()))
-			gas += st.evm.TxContext.Accesses.TouchAddressAndChargeGas(fromNonce, preTN[:], true)
+			gas += st.evm.TxContext.Accesses.TouchAddressOnWriteAndChargeGas(fromNonce)
+			st.evm.TxContext.Accesses.SetLeafValue(fromNonce, preTN[:])
 		}
 		fromBalance := trieUtils.GetTreeKeyBalance(msg.From().Bytes())
 		preFB := st.state.GetBalance(msg.From()).Bytes()
 		fromNonce := trieUtils.GetTreeKeyNonce(msg.From().Bytes())
 		var preFN [8]byte
 		binary.BigEndian.PutUint64(preFN[:], st.state.GetNonce(msg.From()))
-		gas += st.evm.TxContext.Accesses.TouchAddressAndChargeGas(fromNonce, preFN[:], true)
-		gas += st.evm.TxContext.Accesses.TouchAddressAndChargeGas(fromBalance, preFB[:], true)
+		gas += st.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(fromNonce)
+		st.evm.TxContext.SetLeafValue(fromNonce, preFN[:])
+		gas += st.evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(fromBalance)
+		st.evm.TxContext.SetLeafValue(fromBalance, preFB[:])
 	}
 	st.gas -= gas
 
