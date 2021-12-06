@@ -113,10 +113,19 @@ type AccountCodeLeaf struct {
 	EndOffset uint64
 }
 
+// return an array of account code leaves that cover the account code in the specified range
 func GetCodeSlots(address []byte, offset, size uint64) []AccountCodeLeaf {
-	leafCount := (offset + size) / 31
 	leaves := []AccountCodeLeaf{}
-	curOffset := offset
+	// the offset of the first byte in the first leaf covered by the range
+	var startOffset uint64
+
+	if offset > 31 {
+		startOffset = offset - (offset % 31)
+	} else {
+		startOffset = offset
+	}
+	leafCount := ((offset + size) - startOffset) / 31
+	curOffset := startOffset
 
 	for i := 0; i < leafCount; i++ {
 		chunkOffset := new(uint256.Int).Add(CodeOffset, uint256.NewInt(curOffset))
