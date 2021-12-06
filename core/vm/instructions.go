@@ -343,7 +343,7 @@ func opReturnDataCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeConte
 func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
-	if interpreter.evm.accesses != nil {
+	if interpreter.evm.TxContext.Accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
 		interpreter.evm.TxContext.Accesses.TouchAddress(index, uint256.NewInt(cs).Bytes())
 	}
@@ -372,59 +372,53 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if overflow {
 		uint64CodeEnd = 0xffffffffffffffff
 	}
-	if interpreter.evm.accesses != nil {
+	if interpreter.evm.TxContext.Accesses != nil {
+		touchEachChunks(uint64CodeOffset, uint64CodeEnd, codeCopy, scope.Contract, interpreter.evm)
 		copyCodeFromAccesses(scope.Contract.Address(), uint64CodeOffset, uint64CodeEnd, memOffset.Uint64(), interpreter, scope)
 	} else {
 		codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
-
-		touchEachChunks(uint64CodeOffset, uint64CodeEnd, codeCopy, scope.Contract, interpreter.evm)
 	}
 
 	return nil, nil
 }
 
 // Helper function to touch every chunk in a code range
-func touchEachChunks(start, end uint64, code []byte, contract *Contract, evm *EVM) {
-	for chunk := start / 31; chunk <= end/31 && chunk <= uint64(len(code))/31; chunk++ {
-		index := trieUtils.GetTreeKeyCodeChunk(contract.Address().Bytes(), uint256.NewInt(chunk))
-		count := uint64(0)
-		end := (chunk + 1) * 31
+func touchEachChunks(start, size uint64, code []byte, address, code []byte, evm *EVM) {
+	if start >= uint64(len(contract.Code)) {
+		// TODO log some error here or continue silently?  Probably the latter
+		return
+	else if start + size > uint64(len(contract.Code)) {
+		size = uint64(len(contract.Code)) - 1 - start
+	}
+	codeLeaves := trieUtils.GetCodeLeaves(address, start, size)
 
-		// Look for the first code byte (i.e. no pushdata)
-		for ; count < 31 && end+count < uint64(len(contract.Code)) && !contract.IsCode(chunk*31+count); count++ {
-		}
+	for i := 0; i < len(codeLeaves); i++ {
+		end := codeLeaves[i].End
 		var value [32]byte
-		value[0] = byte(count)
+		// the offset into the leaf that the first PUSH occurs
+		var firstPushOffset uint64 = 0
+		// Look for the first code byte (i.e. no pushdata)
+		for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].Start < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].Start + firstPushOffset); firstPushOffset++ {
+		}
+		value[0] = byte(firstPushOffset)
 		if end > uint64(len(code)) {
 			end = uint64(len(code))
 		}
-		copy(value[1:], code[chunk*31:end])
-		evm.Accesses.TouchAddress(index, value[:])
+		copy(value[1:], code[codeLeaves[i].Start:end])
+		index := trieUtils.GetTreeKey(address, codeLeaves[i].TreeIndex, codeLeaves[i].SubIndex)
+		evm.Accesses.TouchAddress(index, value)
 	}
 }
 
 // copyCodeFromAccesses perform codecopy from the witness, not from the db.
-func copyCodeFromAccesses(addr common.Address, codeOffset, codeEnd, memOffset uint64, in *EVMInterpreter, scope *ScopeContext) {
-	chunk := codeOffset / 31
-	endChunk := codeEnd / 31
-	start := codeOffset % 31 // start inside the first code chunk
-	offset := uint64(0)      // memory offset to write to
-	// XXX uint64 overflow in condition check
-	for end := uint64(31); chunk < endChunk; chunk, start = chunk+1, 0 {
-		// case of the last chunk: figure out how many bytes need to
-		// be extracted from the last chunk.
-		if chunk+1 == endChunk {
-			end = codeEnd % 31
-		}
-
-		// TODO make a version of GetTreeKeyCodeChunk without the bigint
-		index := common.BytesToHash(trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(chunk)))
-		h := in.evm.accesses[index]
-		//in.evm.Accesses.TouchAddress(index.Bytes(), h[1+start:1+end])
-		scope.Memory.Set(memOffset+offset, end-start, h[1+start:end])
-		offset += 31 - start
+func copyCodeFromAccesses(addr common.Address, codeOffset, size, memOffset uint64, evm *EVM) {
+	// TODO have to check the below for each acct bucket
+	if addrData, exists := evm.TxContext.Branches[addr[:]]; !exists {
+		panic("copyCodeFromAccesses called for account that is not in the access witness")
 	}
+
+	this is where I left off for today
 }
 
 func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -444,13 +438,8 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		uint64CodeEnd = 0xffffffffffffffff
 	}
 	addr := common.Address(a.Bytes20())
-	if interpreter.evm.accesses != nil {
-		copyCodeFromAccesses(addr, uint64CodeOffset, uint64CodeEnd, memOffset.Uint64(), interpreter, scope)
-	} else {
-		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
-		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
-
-		touchEachChunks(uint64CodeOffset, uint64CodeEnd, codeCopy, scope.Contract, interpreter.evm)
+	if interpreter.evm.TxContext.Accesses != nil {
+		panic("extcodecopy not implemented because we have to do jumpdest analysis for the target contract")
 	}
 
 	return nil, nil

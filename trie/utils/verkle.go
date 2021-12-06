@@ -106,6 +106,9 @@ func GetTreeKeyStorageSlot(address []byte, storageKey *uint256.Int) []byte {
 	return GetTreeKey(address, treeIndex, subIndex)
 }
 
+// AccountCodeLeaf describes the location of a 31-byte chunk of EVM code
+// within the Verkle tree.  The address is assumed to be known by the user
+// of the struct.
 type AccountCodeLeaf struct {
 	TreeKey uint64
 	SubKey uint8
@@ -113,21 +116,16 @@ type AccountCodeLeaf struct {
 	EndOffset uint64
 }
 
-// return an array of account code leaves that cover the account code in the specified range
-func GetCodeSlots(address []byte, offset, size uint64) []AccountCodeLeaf {
+// return an array of account code leaves that would cover the accounts code in the specified range
+func GetCodeLeaves(address []byte, offset, size uint64) []AccountCodeLeaf {
 	leaves := []AccountCodeLeaf{}
 	// the offset of the first byte in the first leaf covered by the range
-	var startOffset uint64
-
-	if offset > 31 {
-		startOffset = offset - (offset % 31)
-	} else {
-		startOffset = offset
-	}
+	startOffset := offset / 31
 	leafCount := ((offset + size) - startOffset) / 31
 	curOffset := startOffset
 
 	for i := 0; i < leafCount; i++ {
+		// TODO I assume these don't need to be uint256
 		chunkOffset := new(uint256.Int).Add(CodeOffset, uint256.NewInt(curOffset))
 		treeIndex := new(uint256.Int).Div(chunkOffset, VerkleNodeWidth)
 		subIndexMod := new(uint256.Int).Mod(chunkOffset, VerkleNodeWidth).Bytes()
