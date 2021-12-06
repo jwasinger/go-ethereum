@@ -105,3 +105,33 @@ func GetTreeKeyStorageSlot(address []byte, storageKey *uint256.Int) []byte {
 	}
 	return GetTreeKey(address, treeIndex, subIndex)
 }
+
+type AccountCodeLeaf struct {
+	TreeKey uint64
+	SubKey uint8
+	StartOffset uint64
+	EndOffset uint64
+}
+
+func GetCodeSlots(address []byte, offset, size uint64) []AccountCodeLeaf {
+	leafCount := (offset + size) / 31
+	leaves := []AccountCodeLeaf{}
+	curOffset := offset
+
+	for i := 0; i < leafCount; i++ {
+		chunkOffset := new(uint256.Int).Add(CodeOffset, uint256.NewInt(curOffset))
+		treeIndex := new(uint256.Int).Div(chunkOffset, VerkleNodeWidth)
+		subIndexMod := new(uint256.Int).Mod(chunkOffset, VerkleNodeWidth).Bytes()
+		var subIndex byte
+		if len(subIndexMod) != 0 {
+			subIndex = subIndexMod[0]
+		}
+		leaves := append(leaves, AccountCodeLeaf{
+			TreeKey: treeIndex,
+			SubKey: subIndex,
+			StartOffset: curOffset,
+			EndOffset: curOffset + 31,
+		})
+		curOffset += 31
+	}
+}
