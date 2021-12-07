@@ -369,9 +369,11 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 
-	codeCopy, startOffset, endOffset := getChunkAlignedData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+	// TODO we need to get the data aligned along 31 bytes, touch the witness with that, but only copy a subset
+	// of that to the target memory
+	codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		touchEachChunks(uint64CodeOffset, length.Uint64(), scope.Contract, interpreter.evm)
+		touchEachChunksAndChargeGas(uint64CodeOffset, length.Uint64(), scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm)
 	}
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 	return nil, nil
@@ -382,19 +384,21 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 // this is potentially-wasteful if we need less than 31-bytes of a slot for an execution.
 // However, it is simpler to implement.
 // NOTE: this function does not do bounds checking for the code being accessed
-func touchEachChunks(offset, size uint64, address, contract *Contract, evm *EVM) {
-	codeLeaves := trieUtils.GetCodeLeaves(address, start, size)
+func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness) uint64 {
+	codeLeaves := trieUtils.GetCodeLeaves(address, offset, size)
+	var statelessGasCharged uint64
 
-	var code []byte
-	if contract != nil {
-		code = contract.Code[start:start + size])
-	}
 
 	// the offsets of the first code byte of the first chunk
 	// and the last code byte of the last chunk in the 31-byte aligned
 	// range that covers what we want to touch
 	start := offset - (offset % 31)
-	end = (offset + size) + ((offset + size) % 31)
+
+	var code []byte
+	if contract != nil {
+		// TODO this should be 31-byte aligned code that overlaps the target range
+		code = contract.Code[start:start + size]
+	}
 
 	for i := 0; i < len(codeLeaves); i++ {
 		var value []byte
@@ -406,15 +410,21 @@ func touchEachChunks(offset, size uint64, address, contract *Contract, evm *EVM)
 			}
 			value = make([]byte, 32, 32)
 			value[0] = byte(firstPushOffset)
-			curEnd := leaves[i].StartOffset + 31
+			curEnd := codeLeaves[i].StartOffset + 31
 			if curEnd > uint64(len(contract.Code)) {
 				curEnd = uint64(len(contract.Code))
 			}
 			copy(value[1:], code[codeLeaves[i].StartOffset:curEnd])
 		}
-		index := append(codeLeaves[i].TreeKey, []byte{codeLeaves[i].SubIndex})
-		evm.Accesses.TouchAddress(index, value)
+		index := append(codeLeaves[i].TreeKey, codeLeaves[i].SubIndex)
+		if code != nil {
+			statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
+		} else {
+			accesses.TouchAddress(index, value)
+		}
 	}
+
+	return statelessGasCharged
 }
 
 func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -931,8 +941,8 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			endMin = startMin + pushByteSize
 		}
 
-		if evm.Accesses != nil {
-			touchEachChunks(startMin, pushByteSize, scope.Contract.Code)
+		if interpreter.TxContext.Accesses != nil {
+			touchEachChunksAndChargeGas(startMin, pushByteSize, scope.Contract.Code)
 		}
 
 		integer := new(uint256.Int)

@@ -120,7 +120,7 @@ func GetCodeLeaves(address []byte, offset, size uint64) []AccountCodeLeaf {
 	leaves := []AccountCodeLeaf{}
 	// the offset of the first byte in the first leaf covered by the range
 	startOffset := offset / 31
-	leafCount := ((offset + size) - startOffset) / 31
+	leafCount := int(((offset + size) - startOffset) / 31)
 	curOffset := startOffset
 
 	for i := 0; i < leafCount; i++ {
@@ -132,11 +132,13 @@ func GetCodeLeaves(address []byte, offset, size uint64) []AccountCodeLeaf {
 		if len(subIndexMod) != 0 {
 			subIndex = subIndexMod[0]
 		}
-		leaves := append(leaves, AccountCodeLeaf{
-			TreeKey: trieUtils.GetTreeKey(address, treeIndex, subIndex),
+		leaves = append(leaves, AccountCodeLeaf{
+			TreeKey: GetTreeKey(address, treeIndex, subIndex),
 			SubIndex: subIndex,
 			StartOffset: curOffset,
 		})
 		curOffset += 31
 	}
+
+	return leaves
 }

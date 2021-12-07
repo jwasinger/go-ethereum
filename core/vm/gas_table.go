@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/holiman/uint256"
 )
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
@@ -92,10 +91,9 @@ func makeGasPush(pushCount uint) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
 		var constantGas uint64 = 3 // TODO don't hardcode this
 		statelessGas := uint64(0)
-		pushDataOffset := uint256.NewInt(pc)
 
 		if evm.Accesses != nil {
-			touchEachChunks(pushDataOffset, count, nil, nil, evm)
+			statelessGas = touchEachChunksAndChargeGas(pc, uint64(pushCount), contract.Address().Bytes()[:], nil, evm)
 		}
 
 		return constantGas + statelessGas, nil
@@ -105,7 +103,7 @@ func makeGasPush(pushCount uint) gasFunc {
 func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
 	usedGas := uint64(0)
 	slot := stack.Back(0)
-	if evm.accesses != nil {
+	if evm.Accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
 		usedGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
 	}
@@ -122,11 +120,11 @@ var (
 
 func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
 	var statelessGas uint64
-	gasMemoryCopying, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
+	gasMemoryCopying, err := gasCodeCopyStateful(evm, contract, stack, mem, pc, memorySize)
 	if err != nil {
 		return 0, err
 	}
-	if evm.accesses != nil {
+	if evm.Accesses != nil {
 		var (
 			codeOffset = stack.Back(1)
 			length     = stack.Back(2)
@@ -135,24 +133,24 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uin
 		if overflow {
 			uint64CodeOffset = 0xffffffffffffffff
 		}
-		statelessGas = touchEachChunks(uint64CodeOffset, length.Uint64(), nil, evm)
+		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, length.Uint64(), contract.Address().Bytes(), nil, evm)
 	}
 
 	return gasMemoryCopying + statelessGas, nil
 }
 
-func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gasMemoryCopying, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
+func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
+	gasMemoryCopying, err := gasExtCodeCopyStateful(evm, contract, stack, mem, pc, memorySize)
 	if err != nil {
 		return 0, err
 	}
 	return gasMemoryCopying, nil
 }
 
-func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 	usedGas := uint64(0)
 
-	if evm.accesses != nil {
+	if evm.Accesses != nil {
 		where := stack.Back(0)
 		addr := contract.Address()
 		index := trieUtils.GetTreeKeyStorageSlot(addr[:], where)
@@ -164,7 +162,7 @@ func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySiz
 
 func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
 	// Apply the witness access costs, err is nil
-	accessGas, _ := gasSLoad(evm, contract, stack, mem, memorySize)
+	accessGas, _ := gasSLoad(evm, contract, stack, mem, pc, memorySize)
 	var (
 		y, x    = stack.Back(1), stack.Back(0)
 		current = evm.StateDB.GetState(contract.Address(), x.Bytes32())
@@ -290,7 +288,7 @@ func gasSStoreEIP2200(evm *EVM, contract *Contract, stack *Stack, mem *Memory, p
 }
 
 func makeGasLog(n uint64) gasFunc {
-	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 		requestedSize, overflow := stack.Back(1).Uint64WithOverflow()
 		if overflow {
 			return 0, ErrGasUintOverflow
@@ -403,7 +401,7 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64,
 		transfersValue = !stack.Back(2).IsZero()
 		address        = common.Address(stack.Back(1).Bytes20())
 	)
-	if evm.accesses != nil {
+	if evm.Accesses != nil {
 		// Charge witness costs
 		for i := trieUtils.VersionLeafKey; i <= trieUtils.CodeSizeLeafKey; i++ {
 			index := trieUtils.GetTreeKeyAccountLeaf(address[:], byte(i))
