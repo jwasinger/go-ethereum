@@ -90,18 +90,15 @@ func memoryCopierGas(stackpos int) gasFunc {
 
 func makeGasPush(pushCount uint) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
-		usedGas := uint64(0)
+		var constantGas uint64 = 3 // TODO don't hardcode this
+		statelessGas := uint64(0)
 		pushDataOffset := uint256.NewInt(pc)
 
-		if evm.accesses != nil {
-			touchedLeaves := trieUtils.GetAccountCodeLeaves(addr[:], pushDataOffset, pushDataOffset + pushCount)
-			for i := 0; i < len(touchedLeaves); i++ {
-				index := trieUtils.GetTreeKey(addr[:], touchedLeaves[i].TreeKey, touchedLeaves[i].SubKey)
-				usedGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
-			}
+		if evm.Accesses != nil {
+			touchEachChunks(pushDataOffset, count, nil, nil, evm)
 		}
 
-		return usedGas, nil
+		return constantGas + statelessGas, nil
 	}
 }
 
@@ -125,6 +122,10 @@ var (
 
 func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uint64, memorySize uint64) (uint64, error) {
 	var statelessGas uint64
+	gasMemoryCopying, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
 	if evm.accesses != nil {
 		var (
 			codeOffset = stack.Back(1)
@@ -134,49 +135,15 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uin
 		if overflow {
 			uint64CodeOffset = 0xffffffffffffffff
 		}
-		uint64CodeEnd, overflow := new(uint256.Int).Add(codeOffset, length).Uint64WithOverflow()
-		if overflow {
-			uint64CodeEnd = 0xffffffffffffffff
-		}
-		addr := contract.Address()
-		touchedLeaves := trieUtils.GetAccountCodeLeaves(addr[:], codeOffset, length)
-		for i := 0; i < len(touchedLeaves); i++ {
-			index := trieUtils.GetTreeKey(addr[:], touchedLeaves[i].TreeKey, touchedLeaves[i].SubKey)
-			statelessGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
-		}
-
+		statelessGas = touchEachChunks(uint64CodeOffset, length.Uint64(), nil, evm)
 	}
-	usedGas, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
-	return usedGas + statelessGas, err
+
+	return gasMemoryCopying + statelessGas, err
 }
 
 func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	var statelessGas uint64
-	if evm.accesses != nil {
-		var (
-			a          = stack.Back(0)
-			codeOffset = stack.Back(2)
-			length     = stack.Back(3)
-		)
-		uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
-		if overflow {
-			uint64CodeOffset = 0xffffffffffffffff
-		}
-		uint64CodeEnd, overflow := new(uint256.Int).Add(codeOffset, length).Uint64WithOverflow()
-		if overflow {
-			uint64CodeEnd = 0xffffffffffffffff
-		}
-		addr := common.Address(a.Bytes20())
-		// XXX uint64 overflow in condition check
-		touchedLeaves := trieUtils.GetAccountCodeLeaves(addr[:], codeOffset, codeLength)
-		for i := 0; i < len(touchedLeaves); i++ {
-			index := trieUtils.GetTreeKey(addr[:], touchedLeaves[i].TreeKey, touchedLeaves[i].SubKey)
-			statelessGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
-		}
-
-	}
-	usedGas, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
-	return usedGas + statelessGas, err
+	panic("not implemented")
+	return nil
 }
 
 func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {

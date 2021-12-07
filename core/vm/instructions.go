@@ -368,57 +368,41 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
 	}
-	uint64CodeEnd, overflow := new(uint256.Int).Add(&codeOffset, &length).Uint64WithOverflow()
-	if overflow {
-		uint64CodeEnd = 0xffffffffffffffff
-	}
-	if interpreter.evm.TxContext.Accesses != nil {
-		touchEachChunks(uint64CodeOffset, uint64CodeEnd, codeCopy, scope.Contract, interpreter.evm)
-		copyCodeFromAccesses(scope.Contract.Address(), uint64CodeOffset, uint64CodeEnd, memOffset.Uint64(), interpreter, scope)
-	} else {
-		codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
-		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
-	}
 
+	codeCopy, startOffset, endOffset := getChunkAlignedData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+	if interpreter.evm.TxContext.Accesses != nil {
+		touchEachChunks(uint64CodeOffset, length.Uint64(), scope.Contract, interpreter.evm)
+	}
+	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 	return nil, nil
 }
 
-// Helper function to touch every chunk in a code range
-func touchEachChunks(start, size uint64, code []byte, address, code []byte, evm *EVM) {
-	if start >= uint64(len(contract.Code)) {
-		// TODO log some error here or continue silently?  Probably the latter
-		return
-	else if start + size > uint64(len(contract.Code)) {
-		size = uint64(len(contract.Code)) - 1 - start
-	}
+// touchEachChunks is a helper function to touch every chunk in a code range
+// TODO: this touches the entire 31-byte-aligned range that covers the given offset+size
+// this is potentially-wasteful if we need less than 31-bytes of a slot for an execution.
+// However, it is simpler to implement.
+func touchEachChunks(start, size uint64, address, contract *Contract, evm *EVM) {
 	codeLeaves := trieUtils.GetCodeLeaves(address, start, size)
 
 	for i := 0; i < len(codeLeaves); i++ {
 		end := codeLeaves[i].End
-		var value [32]byte
-		// the offset into the leaf that the first PUSH occurs
-		var firstPushOffset uint64 = 0
-		// Look for the first code byte (i.e. no pushdata)
-		for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].Start < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].Start + firstPushOffset); firstPushOffset++ {
+		var value []byte
+		if code != nil {
+			// the offset into the leaf that the first PUSH occurs
+			var firstPushOffset uint64 = 0
+			// Look for the first code byte (i.e. no pushdata)
+			for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].Start < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].Start + firstPushOffset); firstPushOffset++ {
+			}
+			value = make([]byte, 32, 32)
+			value[0] = byte(firstPushOffset)
+			if end > uint64(len(code)) + start {
+				end = uint64(len(code)) + start
+			}
+			copy(value[1:], code[codeLeaves[i].Start:end])
 		}
-		value[0] = byte(firstPushOffset)
-		if end > uint64(len(code)) {
-			end = uint64(len(code))
-		}
-		copy(value[1:], code[codeLeaves[i].Start:end])
 		index := trieUtils.GetTreeKey(address, codeLeaves[i].TreeIndex, codeLeaves[i].SubIndex)
 		evm.Accesses.TouchAddress(index, value)
 	}
-}
-
-// copyCodeFromAccesses perform codecopy from the witness, not from the db.
-func copyCodeFromAccesses(addr common.Address, codeOffset, size, memOffset uint64, evm *EVM) {
-	// TODO have to check the below for each acct bucket
-	if addrData, exists := evm.TxContext.Branches[addr[:]]; !exists {
-		panic("copyCodeFromAccesses called for account that is not in the access witness")
-	}
-
-	this is where I left off for today
 }
 
 func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -936,42 +920,13 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			endMin = startMin + pushByteSize
 		}
 
+		if evm.Accesses != nil {
+			touchEachChunks(startMin, pushByteSize, scope.Contract.Code)
+		}
+
 		integer := new(uint256.Int)
 		scope.Stack.push(integer.SetBytes(common.RightPadBytes(
 			scope.Contract.Code[startMin:endMin], pushByteSize)))
-
-		// touch push data by adding the last byte of the pushdata
-		var value [32]byte
-		chunk := uint64(endMin-1) / 31
-		count := uint64(0)
-		// Look for the first code byte (i.e. no pushdata)
-		for ; count < 31 && !scope.Contract.IsCode(chunk*31+count); count++ {
-		}
-		value[0] = byte(count)
-		copy(value[1:], scope.Contract.Code[chunk*31:endMin])
-		index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-		interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
-
-		// in the case of PUSH32, the end data might be two chunks away,
-		// so also get the middle chunk. There is a boundary condition
-		// check (endMin > 2) in the case the code is a single PUSH32
-		// insctruction, whose immediate are just 0s.
-		if pushByteSize == 32 && endMin > 2 {
-			chunk = uint64(endMin-2) / 31
-			count = uint64(0)
-			// Look for the first code byte (i.e. no pushdata)
-			for ; count < 31 && !scope.Contract.IsCode(chunk*31+count); count++ {
-			}
-			value[0] = byte(count)
-			end := (chunk + 1) * 31
-			if end > uint64(len(scope.Contract.Code)) {
-				end = uint64(len(scope.Contract.Code))
-			}
-			copy(value[1:], scope.Contract.Code[chunk*31:end])
-			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-			interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
-
-		}
 
 		*pc += size
 		return nil, nil
