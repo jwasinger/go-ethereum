@@ -1046,7 +1046,6 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 		if err != nil {
 			return err
 		}
-		//w.current.header.VerkleProof = p
 		block.SetVerkleProof(p)
 	}
 	if w.isRunning() && !w.merger.TDDReached() {
