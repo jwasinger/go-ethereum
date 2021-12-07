@@ -381,26 +381,38 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 // TODO: this touches the entire 31-byte-aligned range that covers the given offset+size
 // this is potentially-wasteful if we need less than 31-bytes of a slot for an execution.
 // However, it is simpler to implement.
-func touchEachChunks(start, size uint64, address, contract *Contract, evm *EVM) {
+// NOTE: this function does not do bounds checking for the code being accessed
+func touchEachChunks(offset, size uint64, address, contract *Contract, evm *EVM) {
 	codeLeaves := trieUtils.GetCodeLeaves(address, start, size)
 
+	var code []byte
+	if contract != nil {
+		code = contract.Code[start:start + size])
+	}
+
+	// the offsets of the first code byte of the first chunk
+	// and the last code byte of the last chunk in the 31-byte aligned
+	// range that covers what we want to touch
+	start := offset - (offset % 31)
+	end = (offset + size) + ((offset + size) % 31)
+
 	for i := 0; i < len(codeLeaves); i++ {
-		end := codeLeaves[i].End
 		var value []byte
 		if code != nil {
 			// the offset into the leaf that the first PUSH occurs
 			var firstPushOffset uint64 = 0
 			// Look for the first code byte (i.e. no pushdata)
-			for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].Start < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].Start + firstPushOffset); firstPushOffset++ {
+			for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
 			}
 			value = make([]byte, 32, 32)
 			value[0] = byte(firstPushOffset)
-			if end > uint64(len(code)) + start {
-				end = uint64(len(code)) + start
+			curEnd := leaves[i].StartOffset + 31
+			if curEnd > uint64(len(contract.Code)) {
+				curEnd = uint64(len(contract.Code))
 			}
-			copy(value[1:], code[codeLeaves[i].Start:end])
+			copy(value[1:], code[codeLeaves[i].StartOffset:curEnd])
 		}
-		index := trieUtils.GetTreeKey(address, codeLeaves[i].TreeIndex, codeLeaves[i].SubIndex)
+		index := append(codeLeaves[i].TreeKey, []byte{codeLeaves[i].SubIndex})
 		evm.Accesses.TouchAddress(index, value)
 	}
 }
@@ -417,13 +429,12 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
 	}
-	uint64CodeEnd, overflow := new(uint256.Int).Add(&codeOffset, &length).Uint64WithOverflow()
-	if overflow {
-		uint64CodeEnd = 0xffffffffffffffff
-	}
 	addr := common.Address(a.Bytes20())
 	if interpreter.evm.TxContext.Accesses != nil {
-		panic("extcodecopy not implemented because we have to do jumpdest analysis for the target contract")
+		panic("extcodecopy not implemented for verkle")
+	} else {
+		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
+		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 	}
 
 	return nil, nil

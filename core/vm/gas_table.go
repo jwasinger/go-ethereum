@@ -138,12 +138,15 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uin
 		statelessGas = touchEachChunks(uint64CodeOffset, length.Uint64(), nil, evm)
 	}
 
-	return gasMemoryCopying + statelessGas, err
+	return gasMemoryCopying + statelessGas, nil
 }
 
 func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	panic("not implemented")
-	return nil
+	gasMemoryCopying, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	return gasMemoryCopying, nil
 }
 
 func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
