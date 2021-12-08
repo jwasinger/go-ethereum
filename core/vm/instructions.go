@@ -369,13 +369,11 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 
-	// TODO we need to get the data aligned along 31 bytes, touch the witness with that, but only copy a subset
-	// of that to the target memory
-	codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+	codeCopy, copyOffset, copyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		touchEachChunksAndChargeGas(uint64CodeOffset, length.Uint64(), scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm)
+		touchEachChunksAndChargeGas(copyOffset, copyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm)
 	}
-	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
+	scope.Memory.Set(memOffset.Uint64(), len(codeCopy), codeCopy)
 	return nil, nil
 }
 
@@ -383,21 +381,37 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 // TODO: this touches the entire 31-byte-aligned range that covers the given offset+size
 // this is potentially-wasteful if we need less than 31-bytes of a slot for an execution.
 // However, it is simpler to implement.
-// NOTE: this function does not do bounds checking for the code being accessed
-func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness) uint64 {
+// note: this function expects the caller to have done bounds checking for offset/size wrt the contract code
+func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, codeCopy []byte, padding uint, accesses *types.AccessWitness) uint64 {
+	if size == 0 || offset > len(contract.Code) {
+		return 0
+	}
+
 	codeLeaves := trieUtils.GetCodeLeaves(address, offset, size)
 	var statelessGasCharged uint64
 
-
-	// the offsets of the first code byte of the first chunk
-	// and the last code byte of the last chunk in the 31-byte aligned
-	// range that covers what we want to touch
+	// start:end encompasses the range between the offset of
+	// the first byte in the first leaf of the code range that is touched
+	// and the last byte in the last leaf that is touched.  If the contract
+	// code does not fill the last leaf, 'end' is the final byte of contract code
+	// in the last leaf that is touched
 	start := offset - (offset % 31)
+	var end uint64
 
-	var code []byte
+	// we only actually copy data into the witnesses if the caller supplies the contract
+	// otherwise we just create the leaves in anticipation for the value to be filled
+	// in a future invocation of this function
 	if contract != nil {
-		// TODO this should be 31-byte aligned code that overlaps the target range
-		code = contract.Code[start:start + size]
+		if start + size > len(contract.Code) {
+			end = len(contract.Code)
+		} else {
+			end = start + size + (start + size) % 31
+		}
+
+		var code []byte
+		if contract != nil {
+			code = contract.Code[start:end]
+		}
 	}
 
 	for i := 0; i < len(codeLeaves); i++ {
@@ -408,14 +422,16 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 			// Look for the first code byte (i.e. no pushdata)
 			for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
 			}
-			value = make([]byte, 32, 32)
 			value[0] = byte(firstPushOffset)
 			curEnd := codeLeaves[i].StartOffset + 31
-			if curEnd > uint64(len(contract.Code)) {
-				curEnd = uint64(len(contract.Code))
+			if curEnd > end {
+				curEnd = end
 			}
-			copy(value[1:], code[codeLeaves[i].StartOffset:curEnd])
+			valueSize := curEnd - codeLeaves[i].StartOffset
+			value = make([]byte, valueSize, valueSize)
+			copy(value[1:valueSize + 1], code[codeLeaves[i].StartOffset:curEnd])
 		}
+
 		index := append(codeLeaves[i].TreeKey, codeLeaves[i].SubIndex)
 		if code != nil {
 			statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
