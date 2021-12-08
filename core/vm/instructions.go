@@ -394,7 +394,6 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 
 	codeLeaves := trieUtils.GetCodeLeaves(address, offset, size)
 	var statelessGasCharged uint64
-
 	// start:end encompasses the range between the offset of
 	// the first byte in the first leaf of the code range that is touched
 	// and the last byte in the last leaf that is touched.  If the contract
@@ -402,47 +401,34 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	// in the last leaf that is touched
 	start := offset - (offset % 31)
 	var end uint64
-
 	// we only actually copy data into the witnesses if the caller supplies the contract
 	// otherwise we just create the leaves in anticipation for the value to be filled
 	// in a future invocation of this function
-	var code []byte
-	if contract != nil {
-		if start + size > uint64(len(contract.Code)) {
-			end = uint64(len(contract.Code))
-		} else {
-			end = start + size + (start + size) % 31
-		}
-
-		if contract != nil {
-			code = contract.Code[start:end]
-		}
+	if start + size > uint64(len(contract.Code)) {
+		end = uint64(len(contract.Code))
+	} else {
+		end = start + size + (start + size) % 31
 	}
+	code := contract.Code[start:end]
 
 	for i := 0; i < len(codeLeaves); i++ {
 		var value []byte
-		if code != nil {
-			// the offset into the leaf that the first PUSH occurs
-			var firstPushOffset uint64 = 0
-			// Look for the first code byte (i.e. no pushdata)
-			for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
-			}
-			value[0] = byte(firstPushOffset)
-			curEnd := codeLeaves[i].StartOffset + 31
-			if curEnd > end {
-				curEnd = end
-			}
-			valueSize := curEnd - codeLeaves[i].StartOffset
-			value = make([]byte, valueSize, valueSize)
-			copy(value[1:valueSize + 1], code[codeLeaves[i].StartOffset:curEnd])
+		// the offset into the leaf that the first PUSH occurs
+		var firstPushOffset uint64 = 0
+		// Look for the first code byte (i.e. no pushdata)
+		for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
 		}
+		value[0] = byte(firstPushOffset)
+		curEnd := codeLeaves[i].StartOffset + 31
+		if curEnd > end {
+			curEnd = end
+		}
+		valueSize := curEnd - codeLeaves[i].StartOffset
+		value = make([]byte, valueSize, valueSize)
+		copy(value[1:valueSize + 1], code[codeLeaves[i].StartOffset:curEnd])
 
 		index := append(codeLeaves[i].TreeKey, codeLeaves[i].SubIndex)
-		if code != nil {
-			statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
-		} else {
-			accesses.TouchAddress(index, nil)
-		}
+		statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
 	}
 
 	return statelessGasCharged
