@@ -369,11 +369,11 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 
-	codeCopy, copyOffset, copyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		touchEachChunksAndChargeGas(copyOffset, copyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm)
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
 	}
-	scope.Memory.Set(memOffset.Uint64(), len(codeCopy), codeCopy)
+	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
 }
 
@@ -383,7 +383,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 // However, it is simpler to implement.
 // note: this function expects the caller to have done bounds checking for offset/size wrt the contract code
 func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, codeCopy []byte, padding uint, accesses *types.AccessWitness) uint64 {
-	if size == 0 || offset > len(contract.Code) {
+	if size == 0 || offset > uint64(len(contract.Code)) {
 		return 0
 	}
 
@@ -401,14 +401,14 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	// we only actually copy data into the witnesses if the caller supplies the contract
 	// otherwise we just create the leaves in anticipation for the value to be filled
 	// in a future invocation of this function
+	var code []byte
 	if contract != nil {
-		if start + size > len(contract.Code) {
-			end = len(contract.Code)
+		if start + size > uint64(len(contract.Code)) {
+			end = uint64(len(contract.Code))
 		} else {
 			end = start + size + (start + size) % 31
 		}
 
-		var code []byte
 		if contract != nil {
 			code = contract.Code[start:end]
 		}
@@ -957,8 +957,8 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			endMin = startMin + pushByteSize
 		}
 
-		if interpreter.TxContext.Accesses != nil {
-			touchEachChunksAndChargeGas(startMin, pushByteSize, scope.Contract.Code)
+		if interpreter.evm.TxContext.Accesses != nil {
+			touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
 		}
 
 		integer := new(uint256.Int)

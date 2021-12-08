@@ -25,7 +25,7 @@ import (
 )
 
 func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
-	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 		// If we fail the minimum gas availability invariant, fail (0)
 		if contract.Gas <= params.SstoreSentryGasEIP2200 {
 			return 0, errors.New("not enough gas for reentrancy sentry")
@@ -120,7 +120,7 @@ func gasSLoadEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc
 // > Otherwise, charge WARM_STORAGE_READ_COST gas.
 func gasExtCodeCopyEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 	// memory expansion first (dynamic part of pre-2929 implementation)
-	gas, err := gasExtCodeCopy(evm, contract, stack, mem, memorySize)
+	gas, err := gasExtCodeCopy(evm, contract, stack, mem, pc, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -178,7 +178,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
 		// - transfer value
 		// - memory expansion
 		// - 63/64ths rule
-		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
+		gas, err := oldCalculator(evm, contract, stack, mem, pc, memorySize)
 		if warmAccess || err != nil {
 			return gas, err
 		}
@@ -221,7 +221,7 @@ var (
 
 // makeSelfdestructGasFn can create the selfdestruct dynamic gas function for EIP-2929 and EIP-2539
 func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
-	gasFunc := func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gasFunc := func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 		var (
 			gas     uint64
 			address = common.Address(stack.peek().Bytes20())

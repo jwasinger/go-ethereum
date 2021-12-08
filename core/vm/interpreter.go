@@ -17,15 +17,15 @@
 package vm
 
 import (
-	"errors"
+	//"errors"
 	"hash"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
-	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/holiman/uint256"
+	//trieUtils "github.com/ethereum/go-ethereum/trie/utils"
+	//"github.com/holiman/uint256"
 )
 
 // Config are the configuration options for the Interpreter
@@ -199,10 +199,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		inWitness := false
 		var codePage common.Hash
 		if in.evm.chainRules.IsCancun {
+			panic("TODO")
+			/*
 			index := trieUtils.GetTreeKeyCodeChunk(contract.Address().Bytes(), uint256.NewInt(pc/31))
 
 			var value [32]byte
-			if in.evm.accesses != nil {
+			if in.evm.Accesses != nil {
 				codePage, inWitness = in.evm.accesses[common.BytesToHash(index)]
 				// Return an error if we're in stateless mode
 				// and the code isn't in the witness. It means
@@ -228,6 +230,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				copy(value[1:], contract.Code[chunk*31:end])
 			}
 			contract.Gas -= in.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, value[:])
+			*/
 		}
 
 		if inWitness {
@@ -289,7 +292,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		// cost is explicitly set so that the capture state defer method can get the proper cost
 		if operation.dynamicGas != nil {
 			var dynamicCost uint64
-			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, memorySize)
+			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, pc, memorySize)
 			cost += dynamicCost // total cost, for debug tracing
 			if err != nil || !contract.UseGas(dynamicCost) {
 				return nil, ErrOutOfGas

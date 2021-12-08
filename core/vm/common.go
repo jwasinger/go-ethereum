@@ -72,7 +72,7 @@ func getDataAndAdjustedBounds(data []byte, start uint64, size uint64) (codeCopyP
 	if end > length {
 		end = length
 	}
-	return common.RightPadBytes(data[start:end], int(size))
+	return common.RightPadBytes(data[start:end], int(size)), start, end
 }
 
 // toWordSize returns the ceiled word size required for memory expansion.

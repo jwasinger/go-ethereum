@@ -93,7 +93,7 @@ func makeGasPush(pushCount uint) gasFunc {
 		statelessGas := uint64(0)
 
 		if evm.Accesses != nil {
-			statelessGas = touchEachChunksAndChargeGas(pc, uint64(pushCount), contract.Address().Bytes()[:], nil, evm)
+			statelessGas = touchEachChunksAndChargeGas(pc, uint64(pushCount), contract.Address().Bytes()[:], nil, nil, 0, evm.Accesses)
 		}
 
 		return constantGas + statelessGas, nil
@@ -133,7 +133,7 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc uin
 		if overflow {
 			uint64CodeOffset = 0xffffffffffffffff
 		}
-		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, length.Uint64(), contract.Address().Bytes(), nil, evm)
+		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, length.Uint64(), contract.Address().Bytes()[:], nil, nil, 0, evm.Accesses)
 	}
 
 	return gasMemoryCopying + statelessGas, nil
@@ -317,7 +317,7 @@ func makeGasLog(n uint64) gasFunc {
 	}
 }
 
-func gasSha3(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSha3(evm *EVM, contract *Contract, stack *Stack, mem *Memory, pc, memorySize uint64) (uint64, error) {
 	gas, err := memoryGasCost(mem, memorySize)
 	if err != nil {
 		return 0, err
