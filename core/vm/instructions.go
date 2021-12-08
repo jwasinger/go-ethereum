@@ -345,7 +345,8 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.TxContext.Accesses != nil {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		interpreter.evm.TxContext.Accesses.TouchAddress(index, uint256.NewInt(cs).Bytes())
+		statelessGas := interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, uint256.NewInt(cs).Bytes())
+		scope.Contract.UseGas(statelessGas)
 	}
 	slot.SetUint64(cs)
 	return nil, nil
@@ -369,13 +370,12 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 
-	var statelessGas uint64
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		statelessGas = touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
+		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
+		scope.Contract.UseGas(statelessGas)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
-	scope.Contract.UseGas(statelessGas)
 	return nil, nil
 }
 
@@ -441,7 +441,7 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 		if code != nil {
 			statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
 		} else {
-			accesses.TouchAddress(index, value)
+			accesses.TouchAddress(index, nil)
 		}
 	}
 
@@ -594,10 +594,12 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	hash := common.Hash(loc.Bytes32())
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
-	// Get the initial value as it might not be present
 
-	index := trieUtils.GetTreeKeyStorageSlot(scope.Contract.Address().Bytes(), loc)
-	interpreter.evm.TxContext.Accesses.TouchAddress(index, val.Bytes())
+	if interpreter.evm.TxContext.Accesses != nil {
+		index := trieUtils.GetTreeKeyStorageSlot(scope.Contract.Address().Bytes(), loc)
+		statelessGas := interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, val.Bytes())
+		scope.Contract.UseGas(statelessGas)
+	}
 	return nil, nil
 }
 
@@ -939,7 +941,8 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			}
 			copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-			interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			statelessGas := interpreter.evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+			scope.Contract.UseGas(statelessGas)
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -963,7 +966,8 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		}
 
 		if interpreter.evm.TxContext.Accesses != nil {
-			touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
+			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
+			scope.Contract.UseGas(statelessGas)
 		}
 
 		integer := new(uint256.Int)
