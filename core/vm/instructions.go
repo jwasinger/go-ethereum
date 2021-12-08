@@ -387,6 +387,9 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 		return 0
 	}
 
+	_ = codeCopy // TODO
+	_ = padding
+
 	codeLeaves := trieUtils.GetCodeLeaves(address, offset, size)
 	var statelessGasCharged uint64
 
