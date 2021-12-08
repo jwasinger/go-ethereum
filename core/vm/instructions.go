@@ -369,11 +369,13 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 
+	var statelessGas uint64
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
+		statelessGas = touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
+	scope.Contract.UseGas(statelessGas)
 	return nil, nil
 }
 
