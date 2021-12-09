@@ -17,6 +17,8 @@
 package vm
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -409,8 +411,10 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	} else {
 		end = start + size + (start + size) % 31
 	}
-	code := contract.Code[start:end]
+	code := contract.Code[:]
 
+	fmt.Println("filling leaf data")
+	fmt.Println(fmt.Sprintf("start/end- %d/%d\n", start, end))
 	for i := 0; i < len(codeLeaves); i++ {
 		var value []byte
 		// the offset into the leaf that the first PUSH occurs
@@ -418,13 +422,16 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 		// Look for the first code byte (i.e. no pushdata)
 		for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
 		}
-		value[0] = byte(firstPushOffset)
 		curEnd := codeLeaves[i].StartOffset + 31
 		if curEnd > end {
 			curEnd = end
 		}
 		valueSize := curEnd - codeLeaves[i].StartOffset
-		value = make([]byte, valueSize, valueSize)
+		fmt.Println(fmt.Sprintf("%d,%d\n", curEnd, codeLeaves[i].StartOffset))
+		value = make([]byte, valueSize + 1, valueSize + 1)
+		value[0] = byte(firstPushOffset)
+
+		fmt.Println(fmt.Sprintf("[1:%d] <- [%d:%d]\n", valueSize + 1, codeLeaves[i].StartOffset, curEnd))
 		copy(value[1:valueSize + 1], code[codeLeaves[i].StartOffset:curEnd])
 
 		index := append(codeLeaves[i].TreeKey, codeLeaves[i].SubIndex)
@@ -953,6 +960,10 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			endMin = startMin + pushByteSize
 		}
 
+		fmt.Println("PUSH")
+		fmt.Println(pushByteSize)
+		fmt.Println(startMin)
+		fmt.Println(endMin)
 		if interpreter.evm.TxContext.Accesses != nil {
 			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
 			scope.Contract.UseGas(statelessGas)

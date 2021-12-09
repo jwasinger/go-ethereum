@@ -119,8 +119,11 @@ type AccountCodeLeaf struct {
 func GetCodeLeaves(address []byte, offset, size uint64) []AccountCodeLeaf {
 	leaves := []AccountCodeLeaf{}
 	// the offset of the first byte in the first leaf covered by the range
-	startOffset := offset / 31
-	leafCount := int(((offset + size) - startOffset) / 31)
+	startOffset := offset - (offset % 31)
+	// the size of the range from the first code byte in the first leaf touched by the evm code range
+	// to the last byte in the evm code range
+	alignedSize := (offset - startOffset) + size
+	leafCount := int(alignedSize / 31)
 	curOffset := startOffset
 
 	for i := 0; i < leafCount; i++ {
