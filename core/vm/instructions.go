@@ -910,9 +910,11 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	*pc += 1
 	if *pc < codeLen {
 		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
-		// touch next chunk if PUSH1 is at the boundary. if so, *pc has
-		// advanced past this boundary.
-		if *pc%31 == 0 {
+
+		if interpreter.evm.Accesses != nil && *pc%31 == 0 {
+			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
+			// advanced past this boundary.
+
 			// touch push data by adding the last byte of the pushdata
 			var value [32]byte
 			chunk := *pc / 31

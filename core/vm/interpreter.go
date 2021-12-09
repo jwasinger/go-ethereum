@@ -191,7 +191,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			logged, pcCopy, gasCopy = false, pc, contract.Gas
 		}
 
-		if in.evm.chainRules.IsCancun {
+		if in.evm.TxContext.Accesses != nil {
 			// if the PC ends up in a new "page" of verkleized code, charge the
 			// associated witness costs.
 			contract.Gas -= touchEachChunksAndChargeGas(pc, 1, contract.Address().Bytes()[:], contract, nil, 0, in.evm.TxContext.Accesses)
