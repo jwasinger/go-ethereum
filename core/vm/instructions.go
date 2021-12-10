@@ -17,7 +17,6 @@
 package vm
 
 import (
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -394,7 +393,6 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	_ = codeCopy // TODO
 	_ = padding
 
-	codeLeaves := trieUtils.GetCodeLeaves(address, offset, size)
 	var statelessGasCharged uint64
 	// start:end encompasses the range between the offset of
 	// the first byte in the first leaf of the code range that is touched
@@ -412,29 +410,46 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 		end = start + size + (start + size) % 31
 	}
 	code := contract.Code[:]
+	numLeaves := (end - start) / 31
+	index := make([]byte, 32, 32)
 
-	fmt.Println("filling leaf data")
-	fmt.Println(fmt.Sprintf("start/end- %d/%d\n", start, end))
-	for i := 0; i < len(codeLeaves); i++ {
+	chunkOffset := new(uint256.Int)
+	treeIndex := new(uint256.Int)
+
+	for i := 0; i < int(numLeaves); i++ {
+		chunkOffset.Add(trieUtils.CodeOffset, uint256.NewInt(uint64(i)))
+		treeIndex.Div(chunkOffset, trieUtils.VerkleNodeWidth)
+		var subIndex byte
+		subIndexMod := chunkOffset.Mod(chunkOffset, trieUtils.VerkleNodeWidth).Bytes()
+		if len(subIndexMod) == 0 {
+			subIndex = 0
+		} else {
+			subIndex = subIndexMod[0]
+		}
+		treeKey := trieUtils.GetTreeKey(address, treeIndex, subIndex)
+		copy(index[0:31], treeKey)
+		index[31] = subIndex
+
 		var value []byte
 		// the offset into the leaf that the first PUSH occurs
 		var firstPushOffset uint64 = 0
 		// Look for the first code byte (i.e. no pushdata)
-		for ; firstPushOffset < 31 && firstPushOffset + codeLeaves[i].StartOffset < uint64(len(contract.Code)) && !contract.IsCode(codeLeaves[i].StartOffset + firstPushOffset); firstPushOffset++ {
+		for ; firstPushOffset < 31 && firstPushOffset + uint64(i) * 31 < uint64(len(contract.Code)) && !contract.IsCode(uint64(i) * 31 + firstPushOffset); firstPushOffset++ {
 		}
-		curEnd := codeLeaves[i].StartOffset + 31
+		curEnd := (uint64(i) + 1) * 31
 		if curEnd > end {
 			curEnd = end
 		}
-		valueSize := curEnd - codeLeaves[i].StartOffset
-		fmt.Println(fmt.Sprintf("%d,%d\n", curEnd, codeLeaves[i].StartOffset))
-		value = make([]byte, valueSize + 1, valueSize + 1)
+		valueSize := curEnd - (uint64(i) * 31)
+		value = make([]byte, 32, 32)
 		value[0] = byte(firstPushOffset)
 
-		fmt.Println(fmt.Sprintf("[1:%d] <- [%d:%d]\n", valueSize + 1, codeLeaves[i].StartOffset, curEnd))
-		copy(value[1:valueSize + 1], code[codeLeaves[i].StartOffset:curEnd])
+		copy(value[1:valueSize + 1], code[i * 31:curEnd])
+		if valueSize < 31 {
+			padding := make([]byte, 31 - valueSize, 31 - valueSize)
+			copy(value[valueSize + 1:], padding)
+		}
 
-		index := append(codeLeaves[i].TreeKey, codeLeaves[i].SubIndex)
 		statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
 	}
 
@@ -960,10 +975,6 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			endMin = startMin + pushByteSize
 		}
 
-		fmt.Println("PUSH")
-		fmt.Println(pushByteSize)
-		fmt.Println(startMin)
-		fmt.Println(endMin)
 		if interpreter.evm.TxContext.Accesses != nil {
 			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
 			scope.Contract.UseGas(statelessGas)
