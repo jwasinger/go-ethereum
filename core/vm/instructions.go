@@ -373,25 +373,18 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.TxContext.Accesses != nil {
-		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, paddedCodeCopy, uint(len(paddedCodeCopy)) - uint(nonPaddedCopyLength), interpreter.evm.Accesses)
+		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.Accesses)
 		scope.Contract.UseGas(statelessGas)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
 }
 
-// touchEachChunks is a helper function to touch every chunk in a code range
-// TODO: this touches the entire 31-byte-aligned range that covers the given offset+size
-// this is potentially-wasteful if we need less than 31-bytes of a slot for an execution.
-// However, it is simpler to implement.
-// note: this function expects the caller to have done bounds checking for offset/size wrt the contract code
-func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, codeCopy []byte, padding uint, accesses *types.AccessWitness) uint64 {
+// touchEachChunksAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
+func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness) uint64 {
 	if size == 0 || offset > uint64(len(contract.Code)) {
 		return 0
 	}
-
-	_ = codeCopy // TODO
-	_ = padding
 
 	var statelessGasCharged uint64
 	// start:end encompasses the range between the offset of
@@ -401,9 +394,6 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	// in the last leaf that is touched
 	start := offset - (offset % 31)
 	var end uint64
-	// we only actually copy data into the witnesses if the caller supplies the contract
-	// otherwise we just create the leaves in anticipation for the value to be filled
-	// in a future invocation of this function
 	if start + size > uint64(len(contract.Code)) {
 		end = uint64(len(contract.Code))
 	} else {
@@ -976,7 +966,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		}
 
 		if interpreter.evm.TxContext.Accesses != nil {
-			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, scope.Contract.Code[startMin:endMin], 0, interpreter.evm.TxContext.Accesses)
+			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.TxContext.Accesses)
 			scope.Contract.UseGas(statelessGas)
 		}
 
