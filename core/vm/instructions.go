@@ -17,6 +17,9 @@
 package vm
 
 import (
+	"math/big"
+	"encoding/binary"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -726,6 +729,18 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
+// TODO there should be an already-existing method to do this
+func padBigInt(val *big.Int) [32]byte {
+        valBytes := val.Bytes()
+	if len(valBytes) > 32 {
+		panic("value too big")
+	}
+
+        result := [32]byte{}
+        copy(result[32-len(valBytes):], valBytes[:])
+        return result
+}
+
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	stack := scope.Stack
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
@@ -737,6 +752,38 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	toAddr := common.Address(addr.Bytes20())
 	// Get the arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
+	sourceAddrBytes := scope.Contract.Address().Bytes()
+
+        if interpreter.evm.Accesses != nil {
+                // touch the balance
+                index := trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
+                balanceBytes := padBigInt(interpreter.evm.StateDB.GetBalance(scope.Contract.Address()))
+                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, balanceBytes[:])) {
+			return nil, ErrOutOfGas
+		}
+                // touch the nonce
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
+                nonceBytes := [32]byte{}
+                nonce := interpreter.evm.StateDB.GetNonce(scope.Contract.Address())
+		binary.BigEndian.PutUint64(nonceBytes[24:32], nonce)
+                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, nonceBytes[:])) {
+			return nil, ErrOutOfGas
+		}
+                // touch the code hash
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeKeccakLeafKey)
+                codeHash := interpreter.evm.StateDB.GetCodeHash(scope.Contract.Address())
+                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, codeHash[:])) {
+			return nil, ErrOutOfGas
+		}
+                // set the code size
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeSizeLeafKey)
+                codeSize := uint64(interpreter.evm.StateDB.GetCodeSize(scope.Contract.Address()))
+                codeSizeLeafBytes := [32]byte{}
+		binary.BigEndian.PutUint64(codeSizeLeafBytes[24:32], codeSize)
+		if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, codeSizeLeafBytes[:])) {
+			return nil, ErrOutOfGas
+		}
+        }
 
 	var bigVal = big0
 	//TODO: use uint256.Int instead of converting with toBig()
@@ -746,6 +793,8 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		gas += params.CallStipend
 		bigVal = value.ToBig()
 	}
+
+
 
 	ret, returnGas, err := interpreter.evm.Call(scope.Contract, toAddr, args, gas, bigVal)
 
