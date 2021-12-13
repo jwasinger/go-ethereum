@@ -757,29 +757,6 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 	sourceAddrBytes := scope.Contract.Address().Bytes()
 
-        if interpreter.evm.Accesses != nil {
-                // touch the balance
-                index := trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
-                balanceBytes := padBigInt(interpreter.evm.StateDB.GetBalance(scope.Contract.Address()))
-                interpreter.evm.Accesses.TouchAddress(index, balanceBytes[:])
-                // touch the nonce
-                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
-                nonceBytes := [32]byte{}
-                nonce := interpreter.evm.StateDB.GetNonce(scope.Contract.Address())
-		binary.BigEndian.PutUint64(nonceBytes[24:32], nonce)
-                interpreter.evm.Accesses.TouchAddress(index, nonceBytes[:])
-                // touch the code hash
-                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeKeccakLeafKey)
-                codeHash := interpreter.evm.StateDB.GetCodeHash(scope.Contract.Address())
-                interpreter.evm.Accesses.TouchAddress(index, codeHash[:])
-                // set the code size
-                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeSizeLeafKey)
-                codeSize := uint64(interpreter.evm.StateDB.GetCodeSize(scope.Contract.Address()))
-                codeSizeLeafBytes := [32]byte{}
-		binary.BigEndian.PutUint64(codeSizeLeafBytes[24:32], codeSize)
-		interpreter.evm.Accesses.TouchAddress(index, codeSizeLeafBytes[:])
-        }
-
 	var bigVal = big0
 	//TODO: use uint256.Int instead of converting with toBig()
 	// By using big0 here, we save an alloc for the most common case (non-ether-transferring contract calls),
