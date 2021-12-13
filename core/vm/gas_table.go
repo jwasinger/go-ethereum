@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
+	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
 )
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
@@ -88,10 +89,54 @@ func memoryCopierGas(stackpos int) gasFunc {
 
 var (
 	gasCallDataCopy   = memoryCopierGas(2)
-	gasCodeCopy       = memoryCopierGas(2)
-	gasExtCodeCopy    = memoryCopierGas(3)
+	gasCodeCopyStateful       = memoryCopierGas(2)
+	gasExtCodeCopyStateful    = memoryCopierGas(3)
 	gasReturnDataCopy = memoryCopierGas(2)
 )
+
+func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	var statelessGas uint64
+	if evm.Accesses != nil {
+		var (
+			codeOffset = stack.Back(1)
+			length     = stack.Back(2)
+		)
+		uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
+		if overflow {
+			uint64CodeOffset = 0xffffffffffffffff
+		}
+		uint64Length, overflow := length.Uint64WithOverflow()
+		if overflow {
+			uint64Length = 0xffffffffffffffff
+		}
+		_, offset, nonPaddedSize := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, uint64Length)
+		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, contract.Address().Bytes()[:], contract, evm.Accesses)
+	}
+	usedGas, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
+	return usedGas + statelessGas, err
+}
+
+func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	var statelessGas uint64
+	if evm.Accesses != nil {
+		panic("extcodecopy not implemented for verkle")
+	}
+	usedGas, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
+	return usedGas + statelessGas, err
+}
+
+func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	usedGas := uint64(0)
+
+	if evm.Accesses != nil {
+		where := stack.Back(0)
+		addr := contract.Address()
+		index := trieUtils.GetTreeKeyStorageSlot(addr[:], where)
+		usedGas += evm.Accesses.TouchAddressAndChargeGas(index, nil)
+	}
+
+	return usedGas, nil
+}
 
 func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var (
