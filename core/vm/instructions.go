@@ -17,9 +17,6 @@
 package vm
 
 import (
-	"math/big"
-	"encoding/binary"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -383,7 +380,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 // touchEachChunksAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
 func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness) uint64 {
-	if size == 0 || offset > uint64(len(contract.Code)) {
+	if contract != nil && (size == 0 || offset > uint64(len(contract.Code))) {
 		return 0
 	}
 
@@ -394,17 +391,20 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	// code does not fill the last leaf, 'end' is the final byte of contract code
 	// in the last leaf that is touched
 	start := offset - (offset % 31)
-	var end uint64
+	var endOffset uint64
 	if contract != nil && start+size > uint64(len(contract.Code)) {
-		end = uint64(len(contract.Code))
+		endOffset = uint64(len(contract.Code))
 	} else {
-		end = start + size + (start + size) % 31
+		endOffset = start + size
 	}
+
 	var code []byte
 	if contract != nil {
 		code = contract.Code[:]
 	}
-	numLeaves := (end - start) / 31
+	// the EVM code offset of the last byte in the last leaf touched
+	endLeafOffset := endOffset + (endOffset % 31)
+	numLeaves := (endLeafOffset - start) / 31
 	index := make([]byte, 32, 32)
 
 	chunkOffset := new(uint256.Int)
@@ -432,8 +432,8 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 			for ; firstPushOffset < 31 && firstPushOffset+uint64(i)*31 < uint64(len(contract.Code)) && !contract.IsCode(uint64(i)*31+firstPushOffset); firstPushOffset++ {
 			}
 			curEnd := (uint64(i) + 1) * 31
-			if curEnd > end {
-				curEnd = end
+			if curEnd > endOffset {
+				curEnd = endOffset
 			}
 			valueSize := curEnd - (uint64(i) * 31)
 			value = make([]byte, 32, 32)
@@ -732,18 +732,6 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-// TODO there should be an already-existing method to do this
-func padBigInt(val *big.Int) [32]byte {
-        valBytes := val.Bytes()
-	if len(valBytes) > 32 {
-		panic("value too big")
-	}
-
-        result := [32]byte{}
-        copy(result[32-len(valBytes):], valBytes[:])
-        return result
-}
-
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	stack := scope.Stack
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
@@ -755,7 +743,6 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	toAddr := common.Address(addr.Bytes20())
 	// Get the arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
-	sourceAddrBytes := scope.Contract.Address().Bytes()
 
 	var bigVal = big0
 	//TODO: use uint256.Int instead of converting with toBig()

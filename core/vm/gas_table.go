@@ -88,10 +88,10 @@ func memoryCopierGas(stackpos int) gasFunc {
 }
 
 var (
-	gasCallDataCopy   = memoryCopierGas(2)
-	gasCodeCopyStateful       = memoryCopierGas(2)
-	gasExtCodeCopyStateful    = memoryCopierGas(3)
-	gasReturnDataCopy = memoryCopierGas(2)
+	gasCallDataCopy        = memoryCopierGas(2)
+	gasCodeCopyStateful    = memoryCopierGas(2)
+	gasExtCodeCopyStateful = memoryCopierGas(3)
+	gasReturnDataCopy      = memoryCopierGas(2)
 )
 
 func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
