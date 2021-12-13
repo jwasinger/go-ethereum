@@ -402,6 +402,22 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
 		return 0, ErrGasUintOverflow
 	}
+
+	sourceAddrBytes := contract.Address().Bytes()
+        if evm.Accesses != nil {
+                // touch the balance
+                index := trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
+                gas += evm.Accesses.TouchAddressAndChargeGas(index, nil)
+                // touch the nonce
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
+                gas += evm.Accesses.TouchAddressAndChargeGas(index, nil)
+                // touch the code hash
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeKeccakLeafKey)
+                gas += evm.Accesses.TouchAddressAndChargeGas(index, nil)
+                // touch the code size
+                index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeSizeLeafKey)
+		gas += evm.Accesses.TouchAddressAndChargeGas(index, nil)
+        }
 	return gas, nil
 }
 

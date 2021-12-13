@@ -403,7 +403,7 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	}
 	var code []byte
 	if contract != nil {
-		code := contract.Code[:]
+		code = contract.Code[:]
 	}
 	numLeaves := (end - start) / 31
 	index := make([]byte, 32, 32)
@@ -763,31 +763,23 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
                 // touch the balance
                 index := trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
                 balanceBytes := padBigInt(interpreter.evm.StateDB.GetBalance(scope.Contract.Address()))
-                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, balanceBytes[:])) {
-			return nil, ErrOutOfGas
-		}
+                interpreter.evm.Accesses.TouchAddress(index, balanceBytes[:])
                 // touch the nonce
                 index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.BalanceLeafKey)
                 nonceBytes := [32]byte{}
                 nonce := interpreter.evm.StateDB.GetNonce(scope.Contract.Address())
 		binary.BigEndian.PutUint64(nonceBytes[24:32], nonce)
-                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, nonceBytes[:])) {
-			return nil, ErrOutOfGas
-		}
+                interpreter.evm.Accesses.TouchAddress(index, nonceBytes[:])
                 // touch the code hash
                 index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeKeccakLeafKey)
                 codeHash := interpreter.evm.StateDB.GetCodeHash(scope.Contract.Address())
-                if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, codeHash[:])) {
-			return nil, ErrOutOfGas
-		}
+                interpreter.evm.Accesses.TouchAddress(index, codeHash[:])
                 // set the code size
                 index = trieUtils.GetTreeKeyAccountLeaf(sourceAddrBytes, trieUtils.CodeSizeLeafKey)
                 codeSize := uint64(interpreter.evm.StateDB.GetCodeSize(scope.Contract.Address()))
                 codeSizeLeafBytes := [32]byte{}
 		binary.BigEndian.PutUint64(codeSizeLeafBytes[24:32], codeSize)
-		if !scope.Contract.UseGas(interpreter.evm.Accesses.TouchAddressAndChargeGas(index, codeSizeLeafBytes[:])) {
-			return nil, ErrOutOfGas
-		}
+		interpreter.evm.Accesses.TouchAddress(index, codeSizeLeafBytes[:])
         }
 
 	var bigVal = big0
