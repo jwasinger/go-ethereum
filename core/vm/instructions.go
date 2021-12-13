@@ -396,12 +396,15 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	// in the last leaf that is touched
 	start := offset - (offset % 31)
 	var end uint64
-	if start+size > uint64(len(contract.Code)) {
+	if contract != nil && start+size > uint64(len(contract.Code)) {
 		end = uint64(len(contract.Code))
 	} else {
-		end = start + size + (start+size)%31
+		end = start + size + (start + size) % 31
 	}
-	code := contract.Code[:]
+	var code []byte
+	if contract != nil {
+		code := contract.Code[:]
+	}
 	numLeaves := (end - start) / 31
 	index := make([]byte, 32, 32)
 
@@ -423,23 +426,25 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 		index[31] = subIndex
 
 		var value []byte
-		// the offset into the leaf that the first PUSH occurs
-		var firstPushOffset uint64 = 0
-		// Look for the first code byte (i.e. no pushdata)
-		for ; firstPushOffset < 31 && firstPushOffset+uint64(i)*31 < uint64(len(contract.Code)) && !contract.IsCode(uint64(i)*31+firstPushOffset); firstPushOffset++ {
-		}
-		curEnd := (uint64(i) + 1) * 31
-		if curEnd > end {
-			curEnd = end
-		}
-		valueSize := curEnd - (uint64(i) * 31)
-		value = make([]byte, 32, 32)
-		value[0] = byte(firstPushOffset)
+		if contract != nil {
+			// the offset into the leaf that the first PUSH occurs
+			var firstPushOffset uint64 = 0
+			// Look for the first code byte (i.e. no pushdata)
+			for ; firstPushOffset < 31 && firstPushOffset+uint64(i)*31 < uint64(len(contract.Code)) && !contract.IsCode(uint64(i)*31+firstPushOffset); firstPushOffset++ {
+			}
+			curEnd := (uint64(i) + 1) * 31
+			if curEnd > end {
+				curEnd = end
+			}
+			valueSize := curEnd - (uint64(i) * 31)
+			value = make([]byte, 32, 32)
+			value[0] = byte(firstPushOffset)
 
-		copy(value[1:valueSize+1], code[i*31:curEnd])
-		if valueSize < 31 {
-			padding := make([]byte, 31-valueSize, 31-valueSize)
-			copy(value[valueSize+1:], padding)
+			copy(value[1:valueSize+1], code[i*31:curEnd])
+			if valueSize < 31 {
+				padding := make([]byte, 31-valueSize, 31-valueSize)
+				copy(value[valueSize+1:], padding)
+			}
 		}
 
 		statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
