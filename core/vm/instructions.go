@@ -375,8 +375,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.Accesses != nil {
-		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.Accesses)
-		scope.Contract.UseGas(statelessGas)
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.Accesses)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
@@ -602,8 +601,7 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 
 	if interpreter.evm.Accesses != nil {
 		index := trieUtils.GetTreeKeyStorageSlot(scope.Contract.Address().Bytes(), loc)
-		statelessGas := interpreter.evm.Accesses.TouchAddressAndChargeGas(index, val.Bytes())
-		scope.Contract.UseGas(statelessGas)
+		interpreter.evm.Accesses.TouchAddressAndChargeGas(index, val.Bytes())
 	}
 	return nil, nil
 }

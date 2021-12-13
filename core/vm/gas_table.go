@@ -110,7 +110,7 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 			uint64Length = 0xffffffffffffffff
 		}
 		_, offset, nonPaddedSize := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, uint64Length)
-		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, contract.Address().Bytes()[:], contract, evm.Accesses)
+		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, contract.Address().Bytes()[:], nil, evm.Accesses)
 	}
 	usedGas, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err
