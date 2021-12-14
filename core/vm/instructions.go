@@ -383,30 +383,29 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 	if contract != nil && (size == 0 || offset > uint64(len(contract.Code))) {
 		return 0
 	}
-
-	var statelessGasCharged uint64
-	// start:end encompasses the range between the offset of
-	// the first byte in the first leaf of the code range that is touched
-	// and the last byte in the last leaf that is touched.  If the contract
-	// code does not fill the last leaf, 'end' is the final byte of contract code
-	// in the last leaf that is touched
-	start := offset - (offset % 31)
-	var endOffset uint64
-	if contract != nil && start+size > uint64(len(contract.Code)) {
-		endOffset = uint64(len(contract.Code))
-	} else {
-		endOffset = start + size
-	}
-
-	var code []byte
+	var (
+		statelessGasCharged uint64
+		startLeafOffset     uint64
+		endLeafOffset       uint64
+		startOffset         uint64
+		endOffset           uint64
+		numLeaves           uint64
+		code                []byte
+		index               [32]byte
+	)
 	if contract != nil {
 		code = contract.Code[:]
 	}
-	// the EVM code offset of the last byte in the last leaf touched
-	endLeafOffset := endOffset + (endOffset % 31)
-	numLeaves := (endLeafOffset - start) / 31
-	index := make([]byte, 32, 32)
-
+	// startLeafOffset, endLeafOffset is the evm code offset of the first byte in the first leaf touched
+	// and the evm code offset of the last byte in the last leaf touched
+	startOffset = offset - (offset % 31)
+	if contract != nil && startOffset+size > uint64(len(contract.Code)) {
+		endOffset = uint64(len(contract.Code))
+	} else {
+		endOffset = startOffset + size
+	}
+	endLeafOffset = endOffset + (endOffset % 31)
+	numLeaves = (endLeafOffset - startLeafOffset) / 31
 	chunkOffset := new(uint256.Int)
 	treeIndex := new(uint256.Int)
 
@@ -446,7 +445,7 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *
 			}
 		}
 
-		statelessGasCharged += accesses.TouchAddressAndChargeGas(index, value)
+		statelessGasCharged += accesses.TouchAddressAndChargeGas(index[:], value)
 	}
 
 	return statelessGasCharged
