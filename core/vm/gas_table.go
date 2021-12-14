@@ -94,6 +94,17 @@ var (
 	gasReturnDataCopy      = memoryCopierGas(2)
 )
 
+func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	usedGas := uint64(0)
+	slot := stack.Back(0)
+	if evm.Accesses != nil {
+		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
+		usedGas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+	}
+
+	return usedGas, nil
+}
+
 func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var statelessGas uint64
 	if evm.Accesses != nil {
@@ -378,6 +389,14 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		transfersValue = !stack.Back(2).IsZero()
 		address        = common.Address(stack.Back(1).Bytes20())
 	)
+	if evm.Accesses != nil {
+		// Charge witness costs
+		for i := trieUtils.VersionLeafKey; i <= trieUtils.CodeSizeLeafKey; i++ {
+			index := trieUtils.GetTreeKeyAccountLeaf(address[:], byte(i))
+			gas += evm.TxContext.Accesses.TouchAddressAndChargeGas(index, nil)
+		}
+	}
+
 	if evm.chainRules.IsEIP158 {
 		if transfersValue && evm.StateDB.Empty(address) {
 			gas += params.CallNewAccountGas
