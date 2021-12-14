@@ -380,6 +380,12 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 // touchEachChunksAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
 func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness) uint64 {
+	// note that in the case where the copied code is outside the range of the
+	// contract code but touches the last leaf with contract code in it,
+	// we don't include the last leaf of code in the AccessWitness.  The
+	// reason that we do not need the last leaf is the account's code size
+	// is already in the AccessWitness so a stateless verifier can see that
+	// the code from the last leaf is not needed.
 	if contract != nil && (size == 0 || offset > uint64(len(contract.Code))) {
 		return 0
 	}
@@ -465,7 +471,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	}
 	addr := common.Address(a.Bytes20())
 	if interpreter.evm.Accesses != nil {
-		panic("extcodecopy not implemented for verkle")
+		log.Warn("setting witness values for extcodecopy is not currently implemented")
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)

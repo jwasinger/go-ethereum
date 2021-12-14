@@ -130,7 +130,25 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var statelessGas uint64
 	if evm.Accesses != nil {
-		panic("extcodecopy not implemented for verkle")
+		var (
+			codeOffset = stack.Back(2)
+			length     = stack.Back(3)
+		)
+		uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
+		if overflow {
+			uint64CodeOffset = 0xffffffffffffffff
+		}
+		uint64Length, overflow := length.Uint64WithOverflow()
+		if overflow {
+			uint64Length = 0xffffffffffffffff
+		}
+		// note:  we must charge witness costs for the specified range regardless of whether it
+		// is in-bounds of the actual target account code.  This is because we must charge the cost
+		// before hitting the db to be able to now what the actual code size is.  This is different
+		// behavior from CODECOPY which only charges witness access costs for the part of the range
+		// which overlaps in the account code.  TODO: clarify this is desired behavior and amend the
+		// spec.
+		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, nil, nil, evm.Accesses)
 	}
 	usedGas, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err
