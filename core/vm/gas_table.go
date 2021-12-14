@@ -148,7 +148,7 @@ func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 		// behavior from CODECOPY which only charges witness access costs for the part of the range
 		// which overlaps in the account code.  TODO: clarify this is desired behavior and amend the
 		// spec.
-		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, nil, nil, evm.Accesses)
+		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, uint64Length, nil, nil, evm.Accesses)
 	}
 	usedGas, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err
