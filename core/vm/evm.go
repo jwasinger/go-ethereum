@@ -246,23 +246,13 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			if evm.Accesses != nil {
 				// Touch the account data
 				var data [32]byte
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
+				evm.Accesses.TouchAddress(utils.GetTreeKeyVersion(addr.Bytes()), data[:])
 				binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())) {
-					return nil, 0, ErrOutOfGas
-				}
+				evm.Accesses.TouchAddress(utils.GetTreeKeyNonce(addr[:]), data[:])
+				evm.Accesses.TouchAddress(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())
 				binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())) {
-					return nil, 0, ErrOutOfGas
-				}
+				evm.Accesses.TouchAddress(utils.GetTreeKeyCodeSize(addr[:]), data[:])
+				evm.Accesses.TouchAddress(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())
 			}
 
 			addrCopy := addr
