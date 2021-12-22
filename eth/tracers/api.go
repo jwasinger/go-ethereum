@@ -528,7 +528,7 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 	for i, tx := range block.Transactions() {
 		var (
 			msg, _    = tx.AsMessage(signer, block.BaseFee())
-			txContext = core.NewEVMTxContext(msg)
+			txContext = core.NewEVMTxContext(msg, api.backend.ChainConfig().IsCancun(vmctx.BlockNumber))
 			vmenv     = vm.NewEVM(vmctx, txContext, statedb, chainConfig, vm.Config{})
 		)
 		statedb.Prepare(tx.Hash(), i)
@@ -624,7 +624,7 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		// Generate the next state snapshot fast without tracing
 		msg, _ := tx.AsMessage(signer, block.BaseFee())
 		statedb.Prepare(tx.Hash(), i)
-		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg), statedb, api.backend.ChainConfig(), vm.Config{})
+		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg, api.backend.ChainConfig().IsCancun(block.Number())), statedb, api.backend.ChainConfig(), vm.Config{})
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.Gas())); err != nil {
 			failed = err
 			break
@@ -708,7 +708,7 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 		// Prepare the trasaction for un-traced execution
 		var (
 			msg, _    = tx.AsMessage(signer, block.BaseFee())
-			txContext = core.NewEVMTxContext(msg)
+			txContext = core.NewEVMTxContext(msg, chainConfig.IsCancun(block.Number()))
 			vmConf    vm.Config
 			dump      *os.File
 			writer    *bufio.Writer
@@ -865,7 +865,7 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *Contex
 	var (
 		tracer    vm.EVMLogger
 		err       error
-		txContext = core.NewEVMTxContext(message)
+		txContext = core.NewEVMTxContext(message, api.backend.ChainConfig().IsCancun(vmctx.BlockNumber))
 	)
 	switch {
 	case config == nil:

@@ -214,7 +214,7 @@ func (t *StateTest) RunNoVerify(subtest StateSubtest, vmconfig vm.Config, snapsh
 	}
 
 	// Prepare the EVM.
-	txContext := core.NewEVMTxContext(msg)
+	txContext := core.NewEVMTxContext(msg, config.IsCancun(block.Header().Number))
 	context := core.NewEVMBlockContext(block.Header(), nil, &t.json.Env.Coinbase)
 	context.GetHash = vmTestBlockHash
 	context.BaseFee = baseFee

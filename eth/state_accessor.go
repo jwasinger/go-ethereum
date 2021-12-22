@@ -183,7 +183,7 @@ func (eth *Ethereum) stateAtTransaction(block *types.Block, txIndex int, reexec 
 	for idx, tx := range block.Transactions() {
 		// Assemble the transaction call message and return if the requested offset
 		msg, _ := tx.AsMessage(signer, block.BaseFee())
-		txContext := core.NewEVMTxContext(msg)
+		txContext := core.NewEVMTxContext(msg, eth.blockchain.Config().IsCancun(block.Number()))
 		context := core.NewEVMBlockContext(block.Header(), eth.blockchain, nil)
 		if idx == txIndex {
 			return msg, context, statedb, nil

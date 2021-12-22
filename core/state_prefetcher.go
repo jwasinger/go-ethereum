@@ -87,7 +87,7 @@ func (p *statePrefetcher) Prefetch(block *types.Block, statedb *state.StateDB, c
 // the transaction successfully, rather to warm up touched data slots.
 func precacheTransaction(msg types.Message, config *params.ChainConfig, gaspool *GasPool, statedb *state.StateDB, header *types.Header, evm *vm.EVM) error {
 	// Update the evm with the new transaction context.
-	evm.Reset(NewEVMTxContext(msg), statedb)
+	evm.Reset(NewEVMTxContext(msg, config.IsCancun(header.Number)), statedb)
 	// Add addresses to access list if applicable
 	_, err := ApplyMessage(evm, msg, gaspool)
 	return err

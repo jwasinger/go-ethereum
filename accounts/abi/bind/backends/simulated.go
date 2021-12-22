@@ -628,7 +628,7 @@ func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallM
 	// Execute the call.
 	msg := callMsg{call}
 
-	txContext := core.NewEVMTxContext(msg)
+	txContext := core.NewEVMTxContext(msg, b.blockchain.Config().IsCancun(block.Header().Number))
 	evmContext := core.NewEVMBlockContext(block.Header(), b.blockchain, nil)
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.

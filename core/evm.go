@@ -65,12 +65,15 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 }
 
 // NewEVMTxContext creates a new transaction context for a single transaction.
-func NewEVMTxContext(msg Message) vm.TxContext {
-	return vm.TxContext{
+func NewEVMTxContext(msg Message, isVerkle bool) vm.TxContext {
+	ctx := vm.TxContext{
 		Origin:   msg.From(),
 		GasPrice: new(big.Int).Set(msg.GasPrice()),
-		Accesses: types.NewAccessWitness(),
 	}
+	if isVerkle {
+		ctx.Accesses = types.NewAccessWitness()
+	}
+	return ctx
 }
 
 // GetHashFn returns a GetHashFunc which retrieves header hashes by number
