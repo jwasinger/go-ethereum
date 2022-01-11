@@ -372,8 +372,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.Accesses != nil {
-		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract.Code, scope.Contract, interpreter.evm.Accesses)
-		scope.Contract.UseGas(statelessGas)
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract.Code, scope.Contract, interpreter.evm.Accesses)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
@@ -471,8 +470,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		code := interpreter.evm.StateDB.GetCode(addr)
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
 		cb := codeBitmap(code)
-		statelessGas := touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, addr[:], code, &cb, interpreter.evm.Accesses)
-		scope.Contract.UseGas(statelessGas)
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, addr[:], code, &cb, interpreter.evm.Accesses)
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
