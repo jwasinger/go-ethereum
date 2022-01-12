@@ -426,7 +426,7 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, code []byt
 		index[31] = subIndex
 
 		var value []byte
-		if code != nil {
+		if code != nil && len(code) > 0 {
 			// the offset into the leaf that the first PUSH occurs
 			var firstPushOffset uint64 = 0
 			// Look for the first code byte (i.e. no pushdata)
