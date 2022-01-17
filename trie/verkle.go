@@ -79,7 +79,6 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 	if err = t.TryUpdate(utils.GetTreeKeyCodeKeccak(key), acc.CodeHash); err != nil {
 		return fmt.Errorf("updateStateObject (%x) error: %v", key, err)
 	}
-
 	return nil
 }
 

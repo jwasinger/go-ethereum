@@ -328,31 +328,33 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			}
 
 			// Generate an associated verkle proof
-			if tr := statedb.GetTrie(); tr.IsVerkle() {
-				vtr := tr.(*trie.VerkleTrie)
-				// Generate the proof if we are using a verkle tree
-				// WORKAROUND: make sure all keys are resolved
-				// before building the proof. Ultimately, node
-				// resolution can be done with a prefetcher or
-				// from GetCommitmentsAlongPath.
+			/*
+				if tr := statedb.GetTrie(); tr.IsVerkle() {
+					vtr := tr.(*trie.VerkleTrie)
+					// Generate the proof if we are using a verkle tree
+					// WORKAROUND: make sure all keys are resolved
+					// before building the proof. Ultimately, node
+					// resolution can be done with a prefetcher or
+					// from GetCommitmentsAlongPath.
 
-				keys := statedb.Witness().Keys()
-				for _, key := range keys {
-					out, err := vtr.TryGet(key)
+					keys := statedb.Witness().Keys()
+					for _, key := range keys {
+						out, err := vtr.TryGet(key)
+						if err != nil {
+							panic(err)
+						}
+						if len(out) == 0 {
+							panic(fmt.Sprintf("%x should be present in the tree", key))
+						}
+					}
+					vtr.Hash()
+					_, err := vtr.ProveAndSerialize(keys, statedb.Witness().KeyVals())
+					//block.SetVerkleProof(p)
 					if err != nil {
 						panic(err)
 					}
-					if len(out) == 0 {
-						panic(fmt.Sprintf("%x should be present in the tree", key))
-					}
 				}
-				vtr.Hash()
-				_, err := vtr.ProveAndSerialize(keys, statedb.Witness().KeyVals())
-				//block.SetVerkleProof(p)
-				if err != nil {
-					panic(err)
-				}
-			}
+			*/
 			return block, b.receipts
 		}
 		return nil, nil
