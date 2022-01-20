@@ -191,22 +191,8 @@ type verkleproof struct {
 }
 
 func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[common.Hash][]byte) ([]byte, error) {
-	proof, cis, indices, yis := verkle.MakeVerkleMultiProof(trie.root, keys)
-	vp := verkleproof{
-		Proof:   proof,
-		Cis:     cis,
-		Indices: indices,
-		Yis:     yis,
-	}
-	for key, val := range kv {
-		var k [32]byte
-		copy(k[:], key[:])
-		vp.Leaves = append(vp.Leaves, KeyValuePair{
-			Key:   k[:],
-			Value: val,
-		})
-	}
-	return rlp.EncodeToBytes(vp)
+	proof, _, _, _ := verkle.MakeVerkleMultiProof(trie.root, keys)
+	return verkle.SerializeProof(proof)
 }
 
 func DeserializeAndVerifyVerkleProof(serialized []byte) (map[common.Hash]common.Hash, error) {
