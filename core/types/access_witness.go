@@ -167,11 +167,11 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, isWrite bool) uin
 	return gas
 }
 
-func (aw *AccessWitness) TouchAddressOnWriteAndChargeGas(addr []byte) uint64 {
+func (aw *AccessWitness) TouchAddressOnWriteAndComputeGas(addr []byte) uint64 {
 	return aw.touchAddressAndChargeGas(addr, true)
 }
 
-func (aw *AccessWitness) TouchAddressOnReadAndChargeGas(addr []byte) uint64 {
+func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte) uint64 {
 	return aw.touchAddressAndChargeGas(addr, false)
 }
 
@@ -227,18 +227,18 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 
 func (aw *AccessWitness) TouchAndChargeProofOfAbsence(addr []byte) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyVersion(addr[:]))
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyBalance(addr[:]))
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]))
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]))
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyNonce(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyVersion(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyBalance(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeSize(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeKeccak(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyNonce(addr[:]))
 	return gas
 }
 
 func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyVersion(addr[:]))
-	gas += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyVersion(addr[:]))
+	gas += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeSize(addr[:]))
 	return gas
 }
 
@@ -250,8 +250,8 @@ func (aw *AccessWitness) SetLeafValuesMessageCall(addr, codeSize []byte) {
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(callerAddr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(targetAddr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(callerAddr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(targetAddr[:]))
 	return gas
 }
 
@@ -264,10 +264,10 @@ func (aw *AccessWitness) SetLeafValuesValueTransfer(callerAddr, targetAddr, call
 // a contract creation
 func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyVersion(addr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyNonce(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyVersion(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyNonce(addr[:]))
 	if createSendsValue {
-		gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(addr[:]))
+		gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(addr[:]))
 	}
 	return gas
 }
@@ -286,11 +286,11 @@ func (aw *AccessWitness) SetLeafValuesContractCreateInit(addr, nonce, value []by
 // the tree
 func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte, withValue bool) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyVersion(addr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyNonce(addr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(addr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]))
-	gas += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyVersion(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyNonce(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyCodeSize(addr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyCodeKeccak(addr[:]))
 	return gas
 }
 
@@ -299,30 +299,30 @@ func (aw *AccessWitness) SetLeafValuesContractCreateCompleted(addr, codeSize, co
 	aw.SetLeafValue(utils.GetTreeKeyCodeKeccak(addr[:]), codeKeccak)
 }
 
-func (aw *AccessWitness) TouchTxOriginAndChargeGas(originAddr []byte, sendsValue bool) uint64 {
+func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte, sendsValue bool) uint64 {
 	var gasUsed uint64
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyVersion(originAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeKeccak(originAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeSize(originAddr[:]))
-	gasUsed += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyNonce(originAddr[:]))
-	gasUsed += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(originAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyVersion(originAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeKeccak(originAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeSize(originAddr[:]))
+	gasUsed += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyNonce(originAddr[:]))
+	gasUsed += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(originAddr[:]))
 
 	if sendsValue {
-		gasUsed += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(originAddr[:]))
+		gasUsed += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(originAddr[:]))
 	}
 	return gasUsed
 }
 
-func (aw *AccessWitness) TouchTxExistingAndChargeGas(targetAddr []byte, sendsValue bool) uint64 {
+func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64 {
 	var gasUsed uint64
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyVersion(targetAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyBalance(targetAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyNonce(targetAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeSize(targetAddr[:]))
-	gasUsed += aw.TouchAddressOnReadAndChargeGas(utils.GetTreeKeyCodeKeccak(targetAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyVersion(targetAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyBalance(targetAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyNonce(targetAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeSize(targetAddr[:]))
+	gasUsed += aw.TouchAddressOnReadAndComputeGas(utils.GetTreeKeyCodeKeccak(targetAddr[:]))
 
 	if sendsValue {
-		gasUsed += aw.TouchAddressOnWriteAndChargeGas(utils.GetTreeKeyBalance(targetAddr[:]))
+		gasUsed += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(targetAddr[:]))
 	}
 	return gasUsed
 }

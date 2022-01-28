@@ -346,7 +346,7 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndChargeGas(index)
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(index)
 		interpreter.evm.Accesses.SetLeafValue(index, uint256.NewInt(cs).Bytes())
 		scope.Contract.UseGas(statelessGas)
 	}
@@ -428,7 +428,7 @@ func touchEachChunksOnReadAndChargeGas(offset, size uint64, address []byte, code
 		index[31] = subIndex
 
 		// TODO safe-add here to catch overflow
-		statelessGasCharged += accesses.TouchAddressOnReadAndChargeGas(index[:])
+		statelessGasCharged += accesses.TouchAddressOnReadAndComputeGas(index[:])
 		var value []byte
 		if code != nil && len(code) > 0 {
 			// the offset into the leaf that the first PUSH occurs
@@ -970,7 +970,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			}
 			copy(value[1:], scope.Contract.Code[chunk*31:endMin])
 			index := trieUtils.GetTreeKeyCodeChunk(scope.Contract.Address().Bytes(), uint256.NewInt(chunk))
-			statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndChargeGas(index)
+			statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(index)
 			interpreter.evm.Accesses.SetLeafValue(index, value[:])
 			scope.Contract.UseGas(statelessGas)
 		}

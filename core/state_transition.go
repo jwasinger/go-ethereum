@@ -322,7 +322,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		targetAddr := msg.To()
 		originAddr := msg.From()
 
-		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndChargeGas(originAddr.Bytes(), msg.Value().Sign() != 0)
+		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes(), msg.Value().Sign() != 0)
 		if !tryConsumeGas(&st.gas, statelessGasOrigin) {
 			return nil, fmt.Errorf("insufficient gas to cover witness access costs")
 		}
@@ -331,7 +331,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.evm.Accesses.SetTxOriginTouchedLeaves(originAddr.Bytes(), originBalance, originNonce)
 
 		if msg.To() != nil {
-			statelessGasDest := st.evm.Accesses.TouchTxExistingAndChargeGas(targetAddr.Bytes(), msg.Value().Sign() != 0)
+			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value().Sign() != 0)
 			if !tryConsumeGas(&st.gas, statelessGasDest) {
 				return nil, fmt.Errorf("insufficient gas to cover witness access costs")
 			}

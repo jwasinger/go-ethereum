@@ -100,7 +100,7 @@ func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 	slot := stack.Back(0)
 	if evm.chainConfig.IsCancun(evm.Context.BlockNumber) {
 		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
-		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndChargeGas(index)
+		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndComputeGas(index)
 	}
 
 	return usedGas, nil
@@ -163,7 +163,7 @@ func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySiz
 		where := stack.Back(0)
 		addr := contract.Address()
 		index := trieUtils.GetTreeKeyStorageSlot(addr[:], where)
-		usedGas += evm.Accesses.TouchAddressOnReadAndChargeGas(index)
+		usedGas += evm.Accesses.TouchAddressOnReadAndComputeGas(index)
 	}
 
 	return usedGas, nil
