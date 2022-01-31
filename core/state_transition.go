@@ -316,24 +316,26 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if st.gas < gas {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, gas)
 	}
+	fmt.Println("TransitionDb")
 	if st.evm.ChainConfig().IsCancun(st.evm.Context.BlockNumber) {
-		var targetBalance, targetNonce, targetCodeSize, targetCodeKeccak, originBalance, originNonce []byte
+		var targetBalance, targetNonce, targetCodeSize, targetCodeKeccak, originBalance, originNonceBytes []byte
 
 		targetAddr := msg.To()
 		originAddr := msg.From()
 
 		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes(), msg.Value().Sign() != 0)
 		if !tryConsumeGas(&st.gas, statelessGasOrigin) {
-			return nil, fmt.Errorf("insufficient gas to cover witness access costs")
+			return nil, fmt.Errorf("insufficient gas to cover witness access costs for tx")
 		}
 		originBalance = st.evm.StateDB.GetBalanceLittleEndian(originAddr)
-		originNonce = st.evm.StateDB.GetNonceLittleEndian(originAddr)
-		st.evm.Accesses.SetTxOriginTouchedLeaves(originAddr.Bytes(), originBalance, originNonce)
+		originNonce := st.evm.StateDB.GetNonce(originAddr)
+		originNonceBytes = st.evm.StateDB.GetNonceLittleEndian(originAddr)
+		st.evm.Accesses.SetTxOriginTouchedLeaves(originAddr.Bytes(), originBalance, originNonceBytes)
 
 		if msg.To() != nil {
 			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value().Sign() != 0)
 			if !tryConsumeGas(&st.gas, statelessGasDest) {
-				return nil, fmt.Errorf("insufficient gas to cover witness access costs")
+				return nil, fmt.Errorf("insufficient gas to cover witness access costs for tx")
 			}
 			targetBalance = st.evm.StateDB.GetBalanceLittleEndian(*targetAddr)
 			targetNonce = st.evm.StateDB.GetNonceLittleEndian(*targetAddr)
@@ -343,7 +345,14 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			var codeSizeBytes [32]byte
 			binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
 			st.evm.Accesses.SetTxExistingTouchedLeaves(targetAddr.Bytes(), targetBalance, targetNonce, targetCodeSize, targetCodeKeccak)
+		} else {
+			fmt.Println("contract creation")
+			contractAddr := crypto.CreateAddress(originAddr, originNonce)
+			if !tryConsumeGas(&st.gas, st.evm.Accesses.TouchAndChargeContractCreateInit(contractAddr.Bytes(), msg.Value().Sign() != 0)) {
+				return nil, fmt.Errorf("insufficient gas to cover witness access costs for contract creation tx")
+			}
 		}
+
 		if st.gas < gas {
 			return nil, fmt.Errorf("Insufficient funds to cover witness access costs for transaction: have %d, want %d", st.gas, gas)
 		}
