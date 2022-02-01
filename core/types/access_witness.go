@@ -67,7 +67,6 @@ func (aw *AccessWitness) SetLeafValue(addr []byte, value []byte) {
 	var stem [31]byte
 	copy(stem[:], addr[:31])
 
-	fmt.Printf("SetLeafValue %x\n", addr)
 	if chunk, exists := aw.Chunks[common.BytesToHash(addr)]; exists {
 		chunk.value = value
 		aw.Chunks[common.BytesToHash(addr)] = chunk
@@ -119,8 +118,6 @@ func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bo
 		selectorRead bool
 	)
 	copy(stem[:], addr[:31])
-
-	fmt.Printf("touchAddress: %x\n", addr)
 
 	// Check for the presence of the stem
 	if _, hasStem := aw.Branches[stem]; !hasStem {
