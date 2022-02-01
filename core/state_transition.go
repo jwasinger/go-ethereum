@@ -316,7 +316,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if st.gas < gas {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, gas)
 	}
-	fmt.Println("TransitionDb")
 	if st.evm.ChainConfig().IsCancun(st.evm.Context.BlockNumber) {
 		var targetBalance, targetNonce, targetCodeSize, targetCodeKeccak, originBalance, originNonceBytes []byte
 
@@ -346,7 +345,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
 			st.evm.Accesses.SetTxExistingTouchedLeaves(targetAddr.Bytes(), targetBalance, targetNonce, targetCodeSize, targetCodeKeccak)
 		} else {
-			fmt.Println("contract creation")
 			contractAddr := crypto.CreateAddress(originAddr, originNonce)
 			if !tryConsumeGas(&st.gas, st.evm.Accesses.TouchAndChargeContractCreateInit(contractAddr.Bytes(), msg.Value().Sign() != 0)) {
 				return nil, fmt.Errorf("insufficient gas to cover witness access costs for contract creation tx")
