@@ -25,6 +25,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"io/ioutil"
+
+	"github.com/crate-crypto/go-ipa/ipa"
+	"github.com/crate-crypto/go-ipa/bandersnatch"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,7 +60,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/gballet/go-verkle"
 )
 
 // Config contains the configuration options of the ETH protocol.
@@ -143,8 +146,28 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// Start the precomputation of Lagrange points
 	// if this config supports verkle trees.
 	if chainConfig.CancunBlock != nil {
-		log.Info("Detected the use of verkle trees, rebuilding the cache")
-		verkle.GetConfig()
+		/*
+		ipaConfig := ipa.NewIPASettings()
+		precomp := ipaConfig.PrecompLag
+		if ser, err := precomp.SerializePrecomputedLagrange(); err != nil {
+			fmt.Println(err)
+			fmt.Println("shite")
+		} else {
+			fmt.Println("foobar")
+			fmt.Printf("%x\n", ser)
+			os.WriteFile("precomp", ser, 0644)
+		}
+		*/
+		if precompSer, err := ioutil.ReadFile("precomp"); err != nil {
+			panic("SHIT")
+		} else {
+			if pcl, err := bandersnatch.DeserializePrecomputedLagrange(precompSer); err != nil {
+				panic("SHIT2")
+			} else {
+				fmt.Println("foobar")
+				ipa.NewIPASettingsWithPrecomputedLagrange(pcl)
+			}
+		}
 	}
 
 	if err := pruner.RecoverPruning(stack.ResolvePath(""), chainDb, stack.ResolvePath(config.TrieCleanCacheJournal)); err != nil {

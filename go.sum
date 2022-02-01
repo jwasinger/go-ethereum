@@ -163,6 +163,8 @@ github.com/gballet/go-verkle v0.0.0-20220119205306-b466d7bff5ba h1:iOhT1XFktDNN7
 github.com/gballet/go-verkle v0.0.0-20220119205306-b466d7bff5ba/go.mod h1:e1m+0UuY3AFFTubxZZ3ePf4yO/rHMAeTb7udhUAJduk=
 github.com/gballet/go-verkle v0.0.0-20220121105610-351986d619a8 h1:6fW03c2tXGttQv1b3mt9zmcXw4/srV62DltEER5mp/U=
 github.com/gballet/go-verkle v0.0.0-20220121105610-351986d619a8/go.mod h1:e1m+0UuY3AFFTubxZZ3ePf4yO/rHMAeTb7udhUAJduk=
+github.com/gballet/go-verkle v0.0.0-20220121142656-8cf71b342fb2 h1:p71IjFWSLnCOD3zpPNciJ3Pb6CgxrZAnBDffF7E9sBs=
+github.com/gballet/go-verkle v0.0.0-20220121142656-8cf71b342fb2/go.mod h1:NhFaKv4U1IBG8QkKCsKh4xBMmdori0B0eZjdywcrktE=
 github.com/gballet/go-verkle v0.0.0-20220127081734-1fca5295178c h1:EoP3VKIxU+29cA4coL9TJfD8lPuaUURxbW5nHoK1joM=
 github.com/gballet/go-verkle v0.0.0-20220127081734-1fca5295178c/go.mod h1:NhFaKv4U1IBG8QkKCsKh4xBMmdori0B0eZjdywcrktE=
 github.com/gballet/go-verkle v0.0.0-20220128155149-95499dfcd74a h1:0GpdT+zyEoa8OTBtJk5EdZm7nF4HXzU+blG3io0pm5A=
