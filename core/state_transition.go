@@ -324,7 +324,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes(), msg.Value().Sign() != 0)
 		if !tryConsumeGas(&st.gas, statelessGasOrigin) {
-			return nil, fmt.Errorf("insufficient gas to cover witness access costs for tx")
+			return nil, ErrInsufficientBalanceWitness
 		}
 		originBalance = st.evm.StateDB.GetBalanceLittleEndian(originAddr)
 		originNonce := st.evm.StateDB.GetNonce(originAddr)
@@ -334,7 +334,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		if msg.To() != nil {
 			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value().Sign() != 0)
 			if !tryConsumeGas(&st.gas, statelessGasDest) {
-				return nil, fmt.Errorf("insufficient gas to cover witness access costs for tx")
+				return nil, ErrInsufficientBalanceWitness
 			}
 			targetBalance = st.evm.StateDB.GetBalanceLittleEndian(*targetAddr)
 			targetNonce = st.evm.StateDB.GetNonceLittleEndian(*targetAddr)
@@ -347,7 +347,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		} else {
 			contractAddr := crypto.CreateAddress(originAddr, originNonce)
 			if !tryConsumeGas(&st.gas, st.evm.Accesses.TouchAndChargeContractCreateInit(contractAddr.Bytes(), msg.Value().Sign() != 0)) {
-				return nil, fmt.Errorf("insufficient gas to cover witness access costs for contract creation tx")
+				return nil, ErrInsufficientBalanceWitness
 			}
 		}
 
