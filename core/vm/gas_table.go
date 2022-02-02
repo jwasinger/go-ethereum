@@ -156,6 +156,19 @@ func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 	return usedGas + statelessGas, err
 }
 
+func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	usedGas := uint64(0)
+
+	if evm.chainConfig.IsCancun(evm.Context.BlockNumber) {
+		where := stack.Back(0)
+		addr := contract.Address()
+		index := trieUtils.GetTreeKeyStorageSlot(addr[:], where)
+		usedGas += evm.Accesses.TouchAddressOnReadAndComputeGas(index)
+	}
+
+	return usedGas, nil
+}
+
 func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// Apply the witness access costs, err is nil
 	accessGas, _ := gasSLoad(evm, contract, stack, mem, memorySize)
