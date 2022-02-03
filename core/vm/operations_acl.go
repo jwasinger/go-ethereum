@@ -118,12 +118,9 @@ func gasSLoadEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		// If the caller cannot afford the cost, this change will be rolled back
 		// If he does afford it, we can skip checking the same thing later on, during execution
 		evm.StateDB.AddSlotToAccessList(contract.Address(), slot)
-		gasUsed += params.ColdSloadCostEIP2929
-	} else {
-		gasUsed += params.WarmStorageReadCostEIP2929
+		return gasUsed + params.ColdSloadCostEIP2929, nil
 	}
-
-	return gasUsed, nil
+	return gasUsed + params.WarmStorageReadCostEIP2929, nil
 }
 
 // gasExtCodeCopyEIP2929 implements extcodecopy according to EIP-2929
