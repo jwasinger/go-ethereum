@@ -1032,9 +1032,8 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 					} else {
 						s.setError(err)
 					}
-				} else {
-					rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 				}
+				rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 				obj.dirtyCode = false
 			}
 		}
