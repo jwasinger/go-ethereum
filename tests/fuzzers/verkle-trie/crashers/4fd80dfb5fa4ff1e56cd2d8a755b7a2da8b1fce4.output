@@ -1,0 +1,10 @@
+panic: mismatch for key 0x61736c646b666a77616c65666b6a6173646c666b6a4d34666533343265326265, got 0x want 0x0000000000000007000000000000000000000000000000000000000000000000
+
+goroutine 1 [running]:
+github.com/ethereum/go-ethereum/tests/fuzzers/verkle-trie.Fuzz(0x7f8f96a5e000, 0x5b, 0x5b, 0x3)
+	/datadrive/projects/go-ethereum-verkle/tests/fuzzers/verkle-trie/trie-fuzzer.go:137 +0x165
+go-fuzz-dep.Main(0xc010d0ff70, 0x1, 0x1)
+	go-fuzz-dep/main.go:36 +0x1b8
+main.main()
+	github.com/ethereum/go-ethereum/tests/fuzzers/verkle-trie/go.fuzz.main/main.go:15 +0x52
+exit status 2
