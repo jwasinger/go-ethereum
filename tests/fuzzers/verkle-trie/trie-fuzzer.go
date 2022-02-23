@@ -14,16 +14,19 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package trie
+package verkle_trie
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/gballet/go-verkle"
+	"github.com/crate-crypto/go-ipa/ipa"
+	"github.com/crate-crypto/go-ipa/bandersnatch"
 )
 
 // randTest performs random trie operations.
@@ -141,7 +144,21 @@ func Fuzz(input []byte) int {
 
 func runRandTest(rt randTest) error {
 
-	verkle.GetConfig()
+	//verkle.GetConfig()
+	fmt.Println("read file")
+        if precompSer, err := ioutil.ReadFile("precomp"); err != nil {
+            panic("SHIT")
+        } else {
+	    fmt.Println("before deserialize")
+            if pcl, err := bandersnatch.DeserializePrecomputedLagrange(precompSer); err != nil {
+                panic("SHIT2")
+            } else {
+                fmt.Println("after deserialize")
+                ipa.NewIPASettingsWithPrecomputedLagrange(pcl)
+		fmt.Println("after NewIPASettings...")
+            }
+        }
+
 	triedb := trie.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{UseVerkle: true})
         tr := trie.NewVerkleTrie(verkle.New(), triedb)
 	values := make(map[string]string) // tracks content of the trie
@@ -150,18 +167,32 @@ func runRandTest(rt randTest) error {
 		switch step.op {
 		case opUpdate:
 			// XXX check errors here?
-			_ = tr.TryUpdate(step.key, step.value)
+			fmt.Printf("TryUpdate - %x <= %x\n", step.key, step.value)
+			err := tr.TryUpdate(step.key, step.value)
+			if err != nil {
+				fmt.Println("err")
+				fmt.Println(err)
+			}
+
 			values[string(step.key)] = string(step.value)
 		case opGet:
 			// XXX check errors here?
-			v, _ := tr.TryGet(step.key)
+			fmt.Printf("TryGet - %x\n", step.key)
+			v, err := tr.TryGet(step.key)
+			if err != nil {
+				fmt.Println("err")
+				fmt.Println(err)
+			}
+
 			want := values[string(step.key)]
 			if string(v) != want {
 				rt[i].err = fmt.Errorf("mismatch for key 0x%x, got 0x%x want 0x%x", step.key, v, want)
 			}
 		case opCommit:
+			fmt.Println("Commit")
 			_, _, rt[i].err = tr.Commit(nil)
 		case opHash:
+			fmt.Println("Hash")
 			tr.Hash()
 		/*
 		TODO
@@ -174,6 +205,7 @@ func runRandTest(rt randTest) error {
 			tr = newtr
 		*/
 		case opItercheckhash:
+			fmt.Println("Itercheckhash")
 			checktr := trie.NewVerkleTrie(verkle.New(), triedb)
 			it := trie.NewIterator(tr.NodeIterator(nil))
 			for it.Next() {
