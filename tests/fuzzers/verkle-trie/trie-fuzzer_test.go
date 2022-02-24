@@ -5,6 +5,6 @@ import (
 )
 
 func TestExecuteFuzzerInput(t *testing.T) {
-	crasher := []byte("asasdlkfjalwk4jfalsdkfjawlefkjsadlfkjasldkfjwalefkjasdlfkjM4fe342e2be1a7f9f8ee7eDangling pa")
+	crasher := []byte("asdnauthoritiesfkjasf2doiejfasdfa\x00\x04fqlkjfas3lkfjalwk4jfalsdkfjawle")
 	Fuzz(crasher)
 }
