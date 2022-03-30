@@ -199,6 +199,63 @@ func (db *Database) NewBatch() ethdb.Batch {
 	}
 }
 
+// NewBatchWithSize creates a write-only database batch with pre-allocated buffer.
+// TODO can't do this with pebble.  Batches are allocated in a pool so maybe this doesn't matter?
+func (db *Database) NewBatchWithSize(_ int) ethdb.Batch {
+	return &batch{
+		b: db.db.NewBatch(),
+	}
+}
+
+// snapshot wraps a pebble snapshot for implementing the Snapshot interface.
+type snapshot struct {
+        db *pebble.Snapshot
+}
+
+// Has retrieves if a key is present in the snapshot backing by a key-value
+// data store.
+func (snap *snapshot) Has(key []byte) (bool, error) {
+	_, closer, err := snap.db.Get(key)
+	defer closer.Close()
+
+	if err != nil {
+		if err != pebble.ErrNotFound {
+			return false, err
+		} else {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// Get retrieves the given key if it's present in the snapshot backing by
+// key-value data store.
+func (snap *snapshot) Get(key []byte) ([]byte, error) {
+	val, closer, err := snap.db.Get(key)
+	defer closer.Close()
+
+	if err != nil {
+		return nil, err
+	}
+	return val, nil
+}
+
+// Release releases associated resources. Release should always succeed and can
+// be called multiple times without causing error.
+func (snap *snapshot) Release() {
+        snap.db.Close()
+}
+
+// NewSnapshot creates a database snapshot based on the current state.
+// The created snapshot will not be affected by all following mutations
+// happened on the database.
+// Note don't forget to release the snapshot once it's used up, otherwise
+// the stale data will never be cleaned up by the underlying compactor.
+func (db *Database) NewSnapshot() (ethdb.Snapshot, error) {
+        snap := db.db.NewSnapshot()
+        return &snapshot{db: snap}, nil
+}
+
 // NewIterator creates a binary-alphabetical iterator over a subset
 // of database content with a particular key prefix, starting at a particular
 // initial key (or after, if it does not exist).
@@ -225,7 +282,7 @@ func (db *Database) Stat(property string) (string, error) {
 // is treated as a key after all keys in the data store. If both is nil then it
 // will compact entire data store.
 func (db *Database) Compact(start []byte, limit []byte) error {
-	return db.db.Compact(start, limit)
+	return db.db.Compact(start, limit, false)
 }
 
 // Path returns the path to the database directory.
