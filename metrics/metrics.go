@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -97,6 +98,7 @@ func CollectProcessMetrics(refresh time.Duration) {
 	for i := 1; ; i++ {
 		location1 := i % 2
 		location2 := (i - 1) % 2
+		cGoAlloced := pebble.CGoAlloc()
 
 		ReadCPUStats(cpuStats[location1])
 		cpuSysLoad.Update((cpuStats[location1].GlobalTime - cpuStats[location2].GlobalTime) / refreshFreq)
@@ -109,8 +111,8 @@ func CollectProcessMetrics(refresh time.Duration) {
 		memPauses.Mark(int64(memstats[location1].PauseTotalNs - memstats[location2].PauseTotalNs))
 		memAllocs.Mark(int64(memstats[location1].Mallocs - memstats[location2].Mallocs))
 		memFrees.Mark(int64(memstats[location1].Frees - memstats[location2].Frees))
-		memHeld.Update(int64(memstats[location1].HeapSys - memstats[location1].HeapReleased))
-		memUsed.Update(int64(memstats[location1].Alloc))
+		memHeld.Update((int64(memstats[location1].HeapSys - memstats[location1].HeapReleased)) + cGoAlloced)
+		memUsed.Update(int64(memstats[location1].Alloc) + cGoAlloced)
 
 		if ReadDiskStats(diskstats[location1]) == nil {
 			diskReads.Mark(diskstats[location1].ReadCount - diskstats[location2].ReadCount)

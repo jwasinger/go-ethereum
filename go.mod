@@ -72,3 +72,5 @@ require (
 	gopkg.in/urfave/cli.v1 v1.20.0
 	gotest.tools v2.2.0+incompatible // indirect
 )
+
+replace github.com/cockroachdb/pebble => github.com/jwasinger/pebble v0.0.0-20220330072846-b8e72fe01d54
