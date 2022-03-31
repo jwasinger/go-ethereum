@@ -73,4 +73,4 @@ require (
 	gotest.tools v2.2.0+incompatible // indirect
 )
 
-replace github.com/cockroachdb/pebble => github.com/jwasinger/pebble v0.0.0-20220330072846-b8e72fe01d54
+replace github.com/cockroachdb/pebble => github.com/jwasinger/pebble v0.0.0-20220331092654-2c1514d55710
