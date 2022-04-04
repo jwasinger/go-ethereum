@@ -84,8 +84,8 @@ type Database struct {
 }
 
 func (d *Database) OnCompactionBegin(info pebble.CompactionInfo) {
-	if d.curCompactionCount == 0 {
-		compactionStartTime = time.Now()
+	if d.activeCompactionCount == 0 {
+		d.compactionStartTime = time.Now()
 	}
 
 	d.activeCompactionCount++
@@ -94,7 +94,7 @@ func (d *Database) OnCompactionBegin(info pebble.CompactionInfo) {
 // TODO check that this is called synchronously when there are multiple concurrent compactions
 func (d *Database) OnCompactionEnd(info pebble.CompactionInfo) {
 	if d.activeCompactionCount == 1 {
-		atomic.AddInt64(d.compactionTime, int64(time.Since(d.compactionStartTime)))
+		atomic.AddInt64(&d.compactionTime, int64(time.Since(d.compactionStartTime)))
 	} else if d.activeCompactionCount == 0 {
 		panic("should not happen")
 	}
@@ -103,17 +103,18 @@ func (d *Database) OnCompactionEnd(info pebble.CompactionInfo) {
 	d.activeCompactionCount--
 }
 
-func (d *Database) OnWriteStallBegin(b WriteStallBeginInfo) {
+func (d *Database) OnWriteStallBegin(b pebble.WriteStallBeginInfo) {
 	d.writeDelayStartTime = time.Now()
 }
 
 func (d *Database) OnWriteStallEnd() {
-	atomic.AddInt64(&d.curWriteDelayTime, int64(time.Since(d.writeDelayStartTime)))
+	atomic.AddInt64(&d.writeDelayTime, int64(time.Since(d.writeDelayStartTime)))
 }
 
 // New returns a wrapped LevelDB object. The namespace is the prefix that the
 // metrics reporting should use for surfacing internal stats.
 func New(file string, cache int, handles int, namespace string, readonly bool) (*Database, error) {
+	var ldb *Database
 	// Ensure we have some minimal caching and file guarantees
 	if cache < minCache {
 		cache = minCache
@@ -124,6 +125,21 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 	logger := log.New("database", file)
 	logger.Info("Allocated cache and file handles", "cache", common.StorageSize(cache*1024*1024), "handles", handles)
 
+	// TODO race between setting ldb below and modifying it here?
+	eventListener := pebble.EventListener{
+		CompactionBegin: func(info pebble.CompactionInfo) {
+			ldb.OnCompactionBegin(info)
+		},
+		CompactionEnd: func(info pebble.CompactionInfo) {
+			ldb.OnCompactionEnd(info)
+		},
+		WriteStallBegin: func(info pebble.WriteStallBeginInfo) {
+			ldb.OnWriteStallBegin(info)
+		},
+		WriteStallEnd: func() {
+			ldb.OnWriteStallEnd()
+		},
+	}
 	// Open the db and recover any potential corruptions
 	db, err := pebble.Open(file, &pebble.Options{
 		// Pebble has a single combined cache area and the write
@@ -150,12 +166,13 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 			{TargetFileSize: 2 * 1024 * 1024, FilterPolicy: bloom.FilterPolicy(10)},
 		},
 		ReadOnly: readonly,
+		EventListener: eventListener,
 	})
 	if err != nil {
 		return nil, err
 	}
 	// Assemble the wrapper with all the registered metrics
-	ldb := &Database{
+	ldb = &Database{
 		fn:       file,
 		db:       db,
 		log:      logger,
@@ -336,33 +353,25 @@ func (db *Database) meter(refresh time.Duration) {
 	timer := time.NewTimer(refresh)
 	defer timer.Stop()
 
-	// Create the counters to store current and previous compaction values
-	compactions := make([][]float64, 2)
-	for i := 0; i < 2; i++ {
-		compactions[i] = make([]float64, 4)
-	}
-	// Create storage for iostats.
-	var iostats [2]float64
-
 	// Create storage and warning log tracer for write delay.
 	var (
-		delaystats       [2]int64
+		//delaystats       [2]int64
 		compactionCounts [2]int64
 		compactionTimes  [2]int64
 		writeDelayTimes  [2]int64
 		writeDelayCounts [2]int64
 
-		lastWritePaused time.Time
+		//lastWritePaused time.Time
 	)
 
 	// Iterate ad infinitum and collect the stats
 	for i := 1; errc == nil; i++ {
 		metrics := db.db.Metrics()
 
-		compactionCount := atomic.LoadInt64(db.compactionCount)
-		compactionTime := atomic.LoadInt64(db.compactionTime)
-		writeDelayCount := atomic.LoadInt64(db.writeDelayCount)
-		writeDelayTime := atomic.LoadInt64(db.writeDelayTime)
+		compactionCount := atomic.LoadInt64(&db.compactionCount)
+		compactionTime := atomic.LoadInt64(&db.compactionTime)
+		writeDelayCount := atomic.LoadInt64(&db.writeDelayCount)
+		writeDelayTime := atomic.LoadInt64(&db.writeDelayTime)
 
 		writeDelayTimes[i%2] = writeDelayTime
 		writeDelayCounts[i%2] = writeDelayCount
@@ -385,7 +394,7 @@ func (db *Database) meter(refresh time.Duration) {
 			db.compReadMeter.Mark(metrics.Compact.RewriteCount)
 		}
 		if db.diskSizeGauge != nil {
-			db.diskSizeGauge.Update(metrics.DiskSpaceUsage())
+			db.diskSizeGauge.Update(int64(metrics.DiskSpaceUsage()))
 		}
 
 		db.memCompGauge.Update(metrics.Flush.Count)
