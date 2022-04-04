@@ -165,7 +165,7 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 			{TargetFileSize: 2 * 1024 * 1024, FilterPolicy: bloom.FilterPolicy(10)},
 			{TargetFileSize: 2 * 1024 * 1024, FilterPolicy: bloom.FilterPolicy(10)},
 		},
-		ReadOnly: readonly,
+		ReadOnly:      readonly,
 		EventListener: eventListener,
 	})
 	if err != nil {
@@ -360,6 +360,8 @@ func (db *Database) meter(refresh time.Duration) {
 		compactionTimes  [2]int64
 		writeDelayTimes  [2]int64
 		writeDelayCounts [2]int64
+		compactionWrites [2]int64
+		compactionReads  [2]int64
 
 		//lastWritePaused time.Time
 	)
@@ -378,6 +380,19 @@ func (db *Database) meter(refresh time.Duration) {
 		compactionCounts[i%2] = compactionCount
 		compactionTimes[i%2] = compactionTime
 
+		var (
+			compactionWrite int64
+			compactionRead  int64
+		)
+
+		for i := 0; i < len(metrics.Levels); i++ {
+			compactionWrite += int64(metrics.Levels[i].BytesCompacted)
+			compactionRead += int64(metrics.Levels[i].BytesRead)
+		}
+
+		compactionWrites[i%2] = compactionWrite
+		compactionReads[i%2] = compactionRead
+
 		if db.writeDelayNMeter != nil {
 			db.writeDelayNMeter.Mark(writeDelayCounts[i%2] - writeDelayCounts[(i-1)%2])
 		}
@@ -388,10 +403,10 @@ func (db *Database) meter(refresh time.Duration) {
 			db.compTimeMeter.Mark(compactionTimes[i%2] - compactionTimes[(i-1)%2])
 		}
 		if db.compReadMeter != nil {
-			db.compReadMeter.Mark(metrics.Compact.ReadCount)
+			db.compReadMeter.Mark(compactionReads[i%2] - compactionReads[(i-1)%2])
 		}
 		if db.compWriteMeter != nil {
-			db.compReadMeter.Mark(metrics.Compact.RewriteCount)
+			db.compWriteMeter.Mark(compactionWrites[i%2] - compactionWrites[(i-1)%2])
 		}
 		if db.diskSizeGauge != nil {
 			db.diskSizeGauge.Update(int64(metrics.DiskSpaceUsage()))
