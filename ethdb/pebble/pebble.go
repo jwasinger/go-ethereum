@@ -21,6 +21,7 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -70,6 +71,44 @@ type Database struct {
 	quitChan chan chan error // Quit channel to stop the metrics collection before closing the database
 
 	log log.Logger // Contextual logger tracking the database path
+
+	activeCompactionCount int
+
+	compactionStartTime time.Time
+	compactionCount     int64
+	compactionTime      int64
+
+	writeDelayStartTime time.Time
+	writeDelayCount     int64
+	writeDelayTime      int64
+}
+
+func (d *Database) OnCompactionBegin(info pebble.CompactionInfo) {
+	if d.curCompactionCount == 0 {
+		compactionStartTime = time.Now()
+	}
+
+	d.activeCompactionCount++
+}
+
+// TODO check that this is called synchronously when there are multiple concurrent compactions
+func (d *Database) OnCompactionEnd(info pebble.CompactionInfo) {
+	if d.activeCompactionCount == 1 {
+		atomic.AddInt64(d.compactionTime, int64(time.Since(d.compactionStartTime)))
+	} else if d.activeCompactionCount == 0 {
+		panic("should not happen")
+	}
+
+	d.compactionCount++
+	d.activeCompactionCount--
+}
+
+func (d *Database) OnWriteStallBegin(b WriteStallBeginInfo) {
+	d.writeDelayStartTime = time.Now()
+}
+
+func (d *Database) OnWriteStallEnd() {
+	atomic.AddInt64(&d.curWriteDelayTime, int64(time.Since(d.writeDelayStartTime)))
 }
 
 // New returns a wrapped LevelDB object. The namespace is the prefix that the
@@ -209,7 +248,7 @@ func (db *Database) NewBatchWithSize(_ int) ethdb.Batch {
 
 // snapshot wraps a pebble snapshot for implementing the Snapshot interface.
 type snapshot struct {
-        db *pebble.Snapshot
+	db *pebble.Snapshot
 }
 
 // Has retrieves if a key is present in the snapshot backing by a key-value
@@ -243,7 +282,7 @@ func (snap *snapshot) Get(key []byte) ([]byte, error) {
 // Release releases associated resources. Release should always succeed and can
 // be called multiple times without causing error.
 func (snap *snapshot) Release() {
-        snap.db.Close()
+	snap.db.Close()
 }
 
 // NewSnapshot creates a database snapshot based on the current state.
@@ -252,8 +291,8 @@ func (snap *snapshot) Release() {
 // Note don't forget to release the snapshot once it's used up, otherwise
 // the stale data will never be cleaned up by the underlying compactor.
 func (db *Database) NewSnapshot() (ethdb.Snapshot, error) {
-        snap := db.db.NewSnapshot()
-        return &snapshot{db: snap}, nil
+	snap := db.db.NewSnapshot()
+	return &snapshot{db: snap}, nil
 }
 
 // NewIterator creates a binary-alphabetical iterator over a subset
@@ -292,33 +331,68 @@ func (db *Database) Path() string {
 
 // meter periodically retrieves internal leveldb counters and reports them to
 // the metrics subsystem.
-//
-// This is how a LevelDB stats table looks like (currently):
-//   Compactions
-//    Level |   Tables   |    Size(MB)   |    Time(sec)  |    Read(MB)   |   Write(MB)
-//   -------+------------+---------------+---------------+---------------+---------------
-//      0   |          0 |       0.00000 |       1.27969 |       0.00000 |      12.31098
-//      1   |         85 |     109.27913 |      28.09293 |     213.92493 |     214.26294
-//      2   |        523 |    1000.37159 |       7.26059 |      66.86342 |      66.77884
-//      3   |        570 |    1113.18458 |       0.00000 |       0.00000 |       0.00000
-//
-// This is how the write delay look like (currently):
-// DelayN:5 Delay:406.604657ms Paused: false
-//
-// This is how the iostats look like (currently):
-// Read(MB):3895.04860 Write(MB):3654.64712
 func (db *Database) meter(refresh time.Duration) {
 	var errc chan error
 	timer := time.NewTimer(refresh)
 	defer timer.Stop()
 
+	// Create the counters to store current and previous compaction values
+	compactions := make([][]float64, 2)
+	for i := 0; i < 2; i++ {
+		compactions[i] = make([]float64, 4)
+	}
+	// Create storage for iostats.
+	var iostats [2]float64
+
+	// Create storage and warning log tracer for write delay.
+	var (
+		delaystats       [2]int64
+		compactionCounts [2]int64
+		compactionTimes  [2]int64
+		writeDelayTimes  [2]int64
+		writeDelayCounts [2]int64
+
+		lastWritePaused time.Time
+	)
+
 	// Iterate ad infinitum and collect the stats
-	for errc == nil {
+	for i := 1; errc == nil; i++ {
 		metrics := db.db.Metrics()
+
+		compactionCount := atomic.LoadInt64(db.compactionCount)
+		compactionTime := atomic.LoadInt64(db.compactionTime)
+		writeDelayCount := atomic.LoadInt64(db.writeDelayCount)
+		writeDelayTime := atomic.LoadInt64(db.writeDelayTime)
+
+		writeDelayTimes[i%2] = writeDelayTime
+		writeDelayCounts[i%2] = writeDelayCount
+		compactionCounts[i%2] = compactionCount
+		compactionTimes[i%2] = compactionTime
+
+		if db.writeDelayNMeter != nil {
+			db.writeDelayNMeter.Mark(writeDelayCounts[i%2] - writeDelayCounts[(i-1)%2])
+		}
+		if db.writeDelayMeter != nil {
+			db.writeDelayNMeter.Mark(writeDelayTimes[i%2] - writeDelayTimes[(i-1)%2])
+		}
+		if db.compTimeMeter != nil {
+			db.compTimeMeter.Mark(compactionTimes[i%2] - compactionTimes[(i-1)%2])
+		}
+		if db.compReadMeter != nil {
+			db.compReadMeter.Mark(metrics.Compact.ReadCount)
+		}
+		if db.compWriteMeter != nil {
+			db.compReadMeter.Mark(metrics.Compact.RewriteCount)
+		}
+		if db.diskSizeGauge != nil {
+			db.diskSizeGauge.Update(metrics.DiskSpaceUsage())
+		}
+
 		db.memCompGauge.Update(metrics.Flush.Count)
-		db.level0CompGauge.Update(0) // todo FIX ME
 		db.nonlevel0CompGauge.Update(metrics.Compact.Count)
-		db.seekCompGauge.Update(0) // todo FIX ME
+
+		db.level0CompGauge.Update(0) // todo FIX ME
+		db.seekCompGauge.Update(0)   // todo FIX ME
 
 		// Sleep a bit, then repeat the stats collection
 		select {
