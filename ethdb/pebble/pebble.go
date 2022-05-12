@@ -428,7 +428,7 @@ func (db *Database) meter(refresh time.Duration) {
 			db.diskSizeGauge.Update(int64(metrics.DiskSpaceUsage()))
 		}
 		if db.diskReadMeter != nil {
-			// TODO figure out how to get this metric from Pebble
+			db.diskReadMeter.Mark(0) // pebble doesn't track non-compaction reads
 		}
 		if db.diskWriteMeter != nil {
 			db.diskWriteMeter.Mark(nWrites[i%2] - nWrites[(i-1)%2])
