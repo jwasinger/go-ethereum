@@ -106,7 +106,6 @@ func (d *Database) OnCompactionBegin(info pebble.CompactionInfo) {
 	d.activeComp++
 }
 
-// TODO check that this is called synchronously when there are multiple concurrent compactions
 func (d *Database) OnCompactionEnd(info pebble.CompactionInfo) {
 	if d.activeComp == 1 {
 		atomic.AddInt64(&d.compTime, int64(time.Since(d.compStartTime)))
