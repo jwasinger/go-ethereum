@@ -22,6 +22,7 @@ package leveldb
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,6 +113,16 @@ func Exists(file string) bool {
 	opts := &opt.Options{
 		ErrorIfMissing: true,
 		ReadOnly:       true,
+	}
+
+	if matches, err := filepath.Glob(file + "/OPTIONS*"); len(matches) > 0 || err != nil {
+		if err != nil {
+			panic(err) // only possible if the pattern is malformed
+		}
+		// existence of this file means this db was created by pebble
+		// have to do this hack because leveldb.OpenFile returns sucessfully
+		// for dbs created by pebble
+		return false
 	}
 
 	if db, err = leveldb.OpenFile(file, opts); err != nil {

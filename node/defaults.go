@@ -36,7 +36,7 @@ const (
 	DefaultGraphQLPort = 8547        // Default TCP port for the GraphQL server
 	DefaultAuthHost    = "localhost" // Default host interface for the authenticated apis
 	DefaultAuthPort    = 8551        // Default port for the authenticated apis
-	DefaultBackingDB   = "leveldb"   // Default db implementation to use
+	DefaultBackingDB   = "default"   // Default db implementation to use
 )
 
 var (

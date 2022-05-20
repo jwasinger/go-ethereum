@@ -19,6 +19,7 @@ package pebble
 
 import (
 	"errors"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -133,6 +134,16 @@ func Exists(path string) bool {
 	opts := &pebble.Options{
 		ErrorIfNotExists: true,
 		ReadOnly:         true,
+	}
+
+	if matches, err := filepath.Glob(path + "/OPTIONS*"); len(matches) == 0 || err != nil {
+		if err != nil {
+			panic(err) // only possible if the pattern is malformed
+		}
+		// if this file doesn't exist, then the db is ldb
+		// this is a bit of a hack but pebble.Open() will successfully
+		// open leveldb databases.
+		return false
 	}
 
 	if db, err = pebble.Open(path, opts); err != nil {

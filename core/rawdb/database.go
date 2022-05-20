@@ -270,6 +270,7 @@ func NewLevelDBDatabase(file string, cache int, handles int, namespace string, r
 	if err != nil {
 		return nil, err
 	}
+	log.Info("using LevelDB as the backing database")
 	return NewDatabase(db), nil
 }
 
@@ -280,6 +281,7 @@ func NewPebbleDBDatabase(file string, cache int, handles int, namespace string, 
 	if err != nil {
 		return nil, err
 	}
+	log.Info("using Pebble as the backing database")
 	return NewDatabase(db), nil
 }
 
@@ -307,13 +309,13 @@ func NewPebbleOrLevelDBDatabase(backingdb string, file string, cache int, handle
 			}
 		}
 	} else {
-		if leveldb.Exists(file) {
-			db, err = NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+		if pebble.Exists(file) {
+			db, err = NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
-		} else if pebble.Exists(file) {
-			db, err = NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
+		} else if leveldb.Exists(file) {
+			db, err = NewLevelDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
