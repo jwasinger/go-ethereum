@@ -725,11 +725,7 @@ func (n *Node) OpenDatabaseWithFreezer(name string, cache, handles int, freezer,
 		case !filepath.IsAbs(freezer):
 			freezer = n.ResolvePath(freezer)
 		}
-		if n.config.BackingDB == "pebble" {
-			db, err = rawdb.NewPebbleDBDatabaseWithFreezer(root, cache, handles, freezer, namespace, readonly)
-		} else {
-			db, err = rawdb.NewLevelDBDatabaseWithFreezer(root, cache, handles, freezer, namespace, readonly)
-		}
+		db, err = rawdb.NewPebbleOrLevelDBDatabaseWithFreezer(n.config.BackingDB, root, cache, handles, freezer, namespace, readonly)
 	}
 
 	if err == nil {

@@ -283,15 +283,16 @@ func NewPebbleDBDatabase(file string, cache int, handles int, namespace string, 
 	return NewDatabase(db), nil
 }
 
-func NewPebbleOrLevelDBDatabase() (ethdb.Database, error) {
-	var db ethdb.Database
-
-	// TODO move this into NewPebbleOrLevelDBDatabase
+func NewPebbleOrLevelDBDatabase(backingdb string, file string, cache int, handles int, namespace string, readonly bool) (ethdb.Database, error) {
+	var (
+		db  ethdb.Database
+		err error
+	)
 	if backingdb == "pebble" {
-		if ldb.Exists(file) {
+		if leveldb.Exists(file) {
 			return nil, errors.New("backingdb choice was pebble but found pre-existing leveldb database in specified data directory")
 		} else {
-			db, err := NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
+			db, err = NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
@@ -300,24 +301,24 @@ func NewPebbleOrLevelDBDatabase() (ethdb.Database, error) {
 		if pebble.Exists(file) {
 			return nil, errors.New("backingdb choice was leveldb but found pre-existing pebble database in specified data directory")
 		} else {
-			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+			db, err = NewLevelDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
 		}
 	} else {
-		if ldb.Exists(file) {
-			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+		if leveldb.Exists(file) {
+			db, err = NewLevelDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
 		} else if pebble.Exists(file) {
-			db, err := NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
+			db, err = NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+			db, err = NewLevelDBDatabase(file, cache, handles, namespace, readonly)
 			if err != nil {
 				return nil, err
 			}
@@ -327,7 +328,7 @@ func NewPebbleOrLevelDBDatabase() (ethdb.Database, error) {
 	return db, nil
 }
 
-func NewDatabaseWithFreezer(backingdb string, file string, cache int, handles int, freezer string, namespace string, readonly bool) (ethdb.Database, error) {
+func NewPebbleOrLevelDBDatabaseWithFreezer(backingdb string, file string, cache int, handles int, freezer string, namespace string, readonly bool) (ethdb.Database, error) {
 	kvdb, err := NewPebbleOrLevelDBDatabase(backingdb, file, cache, handles, namespace, readonly)
 	if err != nil {
 		return nil, err

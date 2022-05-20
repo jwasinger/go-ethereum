@@ -126,12 +126,16 @@ func (d *Database) OnWriteStallEnd() {
 
 // Exists returns whether a valid pebble database exists on the provided path
 func Exists(path string) bool {
+	var (
+		db  *pebble.DB
+		err error
+	)
 	opts := &pebble.Options{
-		ErrIfNotExists: true,
-		ReadOnly: true,
+		ErrorIfNotExists: true,
+		ReadOnly:         true,
 	}
 
-	if db, err := pebble.Open(path, opts); err != nil {
+	if db, err = pebble.Open(path, opts); err != nil {
 		return false
 	}
 

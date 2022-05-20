@@ -105,16 +105,21 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 }
 
 func Exists(file string) bool {
+	var (
+		db  *leveldb.DB
+		err error
+	)
 	opts := &opt.Options{
-		ErrIfNotExists: true,
+		ErrorIfMissing: true,
+		ReadOnly:       true,
 	}
 
-	if db, err := leveldb.OpenFile(file, opts); err != nil {
-		return true
+	if db, err = leveldb.OpenFile(file, opts); err != nil {
+		return false
 	}
 
 	db.Close()
-	return false
+	return true
 }
 
 // NewCustom returns a wrapped LevelDB object. The namespace is the prefix that the
