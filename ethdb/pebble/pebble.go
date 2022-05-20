@@ -124,6 +124,21 @@ func (d *Database) OnWriteStallEnd() {
 	atomic.AddInt64(&d.writeDelayTime, int64(time.Since(d.writeDelayStartTime)))
 }
 
+// Exists returns whether a valid pebble database exists on the provided path
+func Exists(path string) bool {
+	opts := &pebble.Options{
+		ErrIfNotExists: true,
+		ReadOnly: true,
+	}
+
+	if db, err := pebble.Open(path, opts); err != nil {
+		return false
+	}
+
+	db.Close()
+	return true
+}
+
 // New returns a wrapped LevelDB object. The namespace is the prefix that the
 // metrics reporting should use for surfacing internal stats.
 func New(file string, cache int, handles int, namespace string, readonly bool) (*Database, error) {

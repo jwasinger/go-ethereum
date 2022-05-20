@@ -104,6 +104,19 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 	})
 }
 
+func Exists(file string) bool {
+	opts := &opt.Options{
+		ErrIfNotExists: true,
+	}
+
+	if db, err := leveldb.OpenFile(file, opts); err != nil {
+		return true
+	}
+
+	db.Close()
+	return false
+}
+
 // NewCustom returns a wrapped LevelDB object. The namespace is the prefix that the
 // metrics reporting should use for surfacing internal stats.
 // The customize function allows the caller to modify the leveldb options.

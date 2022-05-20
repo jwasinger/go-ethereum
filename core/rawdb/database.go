@@ -283,6 +283,63 @@ func NewPebbleDBDatabase(file string, cache int, handles int, namespace string, 
 	return NewDatabase(db), nil
 }
 
+func NewPebbleOrLevelDBDatabase() (ethdb.Database, error) {
+	var db ethdb.Database
+
+	// TODO move this into NewPebbleOrLevelDBDatabase
+	if backingdb == "pebble" {
+		if ldb.Exists(file) {
+			return nil, errors.New("backingdb choice was pebble but found pre-existing leveldb database in specified data directory")
+		} else {
+			db, err := NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if backingdb == "leveldb" {
+		if pebble.Exists(file) {
+			return nil, errors.New("backingdb choice was leveldb but found pre-existing pebble database in specified data directory")
+		} else {
+			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if ldb.Exists(file) {
+			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+			if err != nil {
+				return nil, err
+			}
+		} else if pebble.Exists(file) {
+			db, err := NewPebbleDBDatabase(file, cache, handles, namespace, readonly)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			db, err := NewLevelDBDatabase(file, cache, handles, namespace, readonly)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return db, nil
+}
+
+func NewDatabaseWithFreezer(backingdb string, file string, cache int, handles int, freezer string, namespace string, readonly bool) (ethdb.Database, error) {
+	kvdb, err := NewPebbleOrLevelDBDatabase(backingdb, file, cache, handles, namespace, readonly)
+	if err != nil {
+		return nil, err
+	}
+	frdb, err := NewDatabaseWithFreezer(kvdb, freezer, namespace, readonly)
+	if err != nil {
+		kvdb.Close()
+		return nil, err
+	}
+	return frdb, nil
+}
+
 // NewLevelDBDatabaseWithFreezer creates a persistent key-value database with a
 // freezer moving immutable chain segments into cold storage.
 func NewLevelDBDatabaseWithFreezer(file string, cache int, handles int, freezer string, namespace string, readonly bool) (ethdb.Database, error) {
