@@ -135,6 +135,10 @@ func (t *table) Delete(key []byte) error {
 	return t.db.Delete(append([]byte(t.prefix), key...))
 }
 
+func (t *table) DeleteRange(start, end []byte) error {
+	panic("unimplemented")
+}
+
 // NewIterator creates a binary-alphabetical iterator over a subset
 // of database content with a particular key prefix, starting at a particular
 // initial key (or after, if it does not exist).
@@ -224,6 +228,10 @@ func (b *tableBatch) Delete(key []byte) error {
 	return b.batch.Delete(append([]byte(b.prefix), key...))
 }
 
+func (b *tableBatch) DeleteRange(start, end []byte) error {
+	panic("unimplemented")
+}
+
 // ValueSize retrieves the amount of data queued up for writing.
 func (b *tableBatch) ValueSize() int {
 	return b.batch.ValueSize()
@@ -256,6 +264,10 @@ func (r *tableReplayer) Put(key []byte, value []byte) error {
 func (r *tableReplayer) Delete(key []byte) error {
 	trimmed := key[len(r.prefix):]
 	return r.w.Delete(trimmed)
+}
+
+func (t *tableReplayer) DeleteRange(start, end []byte) error {
+	panic("unimplemented")
 }
 
 // Replay replays the batch contents.

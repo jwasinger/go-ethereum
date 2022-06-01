@@ -823,6 +823,10 @@ func (c *cleaner) Delete(key []byte) error {
 	panic("not implemented")
 }
 
+func (c *cleaner) DeleteRange(start, end []byte) error {
+	panic("not implemented")
+}
+
 // Size returns the current storage size of the memory cache in front of the
 // persistent database layer.
 func (db *Database) Size() (common.StorageSize, common.StorageSize) {

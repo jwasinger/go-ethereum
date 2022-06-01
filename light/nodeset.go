@@ -69,6 +69,10 @@ func (db *NodeSet) Delete(key []byte) error {
 	return nil
 }
 
+func (db *NodeSet) DeleteRange(start, end []byte) error {
+	panic("unimplemented")
+}
+
 // Get returns a stored node
 func (db *NodeSet) Get(key []byte) ([]byte, error) {
 	db.lock.RLock()

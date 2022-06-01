@@ -256,6 +256,10 @@ func (db *Database) Delete(key []byte) error {
 	return db.db.Delete(key, nil)
 }
 
+func (db *Database) DeleteRange(start, end []byte) error {
+	return db.db.DeleteRange(start, end, nil)
+}
+
 // NewBatch creates a write-only key-value store that buffers changes to its host
 // database until a final write is called.
 func (db *Database) NewBatch() ethdb.Batch {
@@ -468,6 +472,12 @@ func (b *batch) Put(key, value []byte) error {
 func (b *batch) Delete(key []byte) error {
 	b.b.Delete(key, nil)
 	b.size++
+	return nil
+}
+
+func (b *batch) DeleteRange(start, end []byte) error {
+	b.b.DeleteRange(start, end, nil)
+	// TODO b.size += 2?
 	return nil
 }
 
