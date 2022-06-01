@@ -105,6 +105,13 @@ func WriteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash comm
 	}
 }
 
+func DeleteAllStorageSnapshot(db ethdb.KeyValueWriter, accountHash common.Hash) {
+	if err := db.DeleteRange(accountStorageSnapshotPrefix(accountHash)); err != nil {
+		log.Crit("Failed to delete account storage snapshot", "err", err)
+	}
+
+}
+
 // DeleteStorageSnapshot removes the snapshot entry of an storage trie leaf.
 func DeleteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash common.Hash) {
 	if err := db.Delete(storageSnapshotKey(accountHash, storageHash)); err != nil {
