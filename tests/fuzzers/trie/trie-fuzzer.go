@@ -47,6 +47,10 @@ func (proofDb) Delete(key []byte) error {
 	return nil
 }
 
+func (proofDb) DeleteRange(key, value []byte) error {
+	panic("not implemented")
+}
+
 const (
 	opUpdate = iota
 	opDelete

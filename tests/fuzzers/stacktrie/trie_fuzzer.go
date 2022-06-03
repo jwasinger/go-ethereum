@@ -71,6 +71,7 @@ func (s *spongeDb) NewSnapshot() (ethdb.Snapshot, error)     { panic("implement 
 func (s *spongeDb) Stat(property string) (string, error)     { panic("implement me") }
 func (s *spongeDb) Compact(start []byte, limit []byte) error { panic("implement me") }
 func (s *spongeDb) Close() error                             { return nil }
+func (s* spongeDb) DeleteRange(key, value []byte) error  { panic("implementme") }
 
 func (s *spongeDb) Put(key []byte, value []byte) error {
 	if s.debug {
@@ -92,6 +93,7 @@ func (b *spongeBatch) Put(key, value []byte) error {
 	return nil
 }
 func (b *spongeBatch) Delete(key []byte) error             { panic("implement me") }
+func (b *spongeBatch) DeleteRange(key, value []byte) error { panic("implement me") }
 func (b *spongeBatch) ValueSize() int                      { return 100 }
 func (b *spongeBatch) Write() error                        { return nil }
 func (b *spongeBatch) Reset()                              {}

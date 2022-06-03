@@ -480,6 +480,10 @@ func (l *loggingDb) Delete(key []byte) error {
 	return l.backend.Delete(key)
 }
 
+func (l *loggingDb) DeleteRange(key, value []byte) error {
+	panic("not implemented")
+}
+
 func (l *loggingDb) NewBatch() ethdb.Batch {
 	return l.backend.NewBatch()
 }

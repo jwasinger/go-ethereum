@@ -18,6 +18,7 @@
 package memorydb
 
 import (
+	"bytes"
 	"errors"
 	"sort"
 	"strings"
@@ -126,7 +127,13 @@ func (db *Database) Delete(key []byte) error {
 }
 
 func (db *Database) DeleteRange(start, end []byte) error {
-	panic("un-implemented")
+	for k := range db.db {
+		kBytes := []byte(k)
+		if bytes.Compare(kBytes, start) >= 0 && bytes.Compare(kBytes, end) < 0 {
+			delete(db.db, k)
+		}
+	}
+	return nil
 }
 
 // NewBatch creates a write-only key-value store that buffers changes to its host
@@ -238,8 +245,30 @@ func (b *batch) Delete(key []byte) error {
 	return nil
 }
 
+func keyInRange(key, start, end []byte) bool {
+	min := func(x, y int) int {
+		if x < y {
+			return x
+		}
+		return y
+	}
+	shortest := min(min(len(key), len(start)), min(len(key), len(end)))
+	if bytes.Compare(key[:shortest], start[:shortest]) == 0 {
+		return true
+	} else if bytes.Compare(key[:shortest], start[:shortest]) >= 0 && bytes.Compare(key[:shortest], end[:shortest]) < 0 {
+		return true
+	}
+	return false
+}
+
 func (b *batch) DeleteRange(start, end []byte) error {
-	panic("unimplemented")
+	for k := range b.db.db {
+		kBytes := []byte(k)
+		if keyInRange(kBytes, start, end) {
+			b.Delete(kBytes)
+		}
+	}
+	return nil
 }
 
 // ValueSize retrieves the amount of data queued up for writing.

@@ -155,6 +155,9 @@ func (n *NodeList) Put(key []byte, value []byte) error {
 func (n *NodeList) Delete(key []byte) error {
 	panic("not supported")
 }
+func (n *NodeList) DeleteRange(key, value []byte) error {
+	panic("not supported")
+}
 
 // DataSize returns the aggregated data size of nodes in the list
 func (n NodeList) DataSize() int {
