@@ -105,6 +105,12 @@ func WriteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash comm
 	}
 }
 
+func WriteStorageSnapshotDeferred(batch ethdb.Batch, accountHash, storageHash common.hash, entry []byte) {
+	deferredBatchOp := db.PutDeferred(65, len(entry))
+	storageSnapshotKeyToBuf(deferredBatchOp.Value, accountHash, storageHash)
+	// continue....
+}
+
 // DeleteStorageSnapshot removes the snapshot entry of an storage trie leaf.
 func DeleteStorageSnapshot(db ethdb.KeyValueWriter, accountHash, storageHash common.Hash) {
 	if err := db.Delete(storageSnapshotKey(accountHash, storageHash)); err != nil {

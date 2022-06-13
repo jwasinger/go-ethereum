@@ -152,6 +152,17 @@ func ReadHeaderNumber(db ethdb.KeyValueReader, hash common.Hash) *uint64 {
 	return &number
 }
 
+func WriteHeaderNumberDeferred(batch ethdb.Batch, hash common.Hash, number uint64) {
+    deferredBatchOp := batch.PutDeferred(len(common.hash), 8)
+    headerNumberKeyToBuf(deferredBatchOp.Key, hash)
+    blockNumberToBuf(deferredBatchOp.Value, number)
+
+    if err := deferredBatchOp.Finish(); err != nil {
+        log.Crit("batchOp finish failed", "err", err)
+    }
+}
+
+
 // WriteHeaderNumber stores the hash->number mapping.
 func WriteHeaderNumber(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	key := headerNumberKey(hash)
@@ -159,6 +170,28 @@ func WriteHeaderNumber(db ethdb.KeyValueWriter, hash common.Hash, number uint64)
 	if err := db.Put(key, enc); err != nil {
 		log.Crit("Failed to store hash to number mapping", "err", err)
 	}
+}
+
+func WriteHeaderDeferred(batch ethdb.Batch, header *types.Header) {
+       var (
+               hash   = header.Hash()
+               number = header.Number.Uint64()
+       )
+       // Write the hash -> number mapping
+       WriteHeaderNumberDeferred(batch, hash, number)
+
+       // Write the encoded header
+       data, err := rlp.EncodeToBytes(header)
+       if err != nil {
+               log.Crit("Failed to RLP encode header", "err", err)
+       }
+       deferredBatchOp := batch.PutDeferred(8 + len(hash), len(data))
+       headerKeyToBuf(deferredBatchOp.Key, number, hash)
+       copy(deferredBatchOp.Value, data)
+
+       if err := deferredBatchOp.Finish(); err != nil {
+           log.Crit("batchOp finish failed", "err", err)
+       }
 }
 
 // DeleteHeaderNumber removes hash->number mapping.
@@ -182,6 +215,17 @@ func WriteHeadHeaderHash(db ethdb.KeyValueWriter, hash common.Hash) {
 	if err := db.Put(headHeaderKey, hash.Bytes()); err != nil {
 		log.Crit("Failed to store last header's hash", "err", err)
 	}
+}
+
+// WriteHeadHeaderHash stores the hash of the current canonical head header.
+func WriteHeadHeaderHashDeferred(db ethdb.Batch, hash common.Hash) {
+	deferredBatchOp := batch.PutDeferred(1, 32)
+	batch.Key[0] = headHeaderKey
+	copy(batch.Value, hash.Bytes())
+
+       if err := deferredBatchOp.Finish(); err != nil {
+	       log.Crit("write head header hash failed: batchOp finish failed", "err", err)
+       }
 }
 
 // ReadHeadBlockHash retrieves the hash of the current canonical head block.

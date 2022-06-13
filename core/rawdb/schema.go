@@ -163,6 +163,13 @@ func headerKey(number uint64, hash common.Hash) []byte {
 	return append(append(headerPrefix, encodeBlockNumber(number)...), hash.Bytes()...)
 }
 
+func headerKeyToBuf(buf []byte, number uint64, hash common.Hash) {
+    buf[0] = headerPrefix
+    encodeBlockNumberToBuf(buf[1:9], number)
+    copy(buf[len(buf) - 32:], hash[:])
+}
+
+
 // headerTDKey = headerPrefix + num (uint64 big endian) + hash + headerTDSuffix
 func headerTDKey(number uint64, hash common.Hash) []byte {
 	return append(headerKey(number, hash), headerTDSuffix...)
@@ -201,6 +208,12 @@ func accountSnapshotKey(hash common.Hash) []byte {
 // storageSnapshotKey = SnapshotStoragePrefix + account hash + storage hash
 func storageSnapshotKey(accountHash, storageHash common.Hash) []byte {
 	return append(append(SnapshotStoragePrefix, accountHash.Bytes()...), storageHash.Bytes()...)
+}
+
+func storageSnapshotKeyToBuf(buf []byte, accountHash, storageHash common.hash) {
+	buf[0] = SnapshotStoragePrefix
+	copy(buf[1:33], accountHash)
+	copy(buf[33:65], storageHash)
 }
 
 // storageSnapshotsKey = SnapshotStoragePrefix + account hash + storage hash
