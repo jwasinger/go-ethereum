@@ -22,13 +22,28 @@ import (
 
 // Memory implements a simple memory model for the ethereum virtual machine.
 type Memory struct {
-	store       []byte
+	store       *[]byte
+	cleanSize   int
 	lastGasCost uint64
 }
 
 // NewMemory returns a new memory model.
 func NewMemory() *Memory {
-	return &Memory{}
+	store := []byte{}
+	return &Memory{
+		&store,
+		0,
+		0,
+	}
+}
+
+func NewMemoryWithBacking(buf *[]byte) *Memory {
+	return &Memory{
+		buf,
+		0,
+		0,
+	}
+
 }
 
 // Set sets offset + size to value
@@ -38,10 +53,10 @@ func (m *Memory) Set(offset, size uint64, value []byte) {
 	if size > 0 {
 		// length of store may never be less than offset + size.
 		// The store should be resized PRIOR to setting the memory
-		if offset+size > uint64(len(m.store)) {
+		if offset+size > uint64(m.Len()) {
 			panic("invalid memory: store empty")
 		}
-		copy(m.store[offset:offset+size], value)
+		copy((*m.store)[offset:offset+size], value)
 	}
 }
 
@@ -50,18 +65,30 @@ func (m *Memory) Set(offset, size uint64, value []byte) {
 func (m *Memory) Set32(offset uint64, val *uint256.Int) {
 	// length of store may never be less than offset + size.
 	// The store should be resized PRIOR to setting the memory
-	if offset+32 > uint64(len(m.store)) {
+	if offset+32 > uint64(m.cleanSize) {
 		panic("invalid memory: store empty")
 	}
 	// Fill in relevant bits
 	b32 := val.Bytes32()
-	copy(m.store[offset:], b32[:])
+	copy((*m.store)[offset:], b32[:])
 }
 
 // Resize resizes the memory to size
 func (m *Memory) Resize(size uint64) {
-	if uint64(m.Len()) < size {
-		m.store = append(m.store, make([]byte, size-uint64(m.Len()))...)
+	fillSize := int(size) - m.cleanSize
+	expandSize := int(size) - fillSize
+
+	if fillSize > 0 {
+		for i := 0; i < fillSize; i++ {
+			(*m.store)[m.cleanSize+i] = 0
+		}
+		m.cleanSize += fillSize
+	}
+
+	if expandSize > 0 {
+		newStore := append(*m.store, make([]byte, expandSize)...)
+		m.store = &newStore
+		m.cleanSize = len(newStore)
 	}
 }
 
@@ -71,9 +98,9 @@ func (m *Memory) GetCopy(offset, size int64) (cpy []byte) {
 		return nil
 	}
 
-	if len(m.store) > int(offset) {
+	if m.Len() > int(offset) {
 		cpy = make([]byte, size)
-		copy(cpy, m.store[offset:offset+size])
+		copy(cpy, (*m.store)[offset:offset+size])
 
 		return
 	}
@@ -87,8 +114,8 @@ func (m *Memory) GetPtr(offset, size int64) []byte {
 		return nil
 	}
 
-	if len(m.store) > int(offset) {
-		return m.store[offset : offset+size]
+	if m.Len() > int(offset) {
+		return (*m.store)[offset : offset+size]
 	}
 
 	return nil
@@ -96,10 +123,10 @@ func (m *Memory) GetPtr(offset, size int64) []byte {
 
 // Len returns the length of the backing slice
 func (m *Memory) Len() int {
-	return len(m.store)
+	return m.cleanSize
 }
 
 // Data returns the backing slice
 func (m *Memory) Data() []byte {
-	return m.store
+	return (*m.store)[:m.cleanSize]
 }

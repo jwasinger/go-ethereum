@@ -136,9 +136,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	}
 
 	var (
-		op          OpCode        // current opcode
-		mem         = NewMemory() // bound memory
-		stack       = newstack()  // local stack
+		op          OpCode                                 // current opcode
+		mem         = NewMemoryWithBacking(&in.returnData) // bound memory
+		stack       = newstack()                           // local stack
 		callContext = &ScopeContext{
 			Memory:   mem,
 			Stack:    stack,
