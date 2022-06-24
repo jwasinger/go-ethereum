@@ -17,6 +17,7 @@
 package vm
 
 import (
+    "fmt"
 	"github.com/holiman/uint256"
 )
 
@@ -78,6 +79,7 @@ func (m *Memory) Resize(size uint64) {
 	fillSize := int(size) - m.cleanSize
 	expandSize := int(size) - fillSize
 
+    fmt.Printf("size %d\n", size)
 	if fillSize > 0 {
 		for i := 0; i < fillSize; i++ {
 			(*m.store)[m.cleanSize+i] = 0

@@ -93,7 +93,8 @@ func TestEIP2200(t *testing.T) {
 		}
 		vmenv := NewEVM(vmctx, TxContext{}, statedb, params.AllEthashProtocolChanges, Config{ExtraEips: []int{2200}})
 
-		_, gas, err := vmenv.Call(AccountRef(common.Address{}), address, nil, tt.gaspool, new(big.Int))
+        memPreAlloc := make([]byte, 0)
+		_, gas, err := vmenv.Call(&memPreAlloc, AccountRef(common.Address{}), address, nil, tt.gaspool, new(big.Int))
 		if err != tt.failure {
 			t.Errorf("test %d: failure mismatch: have %v, want %v", i, err, tt.failure)
 		}
