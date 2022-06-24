@@ -600,7 +600,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		bigVal = value.ToBig()
 	}
 
-	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract, input, gas, bigVal)
+	res, addr, returnGas, suberr := interpreter.evm.Create(&scope.ReturnDataBuf, scope.Contract, input, gas, bigVal)
 	// Push item on the stack based on the returned error. If the ruleset is
 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 	// rule) and treat as an error, if the ruleset is frontier we must
@@ -645,7 +645,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	if !endowment.IsZero() {
 		bigEndowment = endowment.ToBig()
 	}
-	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract, input, gas,
+	res, addr, returnGas, suberr := interpreter.evm.Create2(&scope.ReturnDataBuf, scope.Contract, input, gas,
 		bigEndowment, &salt)
 	// Push item on the stack based on the returned error.
 	if suberr != nil {
@@ -688,7 +688,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		bigVal = value.ToBig()
 	}
 
-	ret, returnGas, err := interpreter.evm.Call(scope.Contract, toAddr, args, gas, bigVal)
+	ret, returnGas, err := interpreter.evm.Call(&scope.ReturnDataBuf, scope.Contract, toAddr, args, gas, bigVal)
 
 	if err != nil {
 		temp.Clear()
@@ -697,7 +697,8 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 	stack.push(&temp)
 	if err == nil || err == ErrExecutionReverted {
-		ret = common.CopyBytes(ret)
+		// TODO no need to copy here? verify why
+		//ret = common.CopyBytes(ret)
 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 	}
 	scope.Contract.Gas += returnGas
@@ -725,7 +726,7 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		bigVal = value.ToBig()
 	}
 
-	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract, toAddr, args, gas, bigVal)
+	ret, returnGas, err := interpreter.evm.CallCode(&scope.ReturnDataBuf, scope.Contract, toAddr, args, gas, bigVal)
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -754,7 +755,7 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 
-	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
+	ret, returnGas, err := interpreter.evm.DelegateCall(&scope.ReturnDataBuf, scope.Contract, toAddr, args, gas)
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -783,7 +784,7 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 
-	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract, toAddr, args, gas)
+	ret, returnGas, err := interpreter.evm.StaticCall(&scope.ReturnDataBuf, scope.Contract, toAddr, args, gas)
 	if err != nil {
 		temp.Clear()
 	} else {
