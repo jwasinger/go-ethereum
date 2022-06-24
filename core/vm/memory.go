@@ -17,7 +17,7 @@
 package vm
 
 import (
-    "fmt"
+	//"fmt"
 	"github.com/holiman/uint256"
 )
 
@@ -74,24 +74,31 @@ func (m *Memory) Set32(offset uint64, val *uint256.Int) {
 	copy((*m.store)[offset:], b32[:])
 }
 
+func min(x, y int) int {
+	if x < y {
+		return x
+	}
+
+	return y
+}
+
 // Resize resizes the memory to size
 func (m *Memory) Resize(size uint64) {
-	fillSize := int(size) - m.cleanSize
-	expandSize := int(size) - fillSize
-
-    fmt.Printf("size %d\n", size)
-	if fillSize > 0 {
-		for i := 0; i < fillSize; i++ {
-			(*m.store)[m.cleanSize+i] = 0
-		}
-		m.cleanSize += fillSize
-	}
-
-	if expandSize > 0 {
-		newStore := append(*m.store, make([]byte, expandSize)...)
+	var appendSize int
+	if len(*m.store) < int(size) {
+		appendSize := int(size) - (len(*m.store) - m.cleanSize)
+		newStore := *m.store
+		newStore = append(newStore, make([]byte, appendSize)...)
 		m.store = &newStore
-		m.cleanSize = len(newStore)
 	}
+
+	dirtySize := len(*m.store) - appendSize
+
+	for i := m.cleanSize; i < dirtySize; i++ {
+		(*m.store)[i] = 0
+	}
+
+	m.cleanSize = appendSize + dirtySize
 }
 
 // GetCopy returns offset + size as a new slice
