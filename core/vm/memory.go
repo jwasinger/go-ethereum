@@ -17,14 +17,13 @@
 package vm
 
 import (
-	//"fmt"
 	"github.com/holiman/uint256"
 )
 
 // Memory implements a simple memory model for the ethereum virtual machine.
 type Memory struct {
 	store       *[]byte
-	cleanSize   int
+	occupiedSize int
 	lastGasCost uint64
 }
 
@@ -66,7 +65,7 @@ func (m *Memory) Set(offset, size uint64, value []byte) {
 func (m *Memory) Set32(offset uint64, val *uint256.Int) {
 	// length of store may never be less than offset + size.
 	// The store should be resized PRIOR to setting the memory
-	if offset+32 > uint64(m.cleanSize) {
+	if offset+32 > uint64(m.occupiedSize) {
 		panic("invalid memory: store empty")
 	}
 	// Fill in relevant bits
@@ -85,20 +84,36 @@ func min(x, y int) int {
 // Resize resizes the memory to size
 func (m *Memory) Resize(size uint64) {
 	var appendSize int
+	var dirtySize int
+
+	if int(size) <= m.occupiedSize {
+		return
+	}
+
+	/*
+	fmt.Println("-------")
+	fmt.Printf("Resize.  store size - %d, occupied size- %d. new-size - %d\n", len(*m.store), m.occupiedSize, size)
+	*/
 	if len(*m.store) < int(size) {
-		appendSize := int(size) - (len(*m.store) - m.cleanSize)
+		appendSize = int(size) - len(*m.store)
+		dirtySize = len(*m.store) - m.occupiedSize
 		newStore := *m.store
 		newStore = append(newStore, make([]byte, appendSize)...)
-		m.store = &newStore
+		m.store = &newStore // TODO if the addr changes, what assumptions does this break?
+	} else {
+		dirtySize = int(size) - m.occupiedSize
 	}
 
-	dirtySize := len(*m.store) - appendSize
 
-	for i := m.cleanSize; i < dirtySize; i++ {
-		(*m.store)[i] = 0
+	for i := 0; i < dirtySize; i++ {
+		(*m.store)[i + m.occupiedSize] = 0
 	}
 
-	m.cleanSize = appendSize + dirtySize
+	m.occupiedSize += appendSize + dirtySize
+	/*
+	fmt.Printf("done.  store size - %d, occupied size- %d\n", len(*m.store), m.occupiedSize)
+	fmt.Println("-------")
+	*/
 }
 
 // GetCopy returns offset + size as a new slice
@@ -124,7 +139,8 @@ func (m *Memory) GetPtr(offset, size int64) []byte {
 	}
 
 	if m.Len() > int(offset) {
-		return (*m.store)[offset : offset+size]
+		slice := (*m.store)[offset : offset+size]
+		return slice
 	}
 
 	return nil
@@ -132,10 +148,10 @@ func (m *Memory) GetPtr(offset, size int64) []byte {
 
 // Len returns the length of the backing slice
 func (m *Memory) Len() int {
-	return m.cleanSize
+	return m.occupiedSize
 }
 
 // Data returns the backing slice
 func (m *Memory) Data() []byte {
-	return (*m.store)[:m.cleanSize]
+	return (*m.store)[:m.occupiedSize]
 }
