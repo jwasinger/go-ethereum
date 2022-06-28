@@ -697,8 +697,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 	stack.push(&temp)
 	if err == nil || err == ErrExecutionReverted {
-		// TODO no need to copy here? verify why
-		//ret = common.CopyBytes(ret)
+		ret = common.CopyBytes(ret)
 		scope.Memory.Set(retOffset.Uint64(), retSize.Uint64(), ret)
 	}
 	scope.Contract.Gas += returnGas
