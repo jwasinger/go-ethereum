@@ -89,7 +89,7 @@ func opSetModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
     mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_limbs) * 8)
     modLimbs := mont_arith.IntToLimbs(mont_arith.LEBytesToInt(mod_bytes), uint(mod_limbs))
 
-    scope.EVMMAXField = mont_arith.NewField(mont_arith.DefaultPreset())
+    scope.EVMMAXField = mont_arith.NewField(mont_arith.Asm384Preset())
     if err := scope.EVMMAXField.SetMod(modLimbs); err != nil {
         return nil, ErrOutOfGas
     }
