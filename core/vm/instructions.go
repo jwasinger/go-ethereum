@@ -23,8 +23,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+	"github.com/jwasinger/mont-arith"
 	"golang.org/x/crypto/sha3"
-    "github.com/jwasinger/mont-arith"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -82,104 +82,103 @@ func opSignExtend(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 }
 
 func opSetModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	params_offsets := scope.Stack.pop()
-	mod_limbs := uint64(byte(params_offsets[0] >> 8))
-	mod_offset := uint64(byte(params_offsets[0])) * mod_limbs * 8
+	mod_offset := scope.Stack.pop()[0]
+	mod_limb_count := scope.Stack.pop()[0]
 
-    mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_limbs) * 8)
-    modLimbs := mont_arith.IntToLimbs(mont_arith.LEBytesToInt(mod_bytes), uint(mod_limbs))
+	mod := scope.Memory.GetPtr(int64(mod_offset), int64(mod_limb_count)*8)
 
-    scope.EVMMAXField = mont_arith.NewField(mont_arith.DefaultPreset())
-    if err := scope.EVMMAXField.SetMod(modLimbs); err != nil {
-        return nil, ErrOutOfGas
-    }
+	mod_limbs := mont_arith.IntToLimbs(mont_arith.LEBytesToInt(mod), uint(mod_limb_count))
+	scope.EVMMAXField = mont_arith.NewField(mont_arith.DefaultPreset())
+	if err := scope.EVMMAXField.SetMod(mod_limbs); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 
 func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	params_offsets := scope.Stack.pop()
-    elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
+	elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
 
-	out_offset := uint64(byte(params_offsets[0] >> 16)) * elemSize
-	x_offset := uint64(byte(params_offsets[0] >> 8)) * elemSize
+	out_offset := uint64(byte(params_offsets[0]>>16)) * elemSize
+	x_offset := uint64(byte(params_offsets[0]>>8)) * elemSize
 	y_offset := uint64(byte(params_offsets[0])) * elemSize
 
-    out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
-    x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
-    y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
+	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
+	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
+	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
-    //fmt.Printf("addmod: %x * %x=", x_bytes, y_bytes)
-    if err := scope.EVMMAXField.AddMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
-        return nil, ErrOutOfGas
-    }
-    //fmt.Printf("%x\n", out_bytes)
+	//fmt.Printf("addmod: %x * %x=", x_bytes, y_bytes)
+	if err := scope.EVMMAXField.AddMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
+		return nil, ErrOutOfGas
+	}
+	//fmt.Printf("%x\n", out_bytes)
 	return nil, nil
 }
 
 func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	params_offsets := scope.Stack.pop()
-    elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
+	elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
 
-	out_offset := uint64(byte(params_offsets[0] >> 16)) * elemSize
-	x_offset := uint64(byte(params_offsets[0] >> 8)) * elemSize
+	out_offset := uint64(byte(params_offsets[0]>>16)) * elemSize
+	x_offset := uint64(byte(params_offsets[0]>>8)) * elemSize
 	y_offset := uint64(byte(params_offsets[0])) * elemSize
 
-    out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
-    x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
-    y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
+	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
+	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
+	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
-    //fmt.Printf("submod: %x * %x=", x_bytes, y_bytes)
-    if err := scope.EVMMAXField.SubMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
-        return nil, ErrOutOfGas
-    }
-    //fmt.Printf("%x\n", out_bytes)
+	//fmt.Printf("submod: %x * %x=", x_bytes, y_bytes)
+	if err := scope.EVMMAXField.SubMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
+		return nil, ErrOutOfGas
+	}
+	//fmt.Printf("%x\n", out_bytes)
 	return nil, nil
 }
 
 func opMulMontMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	params_offsets := scope.Stack.pop()
-    elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
+	elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
 
-	out_offset := uint64(byte(params_offsets[0] >> 16)) * elemSize
-	x_offset := uint64(byte(params_offsets[0] >> 8)) * elemSize
+	out_offset := uint64(byte(params_offsets[0]>>16)) * elemSize
+	x_offset := uint64(byte(params_offsets[0]>>8)) * elemSize
 	y_offset := uint64(byte(params_offsets[0])) * elemSize
 
-    out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
-    x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
-    y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
+	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
+	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
+	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
-    if err := scope.EVMMAXField.MulMont(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
-        return nil, ErrOutOfGas
-    }
+	if err := scope.EVMMAXField.MulMont(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
+		return nil, ErrOutOfGas
+	}
 	return nil, nil
 }
 
 func uint64_array_to_le_bytes(val []uint64) []byte {
-    res := make([]byte, len(val) * 8)
-    for i := 0; i < len(val); i++ {
-        res[i * 8] = byte(val[i])
-        res[i * 8 + 1] = byte(val[i] >> 8)
-        res[i * 8 + 2] = byte(val[i] >> 16)
-        res[i * 8 + 3] = byte(val[i] >> 24)
-    }
+	res := make([]byte, len(val)*8)
+	for i := 0; i < len(val); i++ {
+		res[i*8] = byte(val[i])
+		res[i*8+1] = byte(val[i] >> 8)
+		res[i*8+2] = byte(val[i] >> 16)
+		res[i*8+3] = byte(val[i] >> 24)
+	}
 
-    return res
+	return res
 }
 
 func opToMontMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	params_offsets := scope.Stack.pop()
-    elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
+	elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
 
-	out_offset := uint64(byte(params_offsets[0] >> 16)) * elemSize
-	input_offset := uint64(byte(params_offsets[0] >> 8)) * elemSize
+	out_offset := uint64(byte(params_offsets[0]>>16)) * elemSize
+	input_offset := uint64(byte(params_offsets[0]>>8)) * elemSize
 
-    out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
-    input_bytes := scope.Memory.GetPtr(int64(input_offset), int64(elemSize))
-    r_squared_bytes := uint64_array_to_le_bytes(scope.EVMMAXField.RSquared())
+	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
+	input_bytes := scope.Memory.GetPtr(int64(input_offset), int64(elemSize))
+	r_squared_bytes := uint64_array_to_le_bytes(scope.EVMMAXField.RSquared())
 
-    if err := scope.EVMMAXField.MulMont(scope.EVMMAXField, out_bytes, input_bytes, r_squared_bytes); err != nil {
-        return nil, ErrOutOfGas
-    }
+	if err := scope.EVMMAXField.MulMont(scope.EVMMAXField, out_bytes, input_bytes, r_squared_bytes); err != nil {
+		return nil, ErrOutOfGas
+	}
 	return nil, nil
 }
 
@@ -278,18 +277,18 @@ func opAddmod(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	if z.IsZero() {
 		z.Clear()
 	} else {
-        //fmt.Printf("Addmod %s * %s mod %s = ", x.String(), y.String(), z.String())
+		//fmt.Printf("Addmod %s * %s mod %s = ", x.String(), y.String(), z.String())
 		z.AddMod(&x, &y, z)
-        //fmt.Printf("%s\n", z.String())
+		//fmt.Printf("%s\n", z.String())
 	}
 	return nil, nil
 }
 
 func opMulmod(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	x, y, z := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.peek()
-    //fmt.Printf("Mulmod %s * %s mod %s = ", x.String(), y.String(), z.String())
+	//fmt.Printf("Mulmod %s * %s mod %s = ", x.String(), y.String(), z.String())
 	z.MulMod(&x, &y, z)
-    //fmt.Printf("%s\n", z.String())
+	//fmt.Printf("%s\n", z.String())
 	return nil, nil
 }
 

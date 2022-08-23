@@ -441,33 +441,31 @@ func gasSelfdestruct(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, 
 }
 
 func gasSetModMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
-	params_offsets := scope.Stack.peek()
+	mod_offset := scope.Stack.peek()[0]
+	mod_limb_count := scope.Stack.Back(1)[0]
 
-	mod_offset := uint64(byte(params_offsets[0])) * 8
-	mod_limb_count := uint64(byte(params_offsets[0] >> 8))
-
-    if mod_offset + mod_limb_count * 8 > uint64(scope.Memory.Len()) || mod_limb_count == 0 || uint(mod_limb_count) > params.EVMMAXMaxLimbCount {
-        return 0, ErrOutOfGas
-    }
+	if mod_offset+mod_limb_count*8 > uint64(scope.Memory.Len()) || mod_limb_count == 0 || uint(mod_limb_count) > params.EVMMAXMaxLimbCount {
+		return 0, ErrOutOfGas
+	}
 
 	return 0, nil
 }
 
 func gasAddModMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
-    //fmt.Println("gasAddMod")
-    return 0, nil // TODO charge static cost based on configured limb-count
+	//fmt.Println("gasAddMod")
+	return 0, nil // TODO charge static cost based on configured limb-count
 }
 
 func gasSubModMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
-    //fmt.Println("gasSubMod")
-    return 0, nil // TODO charge static cost based on configured limb-count
+	//fmt.Println("gasSubMod")
+	return 0, nil // TODO charge static cost based on configured limb-count
 }
 
 func gasMulMontMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
-    //fmt.Println("gasMulMont")
-    return 0, nil // TODO charge static cost based on configured limb-count
+	//fmt.Println("gasMulMont")
+	return 0, nil // TODO charge static cost based on configured limb-count
 }
 
 func gasToMontMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
-    return 0, nil // TODO charge static cost based on configured limb-count
+	return 0, nil // TODO charge static cost based on configured limb-count
 }
