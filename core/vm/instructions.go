@@ -107,11 +107,9 @@ func opAddModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
 	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
-	//fmt.Printf("addmod: %x * %x=", x_bytes, y_bytes)
 	if err := scope.EVMMAXField.AddMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
 		return nil, ErrOutOfGas
 	}
-	//fmt.Printf("%x\n", out_bytes)
 	return nil, nil
 }
 
@@ -127,11 +125,9 @@ func opSubModMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
 	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
-	//fmt.Printf("submod: %x * %x=", x_bytes, y_bytes)
 	if err := scope.EVMMAXField.SubMod(scope.EVMMAXField, out_bytes, x_bytes, y_bytes); err != nil {
 		return nil, ErrOutOfGas
 	}
-	//fmt.Printf("%x\n", out_bytes)
 	return nil, nil
 }
 
@@ -169,7 +165,7 @@ func opToMontMAX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	params_offsets := scope.Stack.pop()
 	elemSize := uint64(scope.EVMMAXField.NumLimbs) * 8
 
-	out_offset := uint64(byte(params_offsets[0]>>16)) * elemSize
+	out_offset := uint64(byte(params_offsets[0])) * elemSize
 	input_offset := uint64(byte(params_offsets[0]>>8)) * elemSize
 
 	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
@@ -277,18 +273,14 @@ func opAddmod(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	if z.IsZero() {
 		z.Clear()
 	} else {
-		//fmt.Printf("Addmod %s * %s mod %s = ", x.String(), y.String(), z.String())
 		z.AddMod(&x, &y, z)
-		//fmt.Printf("%s\n", z.String())
 	}
 	return nil, nil
 }
 
 func opMulmod(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	x, y, z := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.peek()
-	//fmt.Printf("Mulmod %s * %s mod %s = ", x.String(), y.String(), z.String())
 	z.MulMod(&x, &y, z)
-	//fmt.Printf("%s\n", z.String())
 	return nil, nil
 }
 
