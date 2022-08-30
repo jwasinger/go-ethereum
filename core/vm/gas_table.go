@@ -18,6 +18,7 @@ package vm
 
 import (
 	"errors"
+    "fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -444,9 +445,16 @@ func gasSetModMAX(evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, err
 	mod_offset := scope.Stack.peek()[0]
 	mod_limb_count := scope.Stack.Back(1)[0]
 
-	if mod_offset+mod_limb_count*8 > uint64(scope.Memory.Len()) || mod_limb_count == 0 || uint(mod_limb_count) > params.EVMMAXMaxLimbCount {
-		return 0, ErrOutOfGas
+    if uint(mod_limb_count) > params.EVMMAXMaxLimbCount {
+		return 0, errors.New(fmt.Sprintf("mod limb count is greater than the max allowed (%d)", params.EVMMAXMaxLimbCount))
 	}
+	if mod_offset+mod_limb_count*8 > uint64(scope.Memory.Len()){
+        return 0, errors.New("mod_offset+size is beyond the bounds of allocated memory")
+    }
+    if mod_limb_count == 0 {
+        return 0, errors.New("mod limb count is 0")
+    }
+
 
 	return 0, nil
 }
