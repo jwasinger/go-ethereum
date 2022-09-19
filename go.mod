@@ -109,3 +109,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/supranational/blst => github.com/jwasinger/blst v0.2.1-0.20220919235051-abce38d40f60
