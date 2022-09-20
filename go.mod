@@ -110,4 +110,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/supranational/blst => github.com/jwasinger/blst v0.2.1-0.20220919235030-44a43c69ed9e
+replace github.com/supranational/blst => github.com/jwasinger/blst v0.2.1-0.20220920002653-22f75e9e0394
