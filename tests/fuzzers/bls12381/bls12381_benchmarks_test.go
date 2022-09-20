@@ -13,13 +13,13 @@ import (
 func BenchmarkPairing(b *testing.B) {
 	input := rand.Reader
 	// get random G1 points
-	kpG1, cpG1, blG1, err := getG1Points(input)
+	kpG1, cpG1, blG1, err := GetG1Points(input)
 	if err != nil {
 		panic(err)
 	}
 
 	// get random G2 points
-	kpG2, cpG2, blG2, err := getG2Points(input)
+	kpG2, cpG2, blG2, err := GetG2Points(input)
 	if err != nil {
 		panic(err)
 	}
