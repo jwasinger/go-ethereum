@@ -202,4 +202,3 @@ func FuzzCrossG1MultiExp(data []byte) int {
 
 	return 1
 }
-
