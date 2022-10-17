@@ -90,6 +90,12 @@ func newShanghaiInstructionSet() JumpTable {
 	instructionSet := newMergeInstructionSet()
 	enable3855(&instructionSet) // PUSH0 instruction
 	enable3860(&instructionSet) // Limit and meter initcode
+	instructionSet[SELFDESTRUCT] = &operation{
+		execute:    opSelfdestruct6780,
+		dynamicGas: gasSelfdestructEIP3529,
+		minStack:   minStack(1, 0),
+		maxStack:   maxStack(1, 0),
+	}
 	return validate(instructionSet)
 }
 
