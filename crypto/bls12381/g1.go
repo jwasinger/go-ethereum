@@ -20,6 +20,7 @@ import (
 	"errors"
 	"math"
 	"math/big"
+    "fmt"
 )
 
 // PointG1 is type for point in G1.
@@ -343,13 +344,16 @@ func (g *G1) Sub(c, a, b *PointG1) *PointG1 {
 
 // MulScalar multiplies a point by given scalar value in big.Int and assigns the result to point at first argument.
 func (g *G1) MulScalar(c, p *PointG1, e *big.Int) *PointG1 {
+    fmt.Printf("scalar = %s\n", e.String())
 	q, n := &PointG1{}, &PointG1{}
 	n.Set(p)
 	l := e.BitLen()
 	for i := 0; i < l; i++ {
 		if e.Bit(i) == 1 {
+            fmt.Println("add")
 			g.Add(q, q, n)
 		}
+        fmt.Println("double")
 		g.Double(n, n)
 	}
 	return c.Set(q)
