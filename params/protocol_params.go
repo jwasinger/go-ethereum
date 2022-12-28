@@ -172,5 +172,5 @@ var (
 var EVMMAXMaxInputSize uint64 = 16
 
 var EVMMAXSetmodxCost [16]uint64 = [16]uint64{79,83,86,90,94,98,102,105,109,113,117,121,124,128,132,136}
-var EVMMAXAddmodxCost [16]uint64 = [16]uint64{1,1,1,1,2,2,2,2,2,3,3,3,3,3,4,4}
-var EVMMAXMulmontxCost [16]uint64 = [16]uint64{1,1,2,2,3,4,6,7,9,11,13,15,18,20,23,26}
+var EVMMAXAddmodxCost [16]uint64 = [16]uint64{1,1,1,1,2,1,2,2,2,3,3,3,3,3,4,4}
+var EVMMAXMulmontxCost [16]uint64 = [16]uint64{1,1,2,2,3,2,6,7,9,11,13,15,18,20,23,26}

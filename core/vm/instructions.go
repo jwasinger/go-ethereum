@@ -104,7 +104,7 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 
 	mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_size)*8)
 
-    field := evmmax_arith.NewField(evmmax_arith.DefaultPreset())
+    field := evmmax_arith.NewField(evmmax_arith.Asm384Preset())
 	scope.EVMMAXState = &EVMMAXState{
         *field,
         params.EVMMAXAddmodxCost[mod_size - 1],
