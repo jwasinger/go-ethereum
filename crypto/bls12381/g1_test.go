@@ -261,6 +261,16 @@ func BenchmarkG1Add(t *testing.B) {
 	}
 }
 
+func BenchmarkG1MulWorstCase(t *testing.B) {
+	g1 := NewG1()
+    worstCaseScalar, _ := new(big.Int).SetString("57896044618658097711785492504343953926634992332820282019728792003956564819967", 10) // (1 << 255) - 1
+	a, e, c := g1.rand(), worstCaseScalar, PointG1{}
+	t.ResetTimer()
+	for i := 0; i < t.N; i++ {
+		g1.MulScalar(&c, a, e)
+	}
+}
+
 func BenchmarkG1Mul(t *testing.B) {
 	g1 := NewG1()
 	a, e, c := g1.rand(), q, PointG1{}
