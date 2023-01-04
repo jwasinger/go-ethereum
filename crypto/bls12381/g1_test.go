@@ -271,7 +271,7 @@ func BenchmarkG1MulWorstCase(t *testing.B) {
 	}
 }
 
-func BenchmarkG1Mul(t *testing.B) {
+func BenchmarkG1MulAvgCase(t *testing.B) {
 	g1 := NewG1()
 	a, e, c := g1.rand(), q, PointG1{}
 	t.ResetTimer()
