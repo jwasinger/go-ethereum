@@ -103,6 +103,7 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
     evmmax_mem_start := evmmax_mem_start_stack.Uint64()
 
 	mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_size)*8)
+    modLimbs := evmmax_arith.IntToLimbs(evmmax_arith.LEBytesToInt(mod_bytes), uint(mod_size))
 
     field := evmmax_arith.NewField(evmmax_arith.DefaultPreset())
 	scope.EVMMAXState = &EVMMAXState{
@@ -112,7 +113,7 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
         evmmax_mem_start,
     }
 
-	if err := scope.EVMMAXState.field.SetMod(mod_bytes); err != nil {
+	if err := scope.EVMMAXState.field.SetMod(modLimbs); err != nil {
 		return nil, ErrOutOfGas
 	}
 	return nil, nil
@@ -172,6 +173,19 @@ func opMulMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
+func uint64_array_to_le_bytes(val []uint64) []byte {
+    res := make([]byte, len(val)*8)
+    for i := 0; i < len(val); i++ {
+        res[i*8] = byte(val[i])
+        res[i*8+1] = byte(val[i] >> 8)
+        res[i*8+2] = byte(val[i] >> 16)
+        res[i*8+3] = byte(val[i] >> 24)
+    }
+
+    return res
+}
+
+
 func opToMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := scope.EVMMAXState.field.ElementSize
 
@@ -183,7 +197,7 @@ func opToMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 
 	out_bytes := scope.Memory.GetPtr(int64(output_offset), int64(elemSize))
 	input_bytes := scope.Memory.GetPtr(int64(input_offset), int64(elemSize))
-	r_squared_bytes := scope.EVMMAXState.field.RSquared()
+    r_squared_bytes := uint64_array_to_le_bytes(scope.EVMMAXState.field.RSquared())
 
 	if err := scope.EVMMAXState.field.MulMont(&scope.EVMMAXState.field, out_bytes, input_bytes, r_squared_bytes); err != nil {
 		return nil, ErrOutOfGas
