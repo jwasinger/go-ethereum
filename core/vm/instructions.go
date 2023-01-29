@@ -118,6 +118,7 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
+/*
 func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := scope.EVMMAXState.field.ElementSize
 
@@ -135,6 +136,7 @@ func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	}
 	return nil, nil
 }
+*/
 
 func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := scope.EVMMAXState.field.ElementSize
