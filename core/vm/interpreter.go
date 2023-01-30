@@ -47,9 +47,9 @@ type EVMMAXState struct {
 // ScopeContext contains the things that are per-call, such as stack and memory,
 // but not transients like pc and gas
 type ScopeContext struct {
+	Contract    *Contract
 	Memory      *Memory
 	Stack       *Stack
-	Contract    *Contract
     EVMMAXState *EVMMAXState
 }
 
