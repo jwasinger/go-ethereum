@@ -18,6 +18,7 @@ package vm
 
 import (
 	"hash"
+    "fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -253,6 +254,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		if err != nil {
 			break
 		}
+        fmt.Printf("pc is %d\n", pc)
+        fmt.Println(len(callContext.Memory.store))
 		pc++
 	}
 
