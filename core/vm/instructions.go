@@ -105,7 +105,7 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_size)*8)
     modLimbs := evmmax_arith.IntToLimbs(evmmax_arith.LEBytesToInt(mod_bytes), uint(mod_size))
 
-    field := evmmax_arith.NewField(evmmax_arith.DefaultPreset())
+    field := evmmax_arith.NewField(evmmax_arith.Asm384Preset())
 	scope.EVMMAXState = &EVMMAXState{
         *field,
         params.EVMMAXAddmodxCost[mod_size - 1],
@@ -119,25 +119,57 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := scope.EVMMAXState.field.ElementSize
 
+    _ = scope.Contract.Code[*pc + 1]
 	out_offset := uint64(scope.Contract.Code[*pc+1]) * elemSize
 	x_offset := uint64(scope.Contract.Code[*pc+2]) * elemSize
 	y_offset := uint64(scope.Contract.Code[*pc+3]) * elemSize
 	*pc += 3
 
-	out_bytes := scope.Memory.GetPtr(int64(out_offset), int64(elemSize))
-	x_bytes := scope.Memory.GetPtr(int64(x_offset), int64(elemSize))
-	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
+    // TODO check if max accessed index pre-hint makes a difference here
+    out_bytes := scope.Memory.store[out_offset:out_offset + elemSize]
+    x_bytes := scope.Memory.store[x_offset:x_offset + elemSize]
+    y_bytes := scope.Memory.store[y_offset:y_offset + elemSize]
 
-	if err := scope.EVMMAXState.field.SubMod(&scope.EVMMAXState.field, out_bytes, x_bytes, y_bytes); err != nil {
-		return nil, ErrOutOfGas
-	}
+	scope.EVMMAXState.field.AddMod(&scope.EVMMAXState.field, out_bytes, x_bytes, y_bytes)
+	return nil, nil
+}
+
+func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	elemSize := scope.EVMMAXState.field.ElementSize
+
+    _ = scope.Contract.Code[*pc + 1]
+	out_offset := uint64(scope.Contract.Code[*pc+1]) * elemSize
+	x_offset := uint64(scope.Contract.Code[*pc+2]) * elemSize
+	y_offset := uint64(scope.Contract.Code[*pc+3]) * elemSize
+	*pc += 3
+
+    // TODO check if max accessed index pre-hint makes a difference here
+    out_bytes := scope.Memory.store[out_offset:out_offset + elemSize]
+    x_bytes := scope.Memory.store[x_offset:x_offset + elemSize]
+    y_bytes := scope.Memory.store[y_offset:y_offset + elemSize]
+
+	scope.EVMMAXState.field.SubMod(&scope.EVMMAXState.field, out_bytes, x_bytes, y_bytes)
 	return nil, nil
 }
 
 func opMulMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	elemSize := scope.EVMMAXState.field.ElementSize
+
+    _ = scope.Contract.Code[*pc + 1]
+	out_offset := uint64(scope.Contract.Code[*pc+1]) * elemSize
+	x_offset := uint64(scope.Contract.Code[*pc+2]) * elemSize
+	y_offset := uint64(scope.Contract.Code[*pc+3]) * elemSize
+	*pc += 3
+
+    // TODO check if max accessed index pre-hint makes a difference here
+    out_bytes := scope.Memory.store[out_offset:out_offset + elemSize]
+    x_bytes := scope.Memory.store[x_offset:x_offset + elemSize]
+    y_bytes := scope.Memory.store[y_offset:y_offset + elemSize]
+
+	scope.EVMMAXState.field.MulMont(&scope.EVMMAXState.field, out_bytes, x_bytes, y_bytes)
 	return nil, nil
 }
 
