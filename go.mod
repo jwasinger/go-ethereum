@@ -85,7 +85,7 @@ require (
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/influxdata/line-protocol v0.0.0-20210311194329-9aa0e372d097 // indirect
-	github.com/jwasinger/evmmax-arith v0.0.0-20221227020559-e21ae24b675a // indirect
+	github.com/jwasinger/evmmax-arith v0.0.0-20230210212343-68a0cb69283e // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
@@ -105,3 +105,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/jwasinger/evmmax-arith => /home/jared/projects/evmmax-arith

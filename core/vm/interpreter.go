@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/jwasinger/evmmax-arith"
+	"github.com/go-ethereum/core/vm/evmmax-arith"
 )
 
 // Config are the configuration options for the Interpreter

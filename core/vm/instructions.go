@@ -18,12 +18,13 @@ package vm
 
 import (
 	"sync/atomic"
+    "fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/jwasinger/evmmax-arith"
+	"github.com/ethereum/go-ethereum/core/vm/evmmax"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -81,18 +82,6 @@ func opSignExtend(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	return nil, nil
 }
 
-func calcGasCostSetmodx(input_size uint64) uint64 {
-    return 1
-}
-
-func calcGasCostAddmodx(input_size uint64) uint64 {
-    return 2
-}
-
-func calcGasCostMulmontx(input_size uint64) uint64 {
-    return 4
-}
-
 func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	mod_offset_stack := scope.Stack.pop()
 	mod_limbs_stack := scope.Stack.pop()
@@ -104,11 +93,9 @@ func opSetModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 
 	mod_bytes := scope.Memory.GetPtr(int64(mod_offset), int64(mod_size)*8)
 
-    field := evmmax_arith.NewField(evmmax_arith.DefaultPreset())
+    field := evmmax.NewField(evmmax.DefaultPreset())
 	scope.EVMMAXState = &EVMMAXState{
-        *field,
-        params.EVMMAXAddmodxCost[mod_size - 1],
-        params.EVMMAXMulmontxCost[mod_size - 1],
+        evmmax.NewField(),
         evmmax_mem_start,
     }
 
@@ -167,6 +154,7 @@ func opMulMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	y_bytes := scope.Memory.GetPtr(int64(y_offset), int64(elemSize))
 
 	if err := scope.EVMMAXState.field.MulMont(&scope.EVMMAXState.field, out_bytes, x_bytes, y_bytes); err != nil {
+        fmt.Println(err)
 		return nil, ErrOutOfGas
 	}
 	return nil, nil
@@ -186,6 +174,7 @@ func opToMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	r_squared_bytes := scope.EVMMAXState.field.RSquared()
 
 	if err := scope.EVMMAXState.field.MulMont(&scope.EVMMAXState.field, out_bytes, input_bytes, r_squared_bytes); err != nil {
+        fmt.Println(err)
 		return nil, ErrOutOfGas
 	}
 	return nil, nil

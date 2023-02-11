@@ -18,6 +18,7 @@ package vm
 
 import (
 	"errors"
+    "fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -500,7 +501,9 @@ func gasMulMontX(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (u
 	x_offset := uint64(scope.Contract.Code[pc+2]) * elemSize
 	y_offset := uint64(scope.Contract.Code[pc+3]) * elemSize
 
-    if max(max(x_offset, y_offset), out_offset) + elemSize >= uint64(scope.Memory.Len()) {
+    if max(max(x_offset, y_offset), out_offset) + elemSize > uint64(scope.Memory.Len()) {
+        fmt.Println("foo")
+        fmt.Printf("x_offset=%d\ny_offset=%d\nout_offset=%d\nmemory_len=%d\n", x_offset, y_offset, out_offset, scope.Memory.Len())
         return 0, ErrOutOfGas
     }
     return scope.EVMMAXState.gasCostMulmontx, nil
@@ -515,6 +518,7 @@ func gasToMontX(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (ui
     maxOffset := uint64(max(input_offset, output_offset)) + scope.EVMMAXState.field.ElementSize
 
 	if maxOffset >= uint64(scope.Memory.Len()) {
+        fmt.Println("asdf")
 		return 0, ErrOutOfGas
 	}
     return scope.EVMMAXState.gasCostMulmontx, nil
