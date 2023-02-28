@@ -65,6 +65,13 @@ const (
 // 0x20 range - crypto.
 const (
 	KECCAK256 OpCode = 0x20
+	// these really should be arithmetic ops but I ran out of free opcodes
+	SETUPX   OpCode = 0x21
+	ADDMODX  OpCode = 0x22
+	SUBMODX  OpCode = 0x23
+	MULMONTX OpCode = 0x24
+	LOADX    OpCode = 0x25
+	STOREX   OpCode = 0x26
 )
 
 // 0x30 range - closure state.
@@ -245,6 +252,10 @@ var opCodeToString = map[OpCode]string{
 	EQ:         "EQ",
 	ISZERO:     "ISZERO",
 	SIGNEXTEND: "SIGNEXTEND",
+	SETUPX:     "SETUPX",
+	ADDMODX:    "ADDMODX",
+	SUBMODX:    "SUBMODX",
+	MULMONTX:   "MULMONTX",
 
 	// 0x10 range - bit ops.
 	AND:    "AND",
