@@ -299,6 +299,40 @@ func gasCreate2(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (ui
 	return gas, nil
 }
 
+func gasCreateEip3860(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(scope.Memory, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	size, overflow := scope.Stack.Back(2).Uint64WithOverflow()
+	if overflow || size > params.MaxInitCodeSize {
+		return 0, ErrGasUintOverflow
+	}
+	// Since size <= params.MaxInitCodeSize, these multiplication cannot overflow
+	moreGas := params.InitCodeWordGas * ((size + 31) / 32)
+	if gas, overflow = math.SafeAdd(gas, moreGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
+}
+
+func gasCreate2Eip3860(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(scope.Memory, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	size, overflow := scope.Stack.Back(2).Uint64WithOverflow()
+	if overflow || size > params.MaxInitCodeSize {
+		return 0, ErrGasUintOverflow
+	}
+	// Since size <= params.MaxInitCodeSize, these multiplication cannot overflow
+	moreGas := (params.InitCodeWordGas + params.Keccak256WordGas) * ((size + 31) / 32)
+	if gas, overflow = math.SafeAdd(gas, moreGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
+}
+
 func gasExpFrontier(pc uint64, evm *EVM, scope *ScopeContext, memorySize uint64) (uint64, error) {
 	expByteLen := uint64((scope.Stack.data[scope.Stack.len()-2].BitLen() + 7) / 8)
 
