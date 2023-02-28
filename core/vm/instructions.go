@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"errors"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -77,6 +78,152 @@ func opExp(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 func opSignExtend(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	back, num := scope.Stack.pop(), scope.Stack.peek()
 	num.ExtendSign(num, &back)
+	return nil, nil
+}
+
+func opSetupX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	modIdxStack := scope.Stack.pop()
+	modOffsetStack := scope.Stack.pop()
+	modSizeStack := scope.Stack.pop()
+	valsUsedStack := scope.Stack.pop()
+
+	modIdx := uint(modIdxStack.Uint64())
+	modOffset := modOffsetStack.Uint64()
+	modSize := modSizeStack.Uint64()
+	valsUsed := uint(valsUsedStack.Uint64())
+
+	modBytes := scope.Memory.GetPtr(int64(modOffset), int64(modSize))
+
+	if err := scope.EVMMAXState.Setup(modIdx, valsUsed, modBytes); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
+
+	out_offset := uint64(scope.Contract.Code[*pc+1])
+	x_offset := uint64(scope.Contract.Code[*pc+2])
+	y_offset := uint64(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
+
+	if uint(out_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(x_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(y_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed {
+		return nil, errors.New("offset out of bounds")
+	}
+
+	out_offset *= elemSize
+	x_offset *= elemSize
+	y_offset *= elemSize
+
+	out_bytes := evmmaxMem[out_offset : out_offset+elemSize]
+	x_bytes := evmmaxMem[x_offset : x_offset+elemSize]
+	y_bytes := evmmaxMem[y_offset : y_offset+elemSize]
+
+	scope.EVMMAXState.ActiveModulus.AddMod(scope.EVMMAXState.ActiveModulus, out_bytes, x_bytes, y_bytes)
+	return nil, nil
+}
+
+func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
+
+	out_offset := uint64(scope.Contract.Code[*pc+1])
+	x_offset := uint64(scope.Contract.Code[*pc+2])
+	y_offset := uint64(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
+
+	if uint(out_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(x_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(y_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed {
+		return nil, errors.New("offset out of bounds")
+	}
+
+	out_offset *= elemSize
+	x_offset *= elemSize
+	y_offset *= elemSize
+
+	out_bytes := evmmaxMem[out_offset : out_offset+elemSize]
+	x_bytes := evmmaxMem[x_offset : x_offset+elemSize]
+	y_bytes := evmmaxMem[y_offset : y_offset+elemSize]
+
+	scope.EVMMAXState.ActiveModulus.SubMod(scope.EVMMAXState.ActiveModulus, out_bytes, x_bytes, y_bytes)
+	return nil, nil
+}
+
+func opMulMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
+
+	out_offset := uint64(scope.Contract.Code[*pc+1])
+	x_offset := uint64(scope.Contract.Code[*pc+2])
+	y_offset := uint64(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
+
+	if uint(out_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(x_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed ||
+		uint(y_offset) >= scope.EVMMAXState.ActiveModulus.ValsUsed {
+		return nil, errors.New("offset out of bounds")
+	}
+
+	out_offset *= elemSize
+	x_offset *= elemSize
+	y_offset *= elemSize
+
+	out_bytes := evmmaxMem[out_offset : out_offset+elemSize]
+	x_bytes := evmmaxMem[x_offset : x_offset+elemSize]
+	y_bytes := evmmaxMem[y_offset : y_offset+elemSize]
+
+	scope.EVMMAXState.ActiveModulus.MulMont(scope.EVMMAXState.ActiveModulus, out_bytes, x_bytes, y_bytes)
+	return nil, nil
+}
+
+func opLoadX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	modIdxStack := scope.Stack.pop()
+	dstOffsetStack := scope.Stack.pop()
+	valIdxStack := scope.Stack.pop()
+	numEltsStack := scope.Stack.pop()
+
+	modIdx := uint(modIdxStack.Uint64())
+	dstOffset := dstOffsetStack.Uint64()
+	numElts := numEltsStack.Uint64()
+	valIdx := uint(valIdxStack.Uint64())
+
+	elemSize := uint64(scope.EVMMAXState.GetElemSize(modIdx))
+	dstBuf := scope.Memory.GetPtr(int64(dstOffset), int64(elemSize*numElts))
+
+	modState := scope.EVMMAXState.GetModState(modIdx)
+	if modState == nil {
+		return nil, errors.New("modState didn't exist for idx")
+	}
+	modState.LoadValues(dstBuf, valIdx)
+	return nil, nil
+}
+
+func opStoreX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	modIdxStack := scope.Stack.pop()
+	dstValIdxStack := scope.Stack.pop()
+	offsetStack := scope.Stack.pop()
+	numEltsStack := scope.Stack.pop()
+
+	modIdx := uint(modIdxStack.Uint64())
+	dstValIdx := uint(dstValIdxStack.Uint64())
+	numElts := numEltsStack.Uint64()
+	offset := int64(offsetStack.Uint64())
+
+	elemSize := uint64(scope.EVMMAXState.GetElemSize(modIdx))
+	srcBytes := scope.Memory.GetPtr(offset, int64(elemSize*numElts))
+
+	if err := scope.EVMMAXState.GetModState(modIdx).StoreValues(srcBytes, dstValIdx); err != nil {
+		return nil, err
+	}
 	return nil, nil
 }
 
