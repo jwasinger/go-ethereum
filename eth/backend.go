@@ -87,6 +87,7 @@ type Ethereum struct {
 
 	APIBackend *EthAPIBackend
 
+	elHook    *elhook.ClientHook
 	miner     *miner.Miner
 	gasPrice  *big.Int
 	etherbase common.Address
