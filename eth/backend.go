@@ -18,6 +18,7 @@
 package eth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -38,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/elhook"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
@@ -87,7 +89,7 @@ type Ethereum struct {
 
 	APIBackend *EthAPIBackend
 
-	elHook    *elhook.ClientHook
+	elHook    *elhook.ELClientHook
 	miner     *miner.Miner
 	gasPrice  *big.Int
 	etherbase common.Address
@@ -159,7 +161,11 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		bloomIndexer:      core.NewBloomIndexer(chainDb, params.BloomBitsBlocks, params.BloomConfirms),
 		p2pServer:         stack.Server(),
 		shutdownTracker:   shutdowncheck.NewShutdownTracker(chainDb),
+		elHook: new(elhook.ELClientHook),
 	}
+
+	eth.elHook.Connect(context.Background(), "foobar")
+	panic("fuck")
 
 	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
 	var dbVer = "<nil>"
