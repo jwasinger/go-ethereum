@@ -13,8 +13,6 @@ type EngineAPI struct {
 }
 
 const (
-
-
 	exchangeCapabilitiesMethod = "engine_exchangeCapabilities"
 )
 
@@ -33,14 +31,14 @@ func NewWithConnection(ctx context.Context) (*EngineAPI, error) {
 	return &EngineAPI{client}, nil
 }
 
-func (e *EngineAPI) ExchangeCaps(ctx context.Context) ([]string, error) {
+func (e *EngineAPI) ExchangeCapabilities(ctx context.Context, capsRequested []string) ([]string, error) {
 	var result *[]string
 
-	err := e.client.CallContext(ctx, &result, exchangeCapabilitiesMethod, nil)
+	err := e.client.CallContext(ctx, &result, exchangeCapabilitiesMethod, capsRequested)
 	if err != nil {
 		fmt.Println("error")
 		fmt.Println(err)
 	}
 
-	return []string{}, nil
+	return *result, nil
 }

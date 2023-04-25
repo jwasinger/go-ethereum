@@ -12,14 +12,18 @@ type ELClientHook struct {
 func (c *ELClientHook) Connect(ctx context.Context, httpEndpoint string) error {
 	engineAPI, err := NewWithConnection(ctx)
 	if err != nil {
-		fmt.Println("err1")
-		fmt.Println(err)
+		panic(err)
 		return err
 	}
 
-	_ = engineAPI
+	capsRequested := []string{"engine_newPayloadV1"}
+	caps, err := engineAPI.ExchangeCapabilities(ctx, capsRequested)
+	if err != nil {
+		panic(err)
+	}
 
-	panic("success")
+	fmt.Println(caps)
+
 	return nil
 }
 
