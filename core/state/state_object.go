@@ -80,6 +80,9 @@ type stateObject struct {
 	dirtyCode bool // true if the code was updated
 	suicided  bool
 	deleted   bool
+
+	created   bool
+	sendalled bool
 }
 
 // empty returns whether the account is considered empty.

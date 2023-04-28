@@ -474,6 +474,18 @@ func (s *StateDB) Suicide(addr common.Address) bool {
 	return true
 }
 
+func (s *StateDB) SendAll(addr common.Address) bool {
+	stateObject := s.getStateObject(addr)
+	if stateObject == nil {
+		return false
+	}
+	stateObject.sendalled = true
+	stateObject.data.Balance = new(big.Int)
+
+	return true
+
+}
+
 // SetTransientState sets transient storage for a given account. It
 // adds the change to the journal so that it can be rolled back
 // to its previous value if there is a revert.
@@ -656,6 +668,10 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 			prevStorage:  storage,
 		})
 	}
+
+	newobj.created = true
+	newobj.sendalled = false
+
 	s.setStateObject(newobj)
 	if prev != nil && !prev.deleted {
 		return newobj, prev
@@ -864,7 +880,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			// Thus, we can safely ignore it here
 			continue
 		}
-		if obj.suicided || (deleteEmptyObjects && obj.empty()) {
+		if obj.suicided || (deleteEmptyObjects && obj.empty()) || (obj.created && obj.sendalled) {
 			obj.deleted = true
 
 			// We need to maintain account deletions explicitly (will remain
@@ -882,6 +898,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		} else {
 			obj.finalise(true) // Prefetch slots in the background
 		}
+
+		// TODO: want these modifications to be reflected in s.stateObjects. but map values are accessed by value?  but obj.deleted is set above??
+		obj.sendalled = false
+		obj.created = false
+
 		s.stateObjectsPending[addr] = struct{}{}
 		s.stateObjectsDirty[addr] = struct{}{}
 
