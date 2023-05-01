@@ -29,7 +29,7 @@ func LookupInstructionSet(rules params.Rules) (JumpTable, error) {
 	case rules.IsPrague:
 		return newShanghaiInstructionSet(), errors.New("prague-fork not defined yet")
 	case rules.IsCancun:
-		return newShanghaiInstructionSet(), errors.New("cancun-fork not defined yet")
+		return newCancunInstructionSet(), nil
 	case rules.IsShanghai:
 		return newShanghaiInstructionSet(), nil
 	case rules.IsMerge:
