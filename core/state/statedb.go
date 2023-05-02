@@ -479,11 +479,9 @@ func (s *StateDB) SendAll(addr common.Address) bool {
 	if stateObject == nil {
 		return false
 	}
+
 	stateObject.sendalled = true
-	stateObject.data.Balance = new(big.Int)
-
 	return true
-
 }
 
 // SetTransientState sets transient storage for a given account. It

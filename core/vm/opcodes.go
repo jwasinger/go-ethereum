@@ -398,7 +398,7 @@ var opCodeToString = map[OpCode]string{
 	STATICCALL:   "STATICCALL",
 	REVERT:       "REVERT",
 	INVALID:      "INVALID",
-	SELFDESTRUCT: "SELFDESTRUCT", // TODO: rename to self-destruct after EIP-4758 goes in
+	SELFDESTRUCT: "SELFDESTRUCT",
 }
 
 func (op OpCode) String() string {
