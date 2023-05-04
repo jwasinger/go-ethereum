@@ -50,22 +50,40 @@ func (c *ELClientHook) Connect(ctx context.Context, httpEndpoint string) error {
 	return nil
 }
 
-func (c *ELClientHook) Run() {
+// meant to be run in its own go-routine
+func (c *ELClientHook) connectionLifeCycle() {
+	for {
+		err := connLoop()
+		if err == connection_lost {
+			fmt.Println("connection lost attempting to reconnect in x seconds")
+			// TODO: timer sleep x seconds
+			continue
+		}
+		return err
+	}
+}
+
+func (c *ELClientHook) connLoop() error {
 	for {
 		select {
-		// newHead:
-		// 	if not received from EL client, send forkChoiceUpdated to EL
-		//	
-		//	if we can sign:
-		//		send getPayload to EL
-		//		if we aren't in-turn: jiggle and then report the block
-		// timer:
-		//	if we can sign:
-		//		send getPayload to EL
-		//		if we aren't in-turn: jiggle and then report the block
-		// 
-		// quit:
-		//
+		headBlk := <- c.newHeadCh:
+			if el.headBlock != headBlock {
+				if err := c.engineAPI.ForkChoiceUpdated(...); err != nil {
+					return err
+				}
+			}
+		_ := <-c.timerCh:
+			if el_is_syncing {
+				continue
+			}
+			if we_can_sign {
+				// TODO: probably want to move this into a separate go-routine that can be interrupted when a new head block is received
+				payload := c.engineAPI.GetPayload(...)
+				block := convertPayloadToBlock(payload)
+				// TODO forward block to inserter
+			}
+		_ := <-c.quitCh:
+			return nil
 		}
 	}
 }
