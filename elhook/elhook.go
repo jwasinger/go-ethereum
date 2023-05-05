@@ -29,13 +29,16 @@ func checkCaps(caps []string) bool {
 	return true
 }
 
-func (c *ELClientHook) Connect(ctx context.Context, httpEndpoint string) error {
+func NewELConnector(ctx context.Context, httpEndpoint string) (*ELClientHook, error) {
 	engineAPI, err := NewWithConnection(ctx)
 	if err != nil {
 		panic(err)
-		return err
+		return nil, err
 	}
+	return &ELClientHook{engineAPI}, nil
+}
 
+func (c *ELClientHook) Start() error {
 	// TODO: we provide one method and it returns all supported ones right?
 	capsRequested := []string{"engine_newPayloadV1"}
 	caps, err := engineAPI.ExchangeCapabilities(ctx, capsRequested)
@@ -47,23 +50,25 @@ func (c *ELClientHook) Connect(ctx context.Context, httpEndpoint string) error {
 		return errors.New("doesn't have required capability")
 	}
 
+	go connectionLifeCycle()
+
 	return nil
 }
 
 // meant to be run in its own go-routine
-func (c *ELClientHook) connectionLifeCycle() {
+func (c *ELClientHook) connectionLifeCycle() error {
 	for {
-		err := connLoop()
+		err := c.runConnection()
 		if err == connection_lost {
-			fmt.Println("connection lost attempting to reconnect in x seconds")
-			// TODO: timer sleep x seconds
+			fmt.Println("connection lost attempting to reconnect in 5 seconds")
+			time.Sleep(5 * time.Second)
 			continue
 		}
-		return err
+		panic(err)
 	}
 }
 
-func (c *ELClientHook) connLoop() error {
+func (c *ELClientHook) runConnection() error {
 	for {
 		select {
 		headBlk := <- c.newHeadCh:
@@ -73,7 +78,7 @@ func (c *ELClientHook) connLoop() error {
 				}
 			}
 		_ := <-c.timerCh:
-			if el_is_syncing {
+			if el_is_syncing() {
 				continue
 			}
 			if we_can_sign {
