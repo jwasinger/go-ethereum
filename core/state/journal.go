@@ -101,6 +101,9 @@ type (
 		prev        bool // whether account had already suicided
 		prevbalance *big.Int
 	}
+	sendallChange struct {
+		account *common.Address
+	}
 
 	// Changes to individual accounts.
 	balanceChange struct {
@@ -172,6 +175,17 @@ func (ch resetObjectChange) revert(s *StateDB) {
 
 func (ch resetObjectChange) dirtied() *common.Address {
 	return ch.account
+}
+
+func (ch sendallChange) revert(s *StateDB) {
+	obj := s.getStateObject(*ch.account)
+	if obj != nil {
+		obj.sendalled = false
+	}
+}
+
+func (ch sendallChange) dirtied() *common.Address {
+	return nil // TODO: return nil or account here?
 }
 
 func (ch suicideChange) revert(s *StateDB) {

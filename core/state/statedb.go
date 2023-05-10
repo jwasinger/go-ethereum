@@ -480,6 +480,10 @@ func (s *StateDB) SendAll(addr common.Address) bool {
 		return false
 	}
 
+	s.journal.append(sendallChange{
+		account: &addr,
+	})
+
 	stateObject.sendalled = true
 	return true
 }
