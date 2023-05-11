@@ -101,13 +101,17 @@ func opSetupX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	return nil, nil
 }
 
-func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opAddmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
 
-	out_offset := uint64(scope.Contract.Code[*pc+1])
-	x_offset := uint64(scope.Contract.Code[*pc+2])
-	y_offset := uint64(scope.Contract.Code[*pc+3])
-	*pc += 3
+	if len(scope.Contract.Code) < int(*pc+4) || scope.Contract.Code[*pc+1] != byte(PUSH3) {
+		return nil, errors.New("invalid setup")
+	}
+
+	out_offset := uint64(scope.Contract.Code[*pc+2])
+	x_offset := uint64(scope.Contract.Code[*pc+3])
+	y_offset := uint64(scope.Contract.Code[*pc+4])
+	*pc += 4
 
 	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
 
@@ -129,13 +133,17 @@ func opAddModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opSubmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
 
-	out_offset := uint64(scope.Contract.Code[*pc+1])
-	x_offset := uint64(scope.Contract.Code[*pc+2])
-	y_offset := uint64(scope.Contract.Code[*pc+3])
-	*pc += 3
+	if len(scope.Contract.Code) < int(*pc+4) || scope.Contract.Code[*pc+1] != byte(PUSH3) {
+		return nil, errors.New("invalid setup")
+	}
+
+	out_offset := uint64(scope.Contract.Code[*pc+2])
+	x_offset := uint64(scope.Contract.Code[*pc+3])
+	y_offset := uint64(scope.Contract.Code[*pc+4])
+	*pc += 4
 
 	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
 
@@ -157,13 +165,17 @@ func opSubModX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
-func opMulMontX(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opMulmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	elemSize := uint64(scope.EVMMAXState.ActiveModulus.ElemSize)
 
-	out_offset := uint64(scope.Contract.Code[*pc+1])
-	x_offset := uint64(scope.Contract.Code[*pc+2])
-	y_offset := uint64(scope.Contract.Code[*pc+3])
-	*pc += 3
+	if len(scope.Contract.Code) < int(*pc+4) || scope.Contract.Code[*pc+1] != byte(PUSH3) {
+		return nil, errors.New("invalid setup")
+	}
+
+	out_offset := uint64(scope.Contract.Code[*pc+2])
+	x_offset := uint64(scope.Contract.Code[*pc+3])
+	y_offset := uint64(scope.Contract.Code[*pc+4])
+	*pc += 4
 
 	evmmaxMem := scope.EVMMAXState.ActiveModulus.Memory
 

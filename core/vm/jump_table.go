@@ -313,19 +313,19 @@ func newFrontierInstructionSet() JumpTable {
 			maxStack:    maxStack(2, 1),
 		},
 		ADDMODX: {
-			execute:     opAddModX,
+			execute:     opAddmodx,
 			constantGas: 1,
 			minStack:    minStack(0, 0),
 			maxStack:    maxStack(0, 0),
 		},
 		SUBMODX: {
-			execute:     opSubModX,
+			execute:     opSubmodx,
 			constantGas: 1,
 			minStack:    minStack(0, 0),
 			maxStack:    maxStack(0, 0),
 		},
-		MULMONTX: {
-			execute:     opMulMontX,
+		MULMODX: {
+			execute:     opMulmodx,
 			constantGas: 2,
 			minStack:    minStack(0, 0),
 			maxStack:    maxStack(0, 0),
