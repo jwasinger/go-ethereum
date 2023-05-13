@@ -183,6 +183,30 @@ func extractSignature(header *types.Header) []byte {
 	}
 }
 
+func insertSignature(header *types.Header, sig [crypto.SignatureLength]byte) {
+	headerTypeSelector := header.ExtraData()[0]
+	switch {
+	case defaultHeader:
+		res := defaultData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+	case voteHeader:
+		res := voteData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+	case checkpointHeader:
+		res := checkpointData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+	}
+}
+
 // ecrecover extracts the Ethereum account address from a signed header.
 func ecrecover(header *types.Header, sigcache *sigLRU) (common.Address, error) {
 	// If the signature's already cached, return that
@@ -561,12 +585,20 @@ func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 		}
 		// If there's pending proposals, cast a vote on them
 		if len(addresses) > 0 {
-			header.Coinbase = addresses[rand.Intn(len(addresses))]
-			if c.proposals[header.Coinbase] {
-				copy(header.Nonce[:], nonceAuthVote)
+			targetAddr := addresses[rand.Intn(len(addresses))]
+			var action byte
+			if c.proposals[targetAddr] {
+				action = nonceAuthVote
 			} else {
-				copy(header.Nonce[:], nonceDropVote)
+				action = nonceDropVote
 			}
+			vote := voteData{}
+			vote.target = targetAddr
+			vote.action = action
+
+			actionRlp, err := rlp.EncodeToBytes(&vote)
+			// TODO: handle graffiti/vanity here
+			header.ExtraData := append([]byte{voteHeader}, actionRlp)
 		}
 	}
 
@@ -574,8 +606,8 @@ func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 	signer := c.signer
 	c.lock.RUnlock()
 
-	// Set the correct difficulty
-	header.Difficulty = calcDifficulty(snap, signer)
+	// Set the correct difficulty in repurposed random field
+	header.Random = calcDifficulty(snap, signer).ToBytes()
 
 	// Ensure the extra data has all its components
 	if len(header.Extra) < extraVanity {
@@ -584,11 +616,27 @@ func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 	header.Extra = header.Extra[:extraVanity]
 
 	if number%c.config.Epoch == 0 {
+		var data checkpointData
+		data.signers = make([]common.Address)
 		for _, signer := range snap.signers() {
-			header.Extra = append(header.Extra, signer[:]...)
+			data.signers = append(data.signers, signer[:]...)
 		}
+
+		encoded, err := rlp.EncodeToBytes(&data)
+		if err != nil {
+			// TODO do something here
+		}
+		header.Extra = encoded
+	} else {
+		// not a checkpoint block. not a voting block.
+		// prepare a default block
+		var data defaultData
+		encoded, err := rlp.EncodeToBytes(&data)
+		if err != nil {
+			// TODO do something here
+		}
+		header.Extra = encoded
 	}
-	header.Extra = append(header.Extra, make([]byte, extraSeal)...)
 
 	// Mix digest is reserved for now, set to empty
 	header.MixDigest = common.Hash{}
@@ -623,6 +671,7 @@ func (c *Clique) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
+	header.Extra
 	// TODO: sign the header
 	// TODO: insert signature into header
 
