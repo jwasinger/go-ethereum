@@ -69,7 +69,7 @@ type voteData struct {
 	vanity [32]byte
 	sig [crypto.SignatureLength]byte
 	target common.Address
-	action byte
+	action byte // ff = add, 00 = remove
 }
 
 type defaultData struct {
@@ -206,7 +206,7 @@ func ecrecover(header *types.Header, sigcache *sigLRU) (common.Address, error) {
 
 // Clique is the proof-of-authority consensus engine proposed to support the
 // Ethereum testnet following the Ropsten attacks.
-type Clique struct {
+type ClClique struct {
 	config *params.CliqueConfig // Consensus engine configuration parameters
 	db     ethdb.Database       // Database to store and retrieve snapshot checkpoints
 
@@ -276,79 +276,6 @@ func (c *Clique) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*typ
 	return abort, results
 }
 
-// verifyHeader checks whether a header conforms to the consensus rules.The
-// caller may optionally pass in a batch of parents (ascending order) to avoid
-// looking those up from the database. This is useful for concurrently verifying
-// a batch of new headers.
-func (c *Clique) verifyHeader(chain consensus.ChainHeaderReader, header *types.Header, parents []*types.Header) error {
-	if header.Number == nil {
-		return errUnknownBlock
-	}
-	number := header.Number.Uint64()
-
-	// Don't waste time checking blocks from the future
-	if header.Time > uint64(time.Now().Unix()) {
-		return consensus.ErrFutureBlock
-	}
-	// Checkpoint blocks need to enforce zero beneficiary
-	checkpoint := (number % c.config.Epoch) == 0
-	if checkpoint && header.Coinbase != (common.Address{}) {
-		return errInvalidCheckpointBeneficiary
-	}
-	// Nonces must be 0x00..0 or 0xff..f, zeroes enforced on checkpoints
-	if !bytes.Equal(header.Nonce[:], nonceAuthVote) && !bytes.Equal(header.Nonce[:], nonceDropVote) {
-		return errInvalidVote
-	}
-	if checkpoint && !bytes.Equal(header.Nonce[:], nonceDropVote) {
-		return errInvalidCheckpointVote
-	}
-	// Check that the extra-data contains both the vanity and signature
-	if len(header.Extra) < extraVanity {
-		return errMissingVanity
-	}
-	if len(header.Extra) < extraVanity+extraSeal {
-		return errMissingSignature
-	}
-	// Ensure that the extra-data contains a signer list on checkpoint, but none otherwise
-	signersBytes := len(header.Extra) - extraVanity - extraSeal
-	if !checkpoint && signersBytes != 0 {
-		return errExtraSigners
-	}
-	if checkpoint && signersBytes%common.AddressLength != 0 {
-		return errInvalidCheckpointSigners
-	}
-	// Ensure that the mix digest is zero as we don't have fork protection currently
-	if header.MixDigest != (common.Hash{}) {
-		return errInvalidMixDigest
-	}
-	// Ensure that the block doesn't contain any uncles which are meaningless in PoA
-	if header.UncleHash != uncleHash {
-		return errInvalidUncleHash
-	}
-	// Ensure that the block's difficulty is meaningful (may not be correct at this point)
-	if number > 0 {
-		if header.Difficulty == nil || (header.Difficulty.Cmp(diffInTurn) != 0 && header.Difficulty.Cmp(diffNoTurn) != 0) {
-			return errInvalidDifficulty
-		}
-	}
-	// Verify that the gas limit is <= 2^63-1
-	if header.GasLimit > params.MaxGasLimit {
-		return fmt.Errorf("invalid gasLimit: have %v, max %v", header.GasLimit, params.MaxGasLimit)
-	}
-	if chain.Config().IsShanghai(header.Time) {
-		return fmt.Errorf("clique does not support shanghai fork")
-	}
-	if chain.Config().IsCancun(header.Time) {
-		return fmt.Errorf("clique does not support cancun fork")
-	}
-	// All basic checks passed, verify cascading fields
-	return c.verifyCascadingFields(chain, header, parents)
-}
-
-// verifyCascadingFields verifies all the header fields that are not standalone,
-// rather depend on a batch of previous headers. The caller may optionally pass
-// in a batch of parents (ascending order) to avoid looking those up from the
-// database. This is useful for concurrently verifying a batch of new headers.
 func (c *Clique) verifyCascadingFields(chain consensus.ChainHeaderReader, header *types.Header, parents []*types.Header) error {
 	// The genesis block is the always valid dead-end
 	number := header.Number.Uint64()
@@ -389,8 +316,21 @@ func (c *Clique) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 	if err != nil {
 		return err
 	}
+	// TODO: verify header extra data length > 0?
+	headerTypeSelector := header.ExtraData()[0]
+
 	// If the block is a checkpoint block, verify the signer list
 	if number%c.config.Epoch == 0 {
+		headerTypeSelector := header.ExtraData()[0]
+		var data checkpointData
+		if headerTypeSelector != checkpointHeader {
+			// TODO return error
+		}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &data); err != nil {
+			// TODO return special rlp decode fail error
+			return err
+		}
+
 		signers := make([]byte, len(snap.Signers)*common.AddressLength)
 		for i, signer := range snap.signers() {
 			copy(signers[i*common.AddressLength:], signer[:])
@@ -400,8 +340,72 @@ func (c *Clique) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 			return errMismatchingCheckpointSigners
 		}
 	}
-	// All basic checks passed, verify the seal and return
+
+	switch headerTypeSelector {
+	case defaultHeader:
+		res := defaultData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			// TODO return special rlp decode fail error
+			return err
+		}
+	case voteHeader:
+		res := voteData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			// TODO return special rlp decode fail error
+			return err
+		}
+		if res.action != actionAdd && res.action != actionRemove {
+			// TODO return error
+		}
+	default:
+		// TODO return error (unknown header data type)
+	}
 	return c.verifySeal(snap, header, parents)
+}
+
+// verifyHeader checks whether a header conforms to the consensus rules.The
+// caller may optionally pass in a batch of parents (ascending order) to avoid
+// looking those up from the database. This is useful for concurrently verifying
+// a batch of new headers.
+func (c *Clique) verifyHeader(chain consensus.ChainHeaderReader, header *types.Header, parents []*types.Header) error {
+	if header.Number == nil {
+		return errUnknownBlock
+	}
+	number := header.Number.Uint64()
+
+	// Don't waste time checking blocks from the future
+	if header.Time > uint64(time.Now().Unix()) {
+		return consensus.ErrFutureBlock
+	}
+	// Ensure that the mix digest is zero as we don't have fork protection currently
+	if header.MixDigest != (common.Hash{}) {
+		return errInvalidMixDigest
+	}
+	// Ensure that the block doesn't contain any uncles which are meaningless in PoA
+	if header.UncleHash != uncleHash {
+		return errInvalidUncleHash
+	}
+
+	// Ensure that the block's difficulty (repurposed from beacon chain random) is meaningful (may not be correct at this point)
+	diffField := header.Random
+	var diffVal *big.Int
+	if diffField != nil {
+		diffVal := new(big.Int).SetBytes(diffVal[:])
+	}
+	if number > 0 {
+		if diffField == nil || (diffVal.Cmp(diffInTurn) != 0 && diffVal.Cmp(diffNoTurn) != 0) {
+			return errInvalidDifficulty
+		}
+	}
+	// Verify that the gas limit is <= 2^63-1
+	if header.GasLimit > params.MaxGasLimit {
+		return fmt.Errorf("invalid gasLimit: have %v, max %v", header.GasLimit, params.MaxGasLimit)
+	}
+	if chain.Config().IsCancun(header.Time) {
+		return fmt.Errorf("clique does not support cancun fork")
+	}
+	// All basic checks passed, verify cascading fields
+	return c.verifyCascadingFields(chain, header, parents)
 }
 
 // snapshot retrieves the authorization snapshot at a given point in time.
