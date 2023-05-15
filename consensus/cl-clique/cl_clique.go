@@ -561,6 +561,43 @@ func (c *Clique) verifySeal(snap *Snapshot, header *types.Header, parents []*typ
 	return nil
 }
 
+func placeSigIntoExtraData(extraData, sig []byte) []byte {
+	headerTypeSelector := extraData[0]
+	switch headerTypeSelector {
+	case defaultHeader:
+		res := defaultData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+		return resBytes
+	case voteHeader:
+		res := voteData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+		resBytes, err := rlp.EncodeToBytes(&res)
+		if err != nil {
+			panic(err)
+		}
+		return resBytes
+	case checkpointHeader:
+		res := checkpointData{}
+		if err = rlp.DecodeBytes(header.ExtraData[1:], &res); err != nil {
+			panic(err)
+		}
+		copy(res.sig, sig)
+		resBytes, err := rlp.EncodeToBytes(&res)
+		if err != nil {
+			panic(err)
+		}
+		return resBytes
+	default:
+		panic(errors.New("unknown header selector type"))
+	}
+}
+
 // Prepare implements consensus.Engine, preparing all the consensus fields of the
 // header for running the transactions on top.
 func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
@@ -671,10 +708,60 @@ func (c *Clique) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
-	header.Extra
-	// TODO: sign the header
-	// TODO: insert signature into header
+	/*
+        TODO: verify that FinalizeAndAssemble will never be called using the genesis block
+	// Sealing the genesis block is not supported
+	number := header.Number.Uint64()
+	if number == 0 {
+		return errUnknownBlock
+	}
+        */
 
+	// For 0-period chains, refuse to produce empty blocks
+	if c.config.Period == 0 && len(block.Transactions()) == 0 {
+		return errors.New("sealing paused while waiting for transactions")
+	}
+	// Don't hold the signer fields for the entire sealing procedure
+	c.lock.RLock()
+	signer, signFn := c.signer, c.signFn
+	c.lock.RUnlock()
+
+	// Bail out if we're unauthorized to sign a block
+	snap, err := c.snapshot(chain, number-1, header.ParentHash, nil)
+	if err != nil {
+		return err
+	}
+	if _, authorized := snap.Signers[signer]; !authorized {
+		return errUnauthorizedSigner
+	}
+	// If we're amongst the recent signers, wait for the next block
+	for seen, recent := range snap.Recents {
+		if recent == signer {
+			// Signer is among recents, only wait if the current block doesn't shift it out
+			if limit := uint64(len(snap.Signers)/2 + 1); number < limit || seen > number-limit {
+				return errors.New("signed recently, must wait for others")
+			}
+		}
+	}
+	/*
+	// TODO: this out-of-turn propagation logic will be handled by cl-shim
+	// Sweet, the protocol permits us to sign the block, wait for our time
+	delay := time.Unix(int64(header.Time), 0).Sub(time.Now()) // nolint: gosimple
+	if header.Difficulty.Cmp(diffNoTurn) == 0 {
+		// It's not our turn explicitly to sign, delay it a bit
+		wiggle := time.Duration(len(snap.Signers)/2+1) * wiggleTime
+		delay += time.Duration(rand.Int63n(int64(wiggle)))
+
+		log.Trace("Out-of-turn signing requested", "wiggle", common.PrettyDuration(wiggle))
+	}
+	*/
+
+	// Sign all the things!
+	sighash, err := signFn(accounts.Account{Address: signer}, accounts.MimetypeClique, CliqueRLP(header))
+	if err != nil {
+		return err
+	}
+	header.Extra = placeSigIntoExtraData(header.Extra, sighash)
 	// Assemble and return the final block for sealing.
 	return types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil)), nil
 }
@@ -856,7 +943,7 @@ func encodeSigHeader(w io.Writer, header *types.Header) {
 		header.GasLimit,
 		header.GasUsed,
 		header.Time,
-		header.Extra[:len(header.Extra)-crypto.SignatureLength], // Yes, this will panic if extra is too short
+		header.Extra, // extra assumed to contain rlp-encoded action with sig as 0s
 		header.MixDigest,
 		header.Nonce,
 	}
