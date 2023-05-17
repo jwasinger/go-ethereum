@@ -49,3 +49,11 @@ func (e* engineAPI) NewPayloadV1(payload *engine.ExecutionPayloadBodyV1) error {
 	}
 	return nil
 }
+
+func (e *engineAPI) GetHeaderByNumber(number uint64) (*types.Header, error) {
+	var header types.Header
+	if err := client.CallContext(ctx, &header, "eth_getBlockByNumber", number); err != nil {
+		return nil, err
+	}
+	return &header, nil
+}
