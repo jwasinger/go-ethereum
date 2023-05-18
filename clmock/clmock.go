@@ -4,9 +4,8 @@ type CLMock struct {
 	ctx context.Context
 }
 
-func (c *CLMock) Start() error {
+func (c *CLMock) Start() {
 	go c.clmockLoop()
-	return nil
 }
 
 func (c *CLMock) clmockLoop() {
@@ -101,7 +100,6 @@ func (c *CLMock) clmockLoop() {
 	}
 }
 
-func (c *CLMock) Stop() error {
+func (c *CLMock) Stop() {
 	c.ctx.Cancel()
-	return nil
 }

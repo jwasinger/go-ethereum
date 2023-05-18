@@ -90,6 +90,7 @@ type Ethereum struct {
 	miner     *miner.Miner
 	gasPrice  *big.Int
 	etherbase common.Address
+	clmock clmock.CLMock
 
 	networkID     uint64
 	netRPCService *ethapi.NetAPI
@@ -449,6 +450,14 @@ func (s *Ethereum) StartMining(threads int) error {
 	return nil
 }
 
+func (s *Ethereum) StartCLMock() {
+	s.clmock.Start()
+}
+
+func (s *Ethereum) StopCLMock() {
+	s.clmock.Stop()
+}
+
 // StopMining terminates the miner, both at the consensus engine level as well as
 // at the block creation level.
 func (s *Ethereum) StopMining() {
@@ -533,6 +542,7 @@ func (s *Ethereum) Stop() error {
 	s.miner.Close()
 	s.blockchain.Stop()
 	s.engine.Close()
+	s.clmock.Close()
 
 	// Clean shutdown marker as the last thing before closing db
 	s.shutdownTracker.Stop()

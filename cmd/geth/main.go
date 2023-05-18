@@ -447,6 +447,11 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend, isCon
 			utils.Fatalf("Failed to start mining: %v", err)
 		}
 	}
+
+	if ctx.Bool(utils.DeveloperFlag.Name) {
+		// TODO start engine-api as well
+		ethBackend.StartCLMock()
+	}
 }
 
 // unlockAccounts unlocks any account specifically requested.
