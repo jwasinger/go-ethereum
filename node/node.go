@@ -577,17 +577,6 @@ func (n *Node) RegisterProtocols(protocols []p2p.Protocol) {
 	n.server.Protocols = append(n.server.Protocols, protocols...)
 }
 
-func (n *Node) GetAPIsByNamespace(namespace string) []rpc.API {
-	var res []rpc.API
-	for _, rpc := range n.rpcAPIs {
-		if rpc.Namespace == namespace {
-			res = append(res, rpc)
-		}
-	}
-
-	return res
-}
-
 // RegisterAPIs registers the APIs a service provides on the node.
 func (n *Node) RegisterAPIs(apis []rpc.API) {
 	n.lock.Lock()
