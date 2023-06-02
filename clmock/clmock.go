@@ -77,8 +77,6 @@ func (c *CLMock) clmockLoop() {
 	var prevRandaoVal common.Hash
 	var suggestedFeeRecipient common.Address
 
-	// TODO: the following seems like a pretty sketchy/dangerous way to retrieve the ConsensusAPI
-	// unsure of a cleaner way
 	engineAPI := catalyst.NewConsensusAPI(c.eth)
 
 	header := c.eth.BlockChain().CurrentHeader()
