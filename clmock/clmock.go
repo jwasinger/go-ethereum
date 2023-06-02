@@ -42,7 +42,7 @@ func NewCLMock(stack *node.Node, eth *eth.Ethereum) *CLMock {
 	return &CLMock{
 		stack:       stack,
 		eth:         eth,
-		blockPeriod: time.Duration(chainConfig.Dev.Period),
+		blockPeriod: time.Duration(chainConfig.Dev.Period) * time.Second,
 	}
 }
 
@@ -66,7 +66,6 @@ func (c *CLMock) clmockLoop() {
 	// how do we sync node shutdown with this separate go-routine?
 	// does it matter?  the worst that can happen is we get some weird error messages on node shutdown that might throw users off
 	ticker := time.NewTicker(time.Millisecond * 500)
-	blockPeriod := time.Second * 10 // hard-coded fast block period for testing purposes
 	lastBlockTime := time.Now()
 
 	var curForkchoiceState engine.ForkchoiceStateV1
@@ -97,7 +96,7 @@ func (c *CLMock) clmockLoop() {
 		case <-c.ctx.Done():
 			break
 		case curTime := <-ticker.C:
-			if curTime.After(lastBlockTime.Add(blockPeriod)) {
+			if curTime.After(lastBlockTime.Add(c.blockPeriod)) {
 				// trigger block building (via forkchoiceupdated)
 				fcState, err := engineAPI.ForkchoiceUpdatedV1(curForkchoiceState, &engine.PayloadAttributes{
 					Timestamp:             uint64(curTime.Unix()),
@@ -132,9 +131,9 @@ func (c *CLMock) clmockLoop() {
 					}
 				}
 
+				// don't create a block if there are no transactions
 				if len(payload.Transactions) == 0 {
-					// don't create a block if there are no transactions
-					time.Sleep(blockPeriod)
+					time.Sleep(c.blockPeriod)
 					continue
 				}
 
