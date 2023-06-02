@@ -194,7 +194,6 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 	// Start the dev mode if requested
 	if ctx.IsSet(utils.DeveloperFlag.Name) {
 		mock := clmock.NewCLMock(stack, eth)
-		mock.Start()
 		stack.RegisterLifecycle(mock)
 	}
 

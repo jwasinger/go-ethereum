@@ -39,6 +39,11 @@ type CLMock struct {
 
 func NewCLMock(stack *node.Node, eth *eth.Ethereum) *CLMock {
 	chainConfig := eth.APIBackend.ChainConfig()
+
+	if chainConfig.Dev == nil {
+		log.Crit("incompatible pre-existing chain configuration")
+	}
+
 	return &CLMock{
 		stack:       stack,
 		eth:         eth,
