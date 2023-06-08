@@ -83,6 +83,7 @@ func validate(jt JumpTable) JumpTable {
 func newCancunInstructionSet() JumpTable {
 	instructionSet := newShanghaiInstructionSet()
 	enable4844(&instructionSet) // BLOBHASH opcode
+	enable6780(&instructionSet) // deactivate SELFDESTRUCT
 	return validate(instructionSet)
 }
 
@@ -91,17 +92,6 @@ func newShanghaiInstructionSet() JumpTable {
 	enable3855(&instructionSet) // PUSH0 instruction
 	enable3860(&instructionSet) // Limit and meter initcode
 
-	return validate(instructionSet)
-}
-
-func newCancunInstructionSet() JumpTable {
-	instructionSet := newShanghaiInstructionSet()
-	instructionSet[SELFDESTRUCT] = &operation{
-		execute:    opSelfdestruct6780,
-		dynamicGas: gasSelfdestructEIP3529,
-		minStack:   minStack(1, 0),
-		maxStack:   maxStack(1, 0),
-	}
 	return validate(instructionSet)
 }
 
