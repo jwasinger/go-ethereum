@@ -897,9 +897,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		} else {
 			obj.finalise(true) // Prefetch slots in the background
 		}
-
 		obj.created = false
-
 		s.stateObjectsPending[addr] = struct{}{}
 		s.stateObjectsDirty[addr] = struct{}{}
 
