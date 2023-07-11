@@ -81,8 +81,7 @@ type stateObject struct {
 	suicided  bool
 	deleted   bool
 
-	created   bool // true if the object was created in the current transaction
-	sendalled bool // true if the object executed SENDALL in the current tx
+	created bool // true if the object was created in the current transaction
 }
 
 // empty returns whether the account is considered empty.

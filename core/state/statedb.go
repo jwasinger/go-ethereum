@@ -474,17 +474,15 @@ func (s *StateDB) Suicide(addr common.Address) bool {
 	return true
 }
 
-func (s *StateDB) SendAll(addr common.Address) bool {
+func (s *StateDB) Selfdestruct6780(addr common.Address) bool {
 	stateObject := s.getStateObject(addr)
 	if stateObject == nil {
 		return false
 	}
 
-	s.journal.append(sendallChange{
-		account: &addr,
-	})
-
-	stateObject.sendalled = true
+	if stateObject.created {
+		s.Suicide(addr)
+	}
 	return true
 }
 
@@ -672,7 +670,6 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 	}
 
 	newobj.created = true
-	newobj.sendalled = false
 
 	s.setStateObject(newobj)
 	if prev != nil && !prev.deleted {
@@ -882,7 +879,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			// Thus, we can safely ignore it here
 			continue
 		}
-		if obj.suicided || (deleteEmptyObjects && obj.empty()) || (obj.created && obj.sendalled) {
+		if obj.suicided || (deleteEmptyObjects && obj.empty()) {
 			obj.deleted = true
 
 			// We need to maintain account deletions explicitly (will remain
@@ -901,8 +898,6 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			obj.finalise(true) // Prefetch slots in the background
 		}
 
-		// TODO: want these modifications to be reflected in s.stateObjects. but map values are accessed by value?  but obj.deleted is set above??
-		obj.sendalled = false
 		obj.created = false
 
 		s.stateObjectsPending[addr] = struct{}{}
