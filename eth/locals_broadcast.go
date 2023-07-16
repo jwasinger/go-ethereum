@@ -2,7 +2,6 @@ package eth
 
 import (
 	"time"
-	"errors"
 	"math"
 	
 	"github.com/ethereum/go-ethereum/common"
@@ -26,26 +25,30 @@ type localsTxState struct {
 	accounts map[common.Address][]*types.Transaction
 	// map of locals address to the timestamp that it was last broadcasted
 	accountsBcast map[string]map[common.Address]time.Time
+	handler *handler
+/*
 	peers *peerSet
 	chain *core.BlockChain
+*/
 	shutdownCh chan struct{}
-	chainHeadCh chan<- core.ChainHeadEvent
+	chainHeadCh <-chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
 	broadcastElapseTimer *time.Timer
+	signer types.Signer
 }
 
-func newLocalsTxState(peers *peerSet, chain *core.BlockChain) *localsTxState {
-	chainHeadCh := make(chan<- core.ChainHeadEvent, 10)
-	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
+func newLocalsTxState(handler *handler) *localsTxState {
+	chainHeadCh := make(chan core.ChainHeadEvent, 10)
+	chainHeadSub := handler.chain.SubscribeChainHeadEvent(chainHeadCh)
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
 		make(map[string]map[common.Address]time.Time),
-		peers,
-		chain,
+		handler,
 		make(chan struct{}),
 		chainHeadCh,
 		chainHeadSub,
 		nil,
+		types.LatestSigner(handler.chain.Config()),
 	}
 
 	go l.loop()
@@ -58,7 +61,7 @@ func (l *localsTxState) Stop() {
 
 // get the nonce of an account at the head block
 func (l *localsTxState) GetNonce(addr common.Address) uint64 {
-	curState, err := l.chain.State()
+	curState, err := l.handler.chain.State()
 	if err != nil {
 		// TODO figure out what this could be
 		panic(err)
@@ -75,10 +78,10 @@ func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool 
 } 
 
 func (l *localsTxState) maybeBroadcast() {
-	allPeers := l.peers.allEthPeers()
+	allPeers := l.handler.peers.allEthPeers()
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
-		var txsToBroadcast []*types.Transaction
+		var txsToBroadcast []common.Hash
 		// TODO: cache accounts modified by newLocalTxs so that we
 		// don't iterate the entire account set here
 		for addr, txs := range l.accounts {
@@ -97,20 +100,22 @@ func (l *localsTxState) maybeBroadcast() {
 					l.broadcastElapseTimer.Reset(broadcastWaitTime)
 				}
 
-				txsToBroadcast = append(txsToBroadcast, tx)
-				accountsBcast[peer][txSender] = time.Now()
+				txsToBroadcast = append(txsToBroadcast, tx.Hash())
+				// TODO: use LRU cache so we don't need sig recovery
+				from, _ := types.Sender(l.signer, tx)
+				l.accountsBcast[peer.ID()][from] = time.Now()
 				break
 			}
 		}
 		if len(txsToBroadcast) > 0 {
-			peer.BroadcastTransactions(txsToBroadcast)
+			peer.AsyncSendTransactions(txsToBroadcast)
 		}
 	}
 }
 
 func (l *localsTxState) deleteAccount(addr common.Address) {
 	delete(l.accounts, addr)
-	for _, peer := range l.accountsBcast {
+	for peer, _ := range l.accountsBcast {
 		if _, ok := l.accountsBcast[peer][addr]; ok {
 			delete(l.accountsBcast[peer], addr)
 		}
@@ -119,9 +124,10 @@ func (l *localsTxState) deleteAccount(addr common.Address) {
 
 func (l *localsTxState) trimLocals() {
 	for addr, txs := range l.accounts {
+		var cutPoint int
 		currentNonce := l.GetNonce(addr)
 		for i, tx := range txs {
-			if tx.Nonce < currentNonce {
+			if tx.Nonce() < currentNonce {
 				cutPoint = i
 			} else {
 				break
@@ -142,7 +148,8 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 		curTxs []*types.Transaction
 	)
 
-	if curTxs, ok := l.accounts[sender]; !ok {
+	curTxs, ok := l.accounts[sender]
+	if !ok {
 		l.accounts[sender] = txs
 		return
 	}
@@ -153,7 +160,7 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 	// this code is super gross.  I'm not sure how to improve it atm
 	res := []*types.Transaction{}
 	curIdx, txsIdx := 0, 0
-	for ; ; curIdx < len(curTxs) || txsIdx < len(txs) {
+	for ; curIdx < len(curTxs) || txsIdx < len(txs) ; {
 		if curIdx > len(curTxs) {
 			res = append(res, curTxs[curIdx])
 			curIdx++
@@ -167,10 +174,10 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 
 		curTx := l.accounts[sender][curIdx]
 		tx := txs[txsIdx]
-		if curTx.Nonce > tx.Nonce {
+		if curTx.Nonce() > tx.Nonce() {
 			res = append(res, tx)
 			txsIdx++
-		} else if curTx.Nonce < tx.Nonce {
+		} else if curTx.Nonce() < tx.Nonce() {
 			res = append(res, curTx)
 			curIdx++
 		} else {
@@ -182,20 +189,22 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 	l.accounts[sender] = res
 }
 
+// TODO combine this function with insertLocals for clarity
 func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	// we assume that these are a flattened list of account-ordered, then nonce-ordered txs
 
-	acctTxs := make(map[common.Address][]*types.Tx)
+	acctTxs := make(map[common.Address][]*types.Transaction)
 	lastSender := common.Address{}
 	for _, tx := range txs {
-		if tx.Sender != lastSender {
-			acctTxs[tx.Sender] = []*types.Tx{tx}
+		sender, _ := types.Sender(l.signer, tx)
+		if sender != lastSender {
+			acctTxs[sender] = types.Transactions{tx}
 		}
-		acctTxs[tx.Sender] = append(acctTxs[tx.Sender], tx)
+		acctTxs[sender] = append(acctTxs[sender], tx)
 	}
 
 	for acct, txs := range acctTxs {
-		l.insertLocals(acct, acctTxs)
+		l.insertLocals(acct, txs)
 	}
 }
 
@@ -204,9 +213,9 @@ func (l *localsTxState) loop() {
 
 	for {
 		select {
-		case <-chainHeadCh:
+		case <-l.chainHeadCh:
 			l.trimLocals()
-		case txs <-newLocalTxs:
+		case txs := <-l.newLocalTxs:
 			// I assume that these are mostly transactions originating from this same node
 			// TODO: explore edge-cases if they aren't
 			l.addLocals(txs)
