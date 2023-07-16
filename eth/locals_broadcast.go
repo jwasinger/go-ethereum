@@ -6,6 +6,7 @@ import (
 	"sync"
 	
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
@@ -24,7 +25,7 @@ type localsTxState struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
 	// map of locals address to the timestamp that it was last broadcasted
-	accountsBcast map[string]map[common.Address]time.Time
+	accountsBcast lru.BasicLRU[string, map[common.Address]time.Time]
 	chain *core.BlockChain
 	peers *peerSet
 	chainHeadCh <-chan core.ChainHeadEvent
@@ -40,9 +41,13 @@ func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *lo
 	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
 	localTxsCh := make(chan core.NewTxsEvent, 10)
 	localTxsSub := txpool.SubscribeNewLocalTxsEvent(localTxsCh)
+
+	// TODO: this is randomly chosen.  figure out how to choose 
+	// proper value based on node configuration
+	maxPeers := 16 
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
-		make(map[string]map[common.Address]time.Time),
+		lru.NewBasicLRU[string, map[common.Address]time.Time](maxPeers),
 		chain,
 		peers,
 		chainHeadCh,
@@ -70,7 +75,9 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
-	if time.Since(l.accountsBcast[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
+	if _, ok := l.accountsBcast.Get(peerID); !ok {
+		return false 
+	} else if time.Since(l.accountsBcast[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
@@ -105,9 +112,13 @@ func (l *localsTxState) maybeBroadcast() {
 				}
 
 				txsToBroadcast = append(txsToBroadcast, tx.Hash())
-				// TODO: use LRU cache so we don't need sig recovery
 				from, _ := types.Sender(l.signer, tx)
-				l.accountsBcast[peer.ID()][from] = time.Now()
+				if addressesBcasted, ok := l.accountsBcast.Get(peer.ID()); ok {
+					addressesBcasted[from] = time.Now()
+					l.accountsBcast.Set(addressesBcasted)
+				} else {
+					l.accountsBcast.Set(from, make(map[common.Address]time.Time))
+				}
 				break
 			}
 		}
