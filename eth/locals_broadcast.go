@@ -15,13 +15,14 @@ type localsTxState struct {
 	accounts map[common.Address][]*types.Transaction
 	// map of locals address to the timestamp that it was last broadcasted
 	accountsBcast map[stringmap[common.Address]uint64
-	handler *Handler
+	peers *peerSet
+	chain *core.Blockchain
 	shutdownCh chan struct{}
 	chainHeadCh chan<- core.ChainHeadEvent
 	chainHeadSub event.Subscription
 }
 
-func newLocalsTxState(handler *Handler) {
+func newLocalsTxState(chain *core.Blockchain, peers *peerSet) {
 	chainHeadCh := make(chan<- core.ChainHeadEvent, 10)
 	chainHeadSub := handler.chain.SubscribeChainHeadEvent(chainHeadCh)
 	l := localsTxState{
@@ -43,11 +44,7 @@ func (l *localsTxState) Stop() {
 
 // get the nonce of an account at the head block
 func (l *localsTxState) GetNonce(addr common.Address) uint64 {
-	curState := l.h.blockchain.State()
-	if curState == nil {
-		// TODO ensure that this can never happen
-	}
-
+	curState := l.blockchain.State()
 	return curState.GetNonce(addr)
 }
 
@@ -60,14 +57,14 @@ func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool 
 } 
 
 func (l *localsTxState) maybeBroadcast() {
-	allPeers := l.h.peers.allEthPeers()
+	allPeers := l.peerSet.allEthPeers()
 	directBroadcastPeers := allPeers[:sqrt(len(allPeers))]
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []*types.Transaction
 		// TODO: cache accounts modified by newLocalTxs so that we
 		// don't iterate the entire account set here
 		for addr, txs := range l.accounts {
-			if sentRecently(peer, addr) {
+			if l.sentRecently(peer, addr) {
 				continue
 			}
 
@@ -125,7 +122,6 @@ func (l *localsTxState) trimLocals() {
 func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transaction) {
 	var (
 		curTxs []*types.Transaction
-		insertAt int
 	)
 
 	if curTxs, ok := l.accounts[sender]; !ok {
@@ -133,16 +129,38 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 		return
 	}
 
-	// insert txs into curTxs, keeping the resulting array nonce-ordered and
+	// insert txs into the sender's queue, keeping the resulting array nonce-ordered and
 	// replacing pre-existing txs if there is a tx with same nonce
-	// TODO: it feels super naive to have this be O(N**2) instead of O(N)
 
+	res := []*types.Transaction{}
 	curIdx, txsIdx := 0, 0
-	for {
+	for ; ; curIdx < len(curTxs) || txsIdx < len(txs) {
+		if curIdx > len(curTxs) {
+			res = append(res, curTxs[curIdx]
+			curIdx++
+			continue
+		}
+		if txsIdx > len(txs) {
+			res = append(res, curTxs[txsIdx]
+			txsIdx++
+			continue
+		}
+
 		curTx := l.accounts[sender][curIdx]
 		tx := txs[txsIdx]
-		if 
+		if curTx.Nonce > tx.Nonce {
+			res = append(res, tx)
+			txsIdx++
+		} else if curTx.Nonce < tx.Nonce {
+			res = append(res, curTx)
+			curIdx++
+		} else {
+			res = append(res, tx)
+			curIdx++
+			txsIdx++
+		}
 	}
+	l.accounts[sender] = res
 }
 
 func (l *localsTxState) addLocals(txs []*types.Transaction) {
