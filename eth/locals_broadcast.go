@@ -1,41 +1,55 @@
 package eth
 
+import (
+	"time"
+	"errors"
+	"math"
+	
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
+)
+
 const (
 	// TODO: weird to have two values here...
 	// reason is that resetting broadcastElapseTimer
 	// will trigger a wait, and I need that wait to
 	// last long enough to make sentRecently return false
 	// for sure
-	broadcastWaitTime = 600 * time.Millisecond
-	minSendTime = 500 * time.Millisecond
+	broadcastWaitTime = 500 * time.Millisecond
+	minSendTime = 600 * time.Millisecond
 )
 
 type localsTxState struct {
 	// map of sender account -> nonce-ordered list of transactions
 	accounts map[common.Address][]*types.Transaction
 	// map of locals address to the timestamp that it was last broadcasted
-	accountsBcast map[stringmap[common.Address]uint64
+	accountsBcast map[string]map[common.Address]time.Time
 	peers *peerSet
-	chain *core.Blockchain
+	chain *core.BlockChain
 	shutdownCh chan struct{}
 	chainHeadCh chan<- core.ChainHeadEvent
 	chainHeadSub event.Subscription
+	broadcastElapseTimer *time.Timer
 }
 
-func newLocalsTxState(chain *core.Blockchain, peers *peerSet) {
+func newLocalsTxState(peers *peerSet, chain *core.BlockChain) *localsTxState {
 	chainHeadCh := make(chan<- core.ChainHeadEvent, 10)
-	chainHeadSub := handler.chain.SubscribeChainHeadEvent(chainHeadCh)
+	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
-		make(map[stringmap[common.Address]uint64),
-		handler,
+		make(map[string]map[common.Address]time.Time),
+		peers,
+		chain,
 		make(chan struct{}),
 		chainHeadCh,
 		chainHeadSub,
+		nil,
 	}
 
 	go l.loop()
-	return l
+	return &l
 }
 
 func (l *localsTxState) Stop() {
@@ -44,27 +58,31 @@ func (l *localsTxState) Stop() {
 
 // get the nonce of an account at the head block
 func (l *localsTxState) GetNonce(addr common.Address) uint64 {
-	curState := l.blockchain.State()
+	curState, err := l.chain.State()
+	if err != nil {
+		// TODO figure out what this could be
+		panic(err)
+	}
 	return curState.GetNonce(addr)
 }
 
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
-	if time.Since(l.accountsBcast[peerID]) >= minSendTime {
+	if time.Since(l.accountsBcast[peerID][sender]) >= minSendTime {
 		return true
 	}
 	return false
 } 
 
 func (l *localsTxState) maybeBroadcast() {
-	allPeers := l.peerSet.allEthPeers()
-	directBroadcastPeers := allPeers[:sqrt(len(allPeers))]
+	allPeers := l.peers.allEthPeers()
+	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []*types.Transaction
 		// TODO: cache accounts modified by newLocalTxs so that we
 		// don't iterate the entire account set here
 		for addr, txs := range l.accounts {
-			if l.sentRecently(peer, addr) {
+			if l.sentRecently(peer.ID(), addr) {
 				continue
 			}
 
@@ -91,10 +109,10 @@ func (l *localsTxState) maybeBroadcast() {
 }
 
 func (l *localsTxState) deleteAccount(addr common.Address) {
-	delete l.accounts addr
+	delete(l.accounts, addr)
 	for _, peer := range l.accountsBcast {
 		if _, ok := l.accountsBcast[peer][addr]; ok {
-			delete l.accountsBcast[peer] addr
+			delete(l.accountsBcast[peer], addr)
 		}
 	}
 }
@@ -113,7 +131,7 @@ func (l *localsTxState) trimLocals() {
 		l.accounts[addr] = l.accounts[addr][cutPoint:]
 
 		if len(l.accounts[addr]) == 0 {
-			delete l.accounts addr
+			delete(l.accounts, addr)
 			l.deleteAccount(addr)
 		}
 	}
@@ -132,16 +150,17 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 	// insert txs into the sender's queue, keeping the resulting array nonce-ordered and
 	// replacing pre-existing txs if there is a tx with same nonce
 
+	// this code is super gross.  I'm not sure how to improve it atm
 	res := []*types.Transaction{}
 	curIdx, txsIdx := 0, 0
 	for ; ; curIdx < len(curTxs) || txsIdx < len(txs) {
 		if curIdx > len(curTxs) {
-			res = append(res, curTxs[curIdx]
+			res = append(res, curTxs[curIdx])
 			curIdx++
 			continue
 		}
 		if txsIdx > len(txs) {
-			res = append(res, curTxs[txsIdx]
+			res = append(res, curTxs[txsIdx])
 			txsIdx++
 			continue
 		}
@@ -180,7 +199,7 @@ func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	}
 }
 
-func (l *LocalsTxState) loop() {
+func (l *localsTxState) loop() {
 	defer l.chainHeadSub.Unsubscribe()
 
 	for {
