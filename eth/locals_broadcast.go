@@ -48,6 +48,7 @@ func newLocalsTxState(handler *handler) *localsTxState {
 		chainHeadCh,
 		chainHeadSub,
 		nil,
+		// TODO: this can never be pre-eip155 right?
 		types.LatestSigner(handler.chain.Config()),
 	}
 
@@ -215,7 +216,7 @@ func (l *localsTxState) loop() {
 		select {
 		case <-l.chainHeadCh:
 			l.trimLocals()
-		case txs := <-l.newLocalTxs:
+		case txs := <-l.newTransactions:
 			// I assume that these are mostly transactions originating from this same node
 			// TODO: explore edge-cases if they aren't
 			l.addLocals(txs)
