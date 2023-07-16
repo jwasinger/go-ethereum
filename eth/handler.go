@@ -78,6 +78,14 @@ type txPool interface {
 	// SubscribeNewTxsEvent should return an event subscription of
 	// NewTxsEvent and send events to the given channel.
 	SubscribeNewTxsEvent(chan<- core.NewTxsEvent) event.Subscription
+
+	// SubscribeNewLocalTxsEvent should return an event subscription of
+	// NewTxsEvent and send events to the given channel.
+	SubscribeNewLocalTxsEvent(chan<- core.NewTxsEvent) event.Subscription
+
+	// SubscribeNewRemoteTxsEvent should return an event subscription of
+	// NewTxsEvent and send events to the given channel.
+	SubscribeNewRemoteTxsEvent(chan<- core.NewTxsEvent) event.Subscription
 }
 
 // handlerConfig is the collection of initialization parameters to create a full
@@ -113,8 +121,8 @@ type handler struct {
 	merger       *consensus.Merger
 
 	eventMux      *event.TypeMux
-	txsCh         chan core.NewTxsEvent
-	txsSub        event.Subscription
+	remoteTxsCh         chan core.NewTxsEvent
+	remoteTxsSub        event.Subscription
 	minedBlockSub *event.TypeMuxSubscription
 
 	requiredBlocks map[uint64]common.Hash
@@ -523,8 +531,8 @@ func (h *handler) Start(maxPeers int) {
 
 	// broadcast transactions
 	h.wg.Add(1)
-	h.txsCh = make(chan core.NewTxsEvent, txChanSize)
-	h.txsSub = h.txpool.SubscribeNewTxsEvent(h.txsCh)
+	h.remoteTxsCh = make(chan core.NewTxsEvent, txChanSize)
+	h.remoteTxsSub = h.txpool.SubscribeNewRemoteTxsEvent(h.remoteTxsCh)
 	go h.txBroadcastLoop()
 
 	// broadcast mined blocks
@@ -542,7 +550,7 @@ func (h *handler) Start(maxPeers int) {
 }
 
 func (h *handler) Stop() {
-	h.txsSub.Unsubscribe()        // quits txBroadcastLoop
+	h.remoteTxsSub.Unsubscribe()        // quits txBroadcastLoop
 	h.minedBlockSub.Unsubscribe() // quits blockBroadcastLoop
 
 	// Quit chainSync and txsync64.
@@ -667,9 +675,10 @@ func (h *handler) txBroadcastLoop() {
 	defer h.wg.Done()
 	for {
 		select {
-		case event := <-h.txsCh:
+		// TODO: maybe merge locals_broadcast lifecycle loop into this somehow?
+		case event := <-h.remoteTxsCh:
 			h.BroadcastTransactions(event.Txs)
-		case <-h.txsSub.Err():
+		case <-h.remoteTxsSub.Err():
 			return
 		}
 	}

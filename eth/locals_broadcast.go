@@ -33,6 +33,8 @@ type localsTxState struct {
 	shutdownCh chan struct{}
 	chainHeadCh <-chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
+	localTxsCh <-chan core.NewTxsEvent
+	localTxsSub event.Subscription
 	broadcastElapseTimer *time.Timer
 	signer types.Signer
 }
@@ -40,6 +42,8 @@ type localsTxState struct {
 func newLocalsTxState(handler *handler) *localsTxState {
 	chainHeadCh := make(chan core.ChainHeadEvent, 10)
 	chainHeadSub := handler.chain.SubscribeChainHeadEvent(chainHeadCh)
+	localTxsCh := make(chan core.NewTxsEvent, 10)
+	localTxsSub := handler.txpool.SubscribeNewLocalTxsEvent(localTxsCh)
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
 		make(map[string]map[common.Address]time.Time),
@@ -47,6 +51,8 @@ func newLocalsTxState(handler *handler) *localsTxState {
 		make(chan struct{}),
 		chainHeadCh,
 		chainHeadSub,
+		localTxsCh,
+		localTxsSub,
 		nil,
 		// TODO: this can never be pre-eip155 right?
 		types.LatestSigner(handler.chain.Config()),
@@ -216,14 +222,16 @@ func (l *localsTxState) loop() {
 		select {
 		case <-l.chainHeadCh:
 			l.trimLocals()
-		case txs := <-l.newTransactions:
+		case evt := <-l.localTxsCh:
 			// I assume that these are mostly transactions originating from this same node
 			// TODO: explore edge-cases if they aren't
-			l.addLocals(txs)
+			l.addLocals(evt.Txs)
 			l.maybeBroadcast()
-		case <-peerBroadcastElapse:
+		case <-l.broadcastElapseTimer.C:
 			l.maybeBroadcast()
-		case <-l.closeCh:
+		case <-l.shutdownCh:
+			return
+		case <-l.localTxsSub.Err():
 			return
 		}
 	}

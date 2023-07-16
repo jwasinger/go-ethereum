@@ -215,7 +215,12 @@ func (ps *peerSet) allEthPeers() []*ethPeer {
 	ps.lock.RLock()
 	defer ps.lock.RUnlock()
 
-	return ps.peers
+	var list []*ethPeer
+
+	for _, peer := range ps.peers {
+		list = append(list, peer)
+	}
+	return list 
 }
 
 // len returns if the current number of `eth` peers in the set. Since the `snap`
