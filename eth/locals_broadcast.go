@@ -17,16 +17,16 @@ const (
 	// will trigger a wait, and I need that wait to
 	// last long enough to make sentRecently return false
 	// for sure
-	broadcastWaitTime = 500 * time.Millisecond
-	minSendTime = 600 * time.Millisecond
+	broadcastWaitTime = 600 * time.Millisecond
 )
 
 type localsTxState struct {
-	// map of sender account -> nonce-ordered list of transactions
+	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
 	// map of locals address to the timestamp that it was last broadcasted
 	accountsBcast map[string]map[common.Address]time.Time
-	handler *handler
+	chain *core.BlockChain
+	peers *peerSet
 	chainHeadCh <-chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
 	localTxsCh <-chan core.NewTxsEvent
@@ -35,22 +35,23 @@ type localsTxState struct {
 	signer types.Signer
 }
 
-func newLocalsTxState(handler *handler) *localsTxState {
+func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxState {
 	chainHeadCh := make(chan core.ChainHeadEvent, 10)
-	chainHeadSub := handler.chain.SubscribeChainHeadEvent(chainHeadCh)
+	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
 	localTxsCh := make(chan core.NewTxsEvent, 10)
-	localTxsSub := handler.txpool.SubscribeNewLocalTxsEvent(localTxsCh)
+	localTxsSub := txpool.SubscribeNewLocalTxsEvent(localTxsCh)
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
 		make(map[string]map[common.Address]time.Time),
-		handler,
+		chain,
+		peers,
 		chainHeadCh,
 		chainHeadSub,
 		localTxsCh,
 		localTxsSub,
 		time.NewTicker(1 * time.Nanosecond),
 		// TODO: this can never be pre-eip155 right?
-		types.LatestSigner(handler.chain.Config()),
+		types.LatestSigner(chain.Config()),
 	}
 
 	<-l.broadcastElapseTicker.C
@@ -59,7 +60,7 @@ func newLocalsTxState(handler *handler) *localsTxState {
 
 // get the nonce of an account at the head block
 func (l *localsTxState) GetNonce(addr common.Address) uint64 {
-	curState, err := l.handler.chain.State()
+	curState, err := l.chain.State()
 	if err != nil {
 		// TODO figure out what this could be
 		panic(err)
@@ -69,14 +70,14 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
-	if time.Since(l.accountsBcast[peerID][sender]) >= minSendTime {
+	if time.Since(l.accountsBcast[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
 } 
 
 func (l *localsTxState) maybeBroadcast() {
-	allPeers := l.handler.peers.allEthPeers()
+	allPeers := l.peers.allEthPeers()
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []common.Hash
@@ -87,6 +88,11 @@ func (l *localsTxState) maybeBroadcast() {
 				continue
 			}
 
+			// This is inefficient but I don't know how to easily
+			// cache which ranges of transactions from a given account.
+			// An easy optimization would be to keep a cache which records
+			// the index in the transaction queue (for a given sender) to
+			// start sending to the peer.
 			for i, tx := range txs {
 				if peer.KnownTransaction(tx.Hash()) {
 					continue
@@ -141,12 +147,12 @@ func (l *localsTxState) trimLocals() {
 	}
 }
 
-func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transaction) {
+func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
 	var (
 		curTxs []*types.Transaction
 	)
 
-	curTxs, ok := l.accounts[sender]
+		curTxs, ok := l.accounts[sender]
 	if !ok {
 		l.accounts[sender] = txs
 		return
@@ -156,7 +162,7 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 	// replacing pre-existing txs if there is a tx with same nonce
 
 	// this code is super gross.  I'm not sure how to improve it atm
-	res := []*types.Transaction{}
+	res := types.Transactions{}
 	curIdx, txsIdx := 0, 0
 	for ; curIdx < len(curTxs) || txsIdx < len(txs) ; {
 		if curIdx > len(curTxs) {
@@ -187,10 +193,15 @@ func (l *localsTxState) insertLocals(sender common.Address, txs []*types.Transac
 	l.accounts[sender] = res
 }
 
-// TODO combine this function with insertLocals for clarity
 func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	// we assume that these are a flattened list of account-ordered, then nonce-ordered txs
 
+	// TODO: do we need to get the txpool configuration that determines how many
+	// pending txs can exist in the pool per-account.
+	// if one of our transaction queues were to overflow it:
+	//	1) we panic as it's a tx-pool invariant?
+	//      2) we log some warning that this is weird and shouldn't happen?
+	//	3) we do nothing?  we don't want to leak internal config details of tx pool into here
 	acctTxs := make(map[common.Address][]*types.Transaction)
 	lastSender := common.Address{}
 	for _, tx := range txs {
@@ -202,7 +213,7 @@ func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	}
 
 	for acct, txs := range acctTxs {
-		l.insertLocals(acct, txs)
+		l.addLocalsFromSender(acct, txs)
 	}
 }
 

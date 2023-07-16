@@ -18,7 +18,6 @@ package eth
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"sync"
@@ -160,9 +159,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		handlerDoneCh:  make(chan struct{}),
 		handlerStartCh: make(chan struct{}),
 	}
-
-	// TODO: this is nasty  move locals mostly into this struct instead of introducing circular reference
-	h.locals = newLocalsTxState(h)
+	h.locals = newLocalsTxState(h.txpool, h.chain, h.peers)
 
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap
@@ -691,7 +688,6 @@ func (h *handler) txBroadcastLoop() {
 		case event := <-h.remoteTxsCh:
 			h.BroadcastTransactions(event.Txs)
 		case <-h.remoteTxsSub.Err():
-			fmt.Println("errrr")
 			return
 		}
 	}
