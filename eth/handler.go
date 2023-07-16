@@ -18,6 +18,7 @@ package eth
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sync"
@@ -555,12 +556,14 @@ func (h *handler) Start(maxPeers int) {
 	go h.protoTracker()
 
 	h.wg.Add(1)
-	go h.locals.loop(&h.wg)
+	go h.locals.Run(&h.wg)
 }
 
 func (h *handler) Stop() {
 	h.remoteTxsSub.Unsubscribe()        // quits txBroadcastLoop
 	h.minedBlockSub.Unsubscribe() // quits blockBroadcastLoop
+
+	h.locals.Stop()
 
 	// Quit chainSync and txsync64.
 	// After this is done, no new peers will be accepted.
@@ -688,6 +691,7 @@ func (h *handler) txBroadcastLoop() {
 		case event := <-h.remoteTxsCh:
 			h.BroadcastTransactions(event.Txs)
 		case <-h.remoteTxsSub.Err():
+			fmt.Println("errrr")
 			return
 		}
 	}

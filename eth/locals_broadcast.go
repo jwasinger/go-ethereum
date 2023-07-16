@@ -13,7 +13,7 @@ import (
 
 const (
 	// TODO: weird to have two values here...
-	// reason is that resetting broadcastElapseTimer
+	// reason is that resetting broadcastElapseTicker
 	// will trigger a wait, and I need that wait to
 	// last long enough to make sentRecently return false
 	// for sure
@@ -31,7 +31,7 @@ type localsTxState struct {
 	chainHeadSub event.Subscription
 	localTxsCh <-chan core.NewTxsEvent
 	localTxsSub event.Subscription
-	broadcastElapseTimer *time.Timer
+	broadcastElapseTicker *time.Ticker
 	signer types.Signer
 }
 
@@ -48,11 +48,12 @@ func newLocalsTxState(handler *handler) *localsTxState {
 		chainHeadSub,
 		localTxsCh,
 		localTxsSub,
-		nil,
+		time.NewTicker(1 * time.Nanosecond),
 		// TODO: this can never be pre-eip155 right?
 		types.LatestSigner(handler.chain.Config()),
 	}
 
+	<-l.broadcastElapseTicker.C
 	return &l
 }
 
@@ -94,7 +95,7 @@ func (l *localsTxState) maybeBroadcast() {
 				if i != len(txs) - 1 {
 					// there is a higher nonce transaction on the queue
 					// after this one.  reset the timer to ensure it will be sent
-					l.broadcastElapseTimer.Reset(broadcastWaitTime)
+					l.broadcastElapseTicker.Reset(broadcastWaitTime)
 				}
 
 				txsToBroadcast = append(txsToBroadcast, tx.Hash())
@@ -205,11 +206,16 @@ func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	}
 }
 
-func (l *localsTxState) loop(wg *sync.WaitGroup) {
-	defer l.chainHeadSub.Unsubscribe()
-	defer l.localTxsSub.Unsubscribe()
-	defer wg.Done()
+func (l *localsTxState) Stop() {
+	l.chainHeadSub.Unsubscribe()
+	l.localTxsSub.Unsubscribe()
+}
 
+func (l *localsTxState) Run(wg *sync.WaitGroup) {
+	defer wg.Done()
+	l.loop()
+}
+func (l *localsTxState) loop() {
 	for {
 		select {
 		case <-l.chainHeadCh:
@@ -219,7 +225,7 @@ func (l *localsTxState) loop(wg *sync.WaitGroup) {
 			// TODO: explore edge-cases if they aren't
 			l.addLocals(evt.Txs)
 			l.maybeBroadcast()
-		case <-l.broadcastElapseTimer.C:
+		case <-l.broadcastElapseTicker.C:
 			l.maybeBroadcast()
 		case <-l.localTxsSub.Err():
 			return
