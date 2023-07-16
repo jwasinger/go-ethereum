@@ -120,6 +120,8 @@ type handler struct {
 	peers        *peerSet
 	merger       *consensus.Merger
 
+	locals *localsTxState
+
 	eventMux      *event.TypeMux
 	remoteTxsCh         chan core.NewTxsEvent
 	remoteTxsSub        event.Subscription
@@ -157,6 +159,10 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		handlerDoneCh:  make(chan struct{}),
 		handlerStartCh: make(chan struct{}),
 	}
+
+	// TODO: this is nasty  move locals mostly into this struct instead of introducing circular reference
+	h.locals = newLocalsTxState(h)
+
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap
 		// block is ahead, so snap sync was enabled for this node at a certain point.
@@ -547,6 +553,9 @@ func (h *handler) Start(maxPeers int) {
 	// start peer handler tracker
 	h.wg.Add(1)
 	go h.protoTracker()
+
+	h.wg.Add(1)
+	go h.locals.loop(&h.wg)
 }
 
 func (h *handler) Stop() {

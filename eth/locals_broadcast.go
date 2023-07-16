@@ -3,6 +3,7 @@ package eth
 import (
 	"time"
 	"math"
+	"sync"
 	
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -26,11 +27,6 @@ type localsTxState struct {
 	// map of locals address to the timestamp that it was last broadcasted
 	accountsBcast map[string]map[common.Address]time.Time
 	handler *handler
-/*
-	peers *peerSet
-	chain *core.BlockChain
-*/
-	shutdownCh chan struct{}
 	chainHeadCh <-chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
 	localTxsCh <-chan core.NewTxsEvent
@@ -48,7 +44,6 @@ func newLocalsTxState(handler *handler) *localsTxState {
 		make(map[common.Address][]*types.Transaction),
 		make(map[string]map[common.Address]time.Time),
 		handler,
-		make(chan struct{}),
 		chainHeadCh,
 		chainHeadSub,
 		localTxsCh,
@@ -58,12 +53,7 @@ func newLocalsTxState(handler *handler) *localsTxState {
 		types.LatestSigner(handler.chain.Config()),
 	}
 
-	go l.loop()
 	return &l
-}
-
-func (l *localsTxState) Stop() {
-	close(l.shutdownCh)
 }
 
 // get the nonce of an account at the head block
@@ -215,8 +205,10 @@ func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	}
 }
 
-func (l *localsTxState) loop() {
+func (l *localsTxState) loop(wg *sync.WaitGroup) {
 	defer l.chainHeadSub.Unsubscribe()
+	defer l.localTxsSub.Unsubscribe()
+	defer wg.Done()
 
 	for {
 		select {
@@ -229,8 +221,6 @@ func (l *localsTxState) loop() {
 			l.maybeBroadcast()
 		case <-l.broadcastElapseTimer.C:
 			l.maybeBroadcast()
-		case <-l.shutdownCh:
-			return
 		case <-l.localTxsSub.Err():
 			return
 		}
