@@ -14,11 +14,62 @@ import (
 
 const broadcastWaitTime = 600 * time.Millisecond
 
+type pp lru.BasicLRU[string, map[common.Address]localAccountStatus]
+
+func (p *pp) setBroadcastTime(peer string, addr common.Address, time time.Timer) {
+	var peerEntry map[common.Address]localAccountStatus
+	peerEntry, ok := p.Get(peer.ID())
+	if !ok {
+		peerEntry = make(map[common.Address])
+	}
+
+	accountEntry, ok := entry[addr]
+	if !ok {
+		accountEntry = localAccountStatus{}
+	}
+
+	accountEntry.lastBroadcastTime = &time
+	peerEntry[addr] = accountEntry
+	p.Set(peer, peerEntry)
+}
+
+func (p *pp) setLastUnsentNonce(peer string, addr common.Address, nonce uint64) {
+	var peerEntry map[common.Address]localAccountStatus
+	peerEntry, ok := p.Get(peer.ID())
+	if !ok {
+		peerEntry = make(map[common.Address])
+	}
+
+	accountEntry, ok := entry[addr]
+	if !ok {
+		accountEntry = localAccountStatus{}
+	}
+
+	accountEntry.lastUnsentNonce = nonce
+	peerEntry[addr] = accountEntry
+	p.Set(peer, peerEntry)
+}
+
+func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
+	var peerEntry map[common.Address]localAccountStatus
+
+	peerEntry, ok := p.Get(peer); 
+	if !ok {
+		return nil
+	}
+
+	accountEntry, ok := peerEntry[addr]
+	if !ok {
+		return nil
+	}
+	return return accountEntry.lastBroadcastTime
+}
+
 type localsTxState struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
 	// cache of a map for every peer with most recent direct broadcast time for a sender account
-	peersStatus lru.BasicLRU[string, map[common.Address]localAccountStatus]
+	peersStatus pp 
 	chain *core.BlockChain
 	peers *peerSet
 	chainHeadCh <-chan core.ChainHeadEvent
@@ -29,7 +80,7 @@ type localsTxState struct {
 	signer types.Signer
 }
 
-struct localAccountStatus {
+type localAccountStatus struct {
 	lastUnsentNonce uint64
 	lastBroadcastTime *time.Time
 }
@@ -73,9 +124,8 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
-	if _, ok := l.peersStatus.Get(peerID); !ok {
-		return false 
-	} else if time.Since(l.peersStatus[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
+	bt := l.peersStatus.getBroadcastTime(peerID, sender)
+	if bt != nil && time.Since(l.peersStatus[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
@@ -107,7 +157,7 @@ func (l *localsTxState) maybeBroadcast() {
 			// the index in the transaction queue (for a given sender) to
 			// start sending to the peer.
 			for i, tx := range txs {
-				if peer.KnownTransaction(tx.Hash()) {
+				if tx.Nonce < peerStatus[addr].lastUnsentNonce || peer.KnownTransaction(tx.Hash()) {
 					continue
 				}
 				
@@ -117,6 +167,9 @@ func (l *localsTxState) maybeBroadcast() {
 					l.broadcastTrigger.Reset(broadcastWaitTime)
 				}
 
+				l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
+
+				// set bcast time 
 				txsToBroadcast = append(txsToBroadcast, tx.Hash())
 				from, _ := types.Sender(l.signer, tx)
 				if addressesBcasted, ok := l.peersStatus.Get(peer.ID()); ok {
