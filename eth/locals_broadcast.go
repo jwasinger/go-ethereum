@@ -15,7 +15,7 @@ import (
 const broadcastWaitTime = 600 * time.Millisecond
 
 type localAccountStatus struct {
-	lastUnsentNonce uint64
+	lowestUnsentNonce uint64
 	lastBroadcastTime *time.Time
 }
 
@@ -35,7 +35,7 @@ func (p *pp) getLastUnsentNonce(peerID string, addr common.Address) uint64 {
 	if !ok {
 		return 0
 	}
-	return accountEntry.lastUnsentNonce
+	return accountEntry.lowestUnsentNonce
 }
 
 func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
@@ -67,7 +67,7 @@ func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64
 		accountEntry = localAccountStatus{}
 	}
 
-	accountEntry.lastUnsentNonce = nonce
+	accountEntry.lowestUnsentNonce = nonce
 	peerEntry[addr] = accountEntry
 	p.internal.Add(peerID, peerEntry)
 }
@@ -149,9 +149,9 @@ func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool 
 } 
 
 func (l *localsTxState) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
-	lastUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), sender)
+	lowestUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), sender)
 	for i, tx := range txs {
-		if tx.Nonce() > lastUnsentNonce {
+		if tx.Nonce() > lowestUnsentNonce {
 			if !peer.KnownTransaction(tx.Hash()) {
 				l.peersStatus.setBroadcastTime(peer.ID(), sender, time.Now())
 
@@ -164,7 +164,7 @@ func (l *localsTxState) nextTxToBroadcast(txs []*types.Transaction, peer *ethPee
 				res := tx.Hash()
 				return &res
 			}
-			// we set lastUnsentNonce even if we weren't the ones sending the transaction to the other node
+			// we set lowestUnsentNonce even if we weren't the ones sending the transaction to the other node
 			l.peersStatus.setLastUnsentNonce(peer.ID(), sender, tx.Nonce() + 1)
 		}
 	}
