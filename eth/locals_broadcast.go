@@ -102,8 +102,6 @@ type localsTxState struct {
 	signer types.Signer
 }
 
-
-
 func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxState {
 	chainHeadCh := make(chan core.ChainHeadEvent, 10)
 	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
@@ -150,48 +148,42 @@ func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool 
 	return false
 } 
 
+func (l *localsTxState) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
+	lastUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), sender)
+	for i, tx := range txs {
+		if tx.Nonce() > lastUnsentNonce {
+			if !peer.KnownTransaction(tx.Hash()) {
+				l.peersStatus.setBroadcastTime(peer.ID(), sender, time.Now())
+
+				if i != len(txs) - 1 {
+					// there is a higher nonce transaction on the queue
+					// after this one.  reset the timer to ensure it will be sent
+					l.broadcastTrigger.Reset(broadcastWaitTime)
+				}
+
+				res := tx.Hash()
+				return &res
+			}
+			// we set lastUnsentNonce even if we weren't the ones sending the transaction to the other node
+			l.peersStatus.setLastUnsentNonce(peer.ID(), sender, tx.Nonce() + 1)
+		}
+	}
+
+	return nil
+}
+
 func (l *localsTxState) maybeBroadcast() {
 	allPeers := l.peers.allEthPeers()
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []common.Hash
-		// new: record accounts that were invalidated (had new transactions)
 
-
-		// if try get cache entry
-		// 	if the highest sent nonce == highest nonce known, we skip evaluating whether to broadcast locals
-		// else
-		//	evaluate each account, each tx
-
-		// TODO: cache accounts modified by newLocalTxs so that we
-		// don't iterate the entire account set here
 		for addr, txs := range l.accounts {
 			if l.sentRecently(peer.ID(), addr) {
 				continue
 			}
-
-			lastUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), addr)
-			// This is inefficient but I don't know how to easily
-			// cache which ranges of transactions from a given account.
-			// An easy optimization would be to keep a cache which records
-			// the index in the transaction queue (for a given sender) to
-			// start sending to the peer.
-			for i, tx := range txs {
-				if tx.Nonce() > lastUnsentNonce {
-					if !peer.KnownTransaction(tx.Hash()) {
-						txsToBroadcast = append(txsToBroadcast, tx.Hash())
-
-						l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
-
-						if i != len(txs) - 1 {
-							// there is a higher nonce transaction on the queue
-							// after this one.  reset the timer to ensure it will be sent
-							l.broadcastTrigger.Reset(broadcastWaitTime)
-						}
-					}
-					// we set lastUnsentNonce even if we weren't the ones sending the transaction to the other node
-					l.peersStatus.setLastUnsentNonce(peer.ID(), addr, tx.Nonce() + 1)
-				}
+			if tx := l.nextTxToBroadcast(txs, peer, addr); tx != nil {
+				txsToBroadcast = append(txsToBroadcast, *tx)
 			}
 		}
 		if len(txsToBroadcast) > 0 {
