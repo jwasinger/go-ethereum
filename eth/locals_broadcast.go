@@ -14,14 +14,19 @@ import (
 
 const broadcastWaitTime = 600 * time.Millisecond
 
+type localAccountStatus struct {
+	lastUnsentNonce uint64
+	lastBroadcastTime *time.Time
+}
+
 type pp struct {
 	internal lru.BasicLRU[string, map[common.Address]localAccountStatus]
 }
 
-func (p *pp) getLastUnsentNonce(addr common.Address) uint64 {
+func (p *pp) getLastUnsentNonce(peerID string, addr common.Address) uint64 {
 	var peerEntry map[common.Address]localAccountStatus
 
-	peerEntry, ok := p.internal.Get(peer); 
+	peerEntry, ok := p.internal.Get(peerID); 
 	if !ok {
 		return 0
 	}
@@ -30,7 +35,7 @@ func (p *pp) getLastUnsentNonce(addr common.Address) uint64 {
 	if !ok {
 		return 0
 	}
-	return accountEntry.lastUnsetNonce
+	return accountEntry.lastUnsentNonce
 }
 
 func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
@@ -97,10 +102,7 @@ type localsTxState struct {
 	signer types.Signer
 }
 
-type localAccountStatus struct {
-	lastUnsentNonce uint64
-	lastBroadcastTime *time.Time
-}
+
 
 func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxState {
 	chainHeadCh := make(chan core.ChainHeadEvent, 10)
@@ -113,7 +115,7 @@ func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *lo
 	maxPeers := 16 
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
-		pp{lru.NewBasicLRU[string, map[common.Address]time.Time](maxPeers)},
+		pp{lru.NewBasicLRU[string, map[common.Address]localAccountStatus](maxPeers)},
 		chain,
 		peers,
 		chainHeadCh,
@@ -168,42 +170,32 @@ func (l *localsTxState) maybeBroadcast() {
 				continue
 			}
 
+			lastUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), addr)
 			// This is inefficient but I don't know how to easily
 			// cache which ranges of transactions from a given account.
 			// An easy optimization would be to keep a cache which records
 			// the index in the transaction queue (for a given sender) to
 			// start sending to the peer.
 			for i, tx := range txs {
-				if tx.Nonce < peerStatus[addr].lastUnsentNonce || peer.KnownTransaction(tx.Hash()) {
-					continue
+				if tx.Nonce() > lastUnsentNonce {
+					if !peer.KnownTransaction(tx.Hash()) {
+						txsToBroadcast = append(txsToBroadcast, tx.Hash())
+
+						l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
+
+						if i != len(txs) - 1 {
+							// there is a higher nonce transaction on the queue
+							// after this one.  reset the timer to ensure it will be sent
+							l.broadcastTrigger.Reset(broadcastWaitTime)
+						}
+					}
+					// we set lastUnsentNonce even if we weren't the ones sending the transaction to the other node
+					l.peersStatus.setLastUnsentNonce(peer.ID(), addr, tx.Nonce() + 1)
 				}
-				
-				txsToBroadcast = append(txsToBroadcast, tx)
-
-				l.peerStatus.setLastUnsentNonce(peer.ID(), addr, tx.Nonce + 1)
-				l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
-
-				if i != len(txs) - 1 {
-					// there is a higher nonce transaction on the queue
-					// after this one.  reset the timer to ensure it will be sent
-					l.broadcastTrigger.Reset(broadcastWaitTime)
-				}
-
-
-				break
 			}
 		}
 		if len(txsToBroadcast) > 0 {
 			peer.AsyncSendTransactions(txsToBroadcast)
-		}
-	}
-}
-
-func (l *localsTxState) deleteAccount(addr common.Address) {
-	delete(l.accounts, addr)
-	for peer, _ := range l.peersStatus {
-		if _, ok := l.peersStatus[peer][addr]; ok {
-			delete(l.peersStatus[peer], addr)
 		}
 	}
 }
@@ -224,7 +216,6 @@ func (l *localsTxState) trimLocals() {
 
 		if len(l.accounts[addr]) == 0 {
 			delete(l.accounts, addr)
-			l.deleteAccount(addr)
 		}
 	}
 }
@@ -233,7 +224,7 @@ func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.
 	var curTxs []*types.Transaction
 
 	for _, peer := range l.peers.allEthPeers() {
-		l.peersStatus.setLastUnsentNonce(peer.ID(), sender, txs[0].Nonce)
+		l.peersStatus.setLastUnsentNonce(peer.ID(), sender, txs[0].Nonce())
 	}
 
 	curTxs, ok := l.accounts[sender]
