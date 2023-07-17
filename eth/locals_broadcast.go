@@ -14,46 +14,63 @@ import (
 
 const broadcastWaitTime = 600 * time.Millisecond
 
-type pp lru.BasicLRU[string, map[common.Address]localAccountStatus]
+type pp struct {
+	internal lru.BasicLRU[string, map[common.Address]localAccountStatus]
+}
 
-func (p *pp) setBroadcastTime(peer string, addr common.Address, time time.Timer) {
+func (p *pp) getLastUnsentNonce(addr common.Address) uint64 {
 	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.Get(peer.ID())
+
+	peerEntry, ok := p.internal.Get(peer); 
 	if !ok {
-		peerEntry = make(map[common.Address])
+		return 0
 	}
 
-	accountEntry, ok := entry[addr]
+	accountEntry, ok := peerEntry[addr]
+	if !ok {
+		return 0
+	}
+	return accountEntry.lastUnsetNonce
+}
+
+func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
+	var peerEntry map[common.Address]localAccountStatus
+	peerEntry, ok := p.internal.Get(peerID)
+	if !ok {
+		peerEntry = make(map[common.Address]localAccountStatus)
+	}
+
+	accountEntry, ok := peerEntry[addr]
 	if !ok {
 		accountEntry = localAccountStatus{}
 	}
 
 	accountEntry.lastBroadcastTime = &time
 	peerEntry[addr] = accountEntry
-	p.Set(peer, peerEntry)
+	p.internal.Add(peerID, peerEntry)
 }
 
-func (p *pp) setLastUnsentNonce(peer string, addr common.Address, nonce uint64) {
+func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64) {
 	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.Get(peer.ID())
+	peerEntry, ok := p.internal.Get(peerID)
 	if !ok {
-		peerEntry = make(map[common.Address])
+		peerEntry = make(map[common.Address]localAccountStatus)
 	}
 
-	accountEntry, ok := entry[addr]
+	accountEntry, ok := peerEntry[addr]
 	if !ok {
 		accountEntry = localAccountStatus{}
 	}
 
 	accountEntry.lastUnsentNonce = nonce
 	peerEntry[addr] = accountEntry
-	p.Set(peer, peerEntry)
+	p.internal.Add(peerID, peerEntry)
 }
 
 func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
 	var peerEntry map[common.Address]localAccountStatus
 
-	peerEntry, ok := p.Get(peer); 
+	peerEntry, ok := p.internal.Get(peer); 
 	if !ok {
 		return nil
 	}
@@ -62,7 +79,7 @@ func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
 	if !ok {
 		return nil
 	}
-	return return accountEntry.lastBroadcastTime
+	return accountEntry.lastBroadcastTime
 }
 
 type localsTxState struct {
@@ -96,7 +113,7 @@ func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *lo
 	maxPeers := 16 
 	l := localsTxState{
 		make(map[common.Address][]*types.Transaction),
-		lru.NewBasicLRU[string, map[common.Address]time.Time](maxPeers),
+		pp{lru.NewBasicLRU[string, map[common.Address]time.Time](maxPeers)},
 		chain,
 		peers,
 		chainHeadCh,
@@ -125,7 +142,7 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
 	bt := l.peersStatus.getBroadcastTime(peerID, sender)
-	if bt != nil && time.Since(l.peersStatus[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
+	if bt != nil && time.Since(*bt) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
@@ -161,23 +178,18 @@ func (l *localsTxState) maybeBroadcast() {
 					continue
 				}
 				
+				txsToBroadcast = append(txsToBroadcast, tx)
+
+				l.peerStatus.setLastUnsentNonce(peer.ID(), addr, tx.Nonce + 1)
+				l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
+
 				if i != len(txs) - 1 {
 					// there is a higher nonce transaction on the queue
 					// after this one.  reset the timer to ensure it will be sent
 					l.broadcastTrigger.Reset(broadcastWaitTime)
 				}
 
-				l.peersStatus.setBroadcastTime(peer.ID(), addr, time.Now())
 
-				// set bcast time 
-				txsToBroadcast = append(txsToBroadcast, tx.Hash())
-				from, _ := types.Sender(l.signer, tx)
-				if addressesBcasted, ok := l.peersStatus.Get(peer.ID()); ok {
-					addressesBcasted[from] = time.Now()
-					l.peersStatus.Set(addressesBcasted)
-				} else {
-					l.peersStatus.Set(from, make(map[common.Address]time.Time))
-				}
 				break
 			}
 		}
@@ -218,31 +230,10 @@ func (l *localsTxState) trimLocals() {
 }
 
 func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
-	var (
-		curTxs []*types.Transaction
-	)
+	var curTxs []*types.Transaction
 
-	// update each peer entry (or create if it doesn't exist)
-	for _, peer := l.peers.allEthPeers() {
-		// TODO: refactor/flatten this:
-		if accountsStatus, ok := l.peersStatus.Get(peer.ID()); ok {
-			if accountStatus, ok2 := accountsStatus[sender]; ok2 {
-				accountStatus.lastUnsentNonce = txs[0].Nonce
-				l.accountsStatus[peer.ID()][sender] = accountsStatus
-			} else {
-				l.accountsStatus[peer.ID()][sender] = localAccountStatus{txs[0].Nonce, nil}
-			}
-			l.peersStatus.Set(accountsStatus)
-		} else {
-			accountsStatus := make(map[common.Address]localAccountStatus)
-			if accountStatus, ok2 := accountsStatus[sender]; ok2 {
-				accountStatus.lastUnsentNonce = txs[0].Nonce
-				accountsStatus[peer.ID()][sender] = accountsStatus
-			} else {
-				accountsStatus[peer.ID()][sender] = localAccountStatus{txs[0].Nonce, nil}
-			}
-			l.peersStatus.Set(accountsStatus)
-		}
+	for _, peer := range l.peers.allEthPeers() {
+		l.peersStatus.setLastUnsentNonce(peer.ID(), sender, txs[0].Nonce)
 	}
 
 	curTxs, ok := l.accounts[sender]
