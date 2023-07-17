@@ -12,28 +12,26 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
-const (
-	// TODO: weird to have two values here...
-	// reason is that resetting broadcastElapseTicker
-	// will trigger a wait, and I need that wait to
-	// last long enough to make sentRecently return false
-	// for sure
-	broadcastWaitTime = 600 * time.Millisecond
-)
+const broadcastWaitTime = 600 * time.Millisecond
 
 type localsTxState struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
-	// map of locals address to the timestamp that it was last broadcasted
-	accountsBcast lru.BasicLRU[string, map[common.Address]time.Time]
+	// cache of a map for every peer with most recent direct broadcast time for a sender account
+	peersStatus lru.BasicLRU[string, map[common.Address]localAccountStatus]
 	chain *core.BlockChain
 	peers *peerSet
 	chainHeadCh <-chan core.ChainHeadEvent
 	chainHeadSub event.Subscription
 	localTxsCh <-chan core.NewTxsEvent
 	localTxsSub event.Subscription
-	broadcastElapseTicker *time.Ticker
+	broadcastTrigger *time.Ticker
 	signer types.Signer
+}
+
+struct localAccountStatus {
+	lastUnsentNonce uint64
+	lastBroadcastTime *time.Time
 }
 
 func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxState {
@@ -59,7 +57,7 @@ func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *lo
 		types.LatestSigner(chain.Config()),
 	}
 
-	<-l.broadcastElapseTicker.C
+	<-l.broadcastTrigger.C
 	return &l
 }
 
@@ -75,9 +73,9 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
-	if _, ok := l.accountsBcast.Get(peerID); !ok {
+	if _, ok := l.peersStatus.Get(peerID); !ok {
 		return false 
-	} else if time.Since(l.accountsBcast[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
+	} else if time.Since(l.peersStatus[peerID][sender]) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
@@ -88,6 +86,14 @@ func (l *localsTxState) maybeBroadcast() {
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []common.Hash
+		// new: record accounts that were invalidated (had new transactions)
+
+
+		// if try get cache entry
+		// 	if the highest sent nonce == highest nonce known, we skip evaluating whether to broadcast locals
+		// else
+		//	evaluate each account, each tx
+
 		// TODO: cache accounts modified by newLocalTxs so that we
 		// don't iterate the entire account set here
 		for addr, txs := range l.accounts {
@@ -108,16 +114,16 @@ func (l *localsTxState) maybeBroadcast() {
 				if i != len(txs) - 1 {
 					// there is a higher nonce transaction on the queue
 					// after this one.  reset the timer to ensure it will be sent
-					l.broadcastElapseTicker.Reset(broadcastWaitTime)
+					l.broadcastTrigger.Reset(broadcastWaitTime)
 				}
 
 				txsToBroadcast = append(txsToBroadcast, tx.Hash())
 				from, _ := types.Sender(l.signer, tx)
-				if addressesBcasted, ok := l.accountsBcast.Get(peer.ID()); ok {
+				if addressesBcasted, ok := l.peersStatus.Get(peer.ID()); ok {
 					addressesBcasted[from] = time.Now()
-					l.accountsBcast.Set(addressesBcasted)
+					l.peersStatus.Set(addressesBcasted)
 				} else {
-					l.accountsBcast.Set(from, make(map[common.Address]time.Time))
+					l.peersStatus.Set(from, make(map[common.Address]time.Time))
 				}
 				break
 			}
@@ -130,9 +136,9 @@ func (l *localsTxState) maybeBroadcast() {
 
 func (l *localsTxState) deleteAccount(addr common.Address) {
 	delete(l.accounts, addr)
-	for peer, _ := range l.accountsBcast {
-		if _, ok := l.accountsBcast[peer][addr]; ok {
-			delete(l.accountsBcast[peer], addr)
+	for peer, _ := range l.peersStatus {
+		if _, ok := l.peersStatus[peer][addr]; ok {
+			delete(l.peersStatus[peer], addr)
 		}
 	}
 }
@@ -163,7 +169,30 @@ func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.
 		curTxs []*types.Transaction
 	)
 
-		curTxs, ok := l.accounts[sender]
+	// update each peer entry (or create if it doesn't exist)
+	for _, peer := l.peers.allEthPeers() {
+		// TODO: refactor/flatten this:
+		if accountsStatus, ok := l.peersStatus.Get(peer.ID()); ok {
+			if accountStatus, ok2 := accountsStatus[sender]; ok2 {
+				accountStatus.lastUnsentNonce = txs[0].Nonce
+				l.accountsStatus[peer.ID()][sender] = accountsStatus
+			} else {
+				l.accountsStatus[peer.ID()][sender] = localAccountStatus{txs[0].Nonce, nil}
+			}
+			l.peersStatus.Set(accountsStatus)
+		} else {
+			accountsStatus := make(map[common.Address]localAccountStatus)
+			if accountStatus, ok2 := accountsStatus[sender]; ok2 {
+				accountStatus.lastUnsentNonce = txs[0].Nonce
+				accountsStatus[peer.ID()][sender] = accountsStatus
+			} else {
+				accountsStatus[peer.ID()][sender] = localAccountStatus{txs[0].Nonce, nil}
+			}
+			l.peersStatus.Set(accountsStatus)
+		}
+	}
+
+	curTxs, ok := l.accounts[sender]
 	if !ok {
 		l.accounts[sender] = txs
 		return
@@ -204,9 +233,12 @@ func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.
 	l.accounts[sender] = res
 }
 
+// add a set of locals into the tracking queues
+// assumes:
+//	1) txs is a nonce-ordered, account-grouped list of transactions
+//	2) there are no nonce gaps, multiple calls to addLocals pass transactions
+//	   with nonces that are contiguous/overlapping with values from previous calls.
 func (l *localsTxState) addLocals(txs []*types.Transaction) {
-	// we assume that these are a flattened list of account-ordered, then nonce-ordered txs
-
 	// TODO: do we need to get the txpool configuration that determines how many
 	// pending txs can exist in the pool per-account.
 	// if one of our transaction queues were to overflow it:
@@ -247,7 +279,7 @@ func (l *localsTxState) loop() {
 			// TODO: explore edge-cases if they aren't
 			l.addLocals(evt.Txs)
 			l.maybeBroadcast()
-		case <-l.broadcastElapseTicker.C:
+		case <-l.broadcastTrigger.C:
 			l.maybeBroadcast()
 		case <-l.localTxsSub.Err():
 			return
