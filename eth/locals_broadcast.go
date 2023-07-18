@@ -14,8 +14,12 @@ import (
 
 const broadcastWaitTime = 1 * time.Second
 
+// localAccountStatus represents the state of local transaction broadcast for a given peer
+// and sender Ethereum address
 type localAccountStatus struct {
+	// the lowest nonce that has not had a transaction sent to the peer from us
 	lowestUnsentNonce uint64
+	// the last time we sent a transaction from this account
 	lastBroadcastTime *time.Time
 }
 
@@ -23,6 +27,9 @@ type localAccountStatus struct {
 // localAccountStatus that corresponds (if this node had direct-broadcasted local
 // transactions to that peer in the past)
 type peerStateCache struct {
+	// TODO: should have some eviction mechanism for the addresses in the second-level.
+	// e.g. if we haven't broadcasted from some account in a while, we remove each entry
+	// for it from the lookup
 	internal lru.BasicLRU[string, map[common.Address]localAccountStatus]
 }
 
@@ -62,9 +69,9 @@ func (p *peerStateCache) setBroadcastTime(peerID string, addr common.Address, ti
 	p.internal.Add(peerID, peerEntry)
 }
 
-// setLastUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
+// setLowestUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
 // if none previously existed.
-func (p *peerStateCache) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64) {
+func (p *peerStateCache) setLowestUnsentNonce(peerID string, addr common.Address, nonce uint64) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
 	if !ok {
@@ -98,17 +105,13 @@ func (p *peerStateCache) getBroadcastTime(peer string, addr common.Address) *tim
 	return accountEntry.lastBroadcastTime
 }
 
-// localsTxBroadcaster implements new logic for direct broadcast of local transactions.
-// previously they were directly-broadcasted in nonce-order to a square root of the peerset
-// who didn't have the transaction.
-// 
-// now: transactions are broadcast nonce-ordered to a square root of the peerset,
+// localsTxBroadcaster implements new logic for direct broadcast of local transactions:
+// transactions are broadcast nonce-ordered to a square root of the peerset,
 // a delay of 1 second is added between sending consecutive transactions from the
 // same account.
 type localsTxBroadcaster struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
-	// cache of a map for every peer with most recent direct broadcast time for a sender account
 	peersStatus peerStateCache
 	chain *core.BlockChain
 	peers *peerSet
@@ -126,9 +129,9 @@ func newLocalsTxBroadcaster(txpool txPool, chain *core.BlockChain, peers *peerSe
 	localTxsCh := make(chan core.NewTxsEvent, 10)
 	localTxsSub := txpool.SubscribeNewLocalTxsEvent(localTxsCh)
 
-	// TODO: this is randomly chosen.  figure out how to choose 
-	// proper value based on node configuration
-	maxPeers := 16 
+	// TODO: this maxPeers is randomly chosen (and generous).
+	// figure out how to choose proper value based on node configuration
+	maxPeers := 64
 	l := localsTxBroadcaster{
 		make(map[common.Address][]*types.Transaction),
 		peerStateCache{lru.NewBasicLRU[string, map[common.Address]localAccountStatus](maxPeers)},
@@ -167,11 +170,15 @@ func (l *localsTxBroadcaster) sentRecently(peerID string, sender common.Address)
 	return false
 } 
 
-//
+// nextTxToBroadcast retrieves the next unsent transaction from an account with the lowest nonce and returns it.  The internal state
+// of localsTxBroadcaster is modified to reflect the tx as being sent to the peer.
 func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
 	lowestUnsentNonce := l.peersStatus.getLowestUnsentNonce(peer.ID(), sender)
 	for i, tx := range txs {
 		if tx.Nonce() > lowestUnsentNonce {
+			// we set lowestUnsentNonce even if we weren't the ones sending the transaction to the other node
+			l.peersStatus.setLowestUnsentNonce(peer.ID(), sender, tx.Nonce() + 1)
+
 			if !peer.KnownTransaction(tx.Hash()) {
 				l.peersStatus.setBroadcastTime(peer.ID(), sender, time.Now())
 
@@ -184,8 +191,6 @@ func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *
 				res := tx.Hash()
 				return &res
 			}
-			// we set lowestUnsentNonce even if we weren't the ones sending the transaction to the other node
-			l.peersStatus.setLastUnsentNonce(peer.ID(), sender, tx.Nonce() + 1)
 		}
 	}
 
@@ -215,7 +220,8 @@ func (l *localsTxBroadcaster) maybeBroadcast() {
 	}
 }
 
-// trimLocals 
+// trimLocals removes transactions from monitoring queues
+// if their nonce falls below the account nonce (stale transactions).
 func (l *localsTxBroadcaster) trimLocals() {
 	for addr, txs := range l.accounts {
 		var cutPoint int
@@ -236,11 +242,18 @@ func (l *localsTxBroadcaster) trimLocals() {
 	}
 }
 
+// addLocalsFromSender inserts a list of nonce-ordered transactions into the tracking
+// queue for the associated account.
 func (l *localsTxBroadcaster) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
 	var curTxs []*types.Transaction
 
 	for _, peer := range l.peers.allEthPeers() {
-		l.peersStatus.setLastUnsentNonce(peer.ID(), sender, txs[0].Nonce())
+		lastUnsentNonce := l.peersStatus.gtLowestUnsentNonce(peer.ID(), sender)
+		if txs[0].Nonce() <= lastUnsentNonce {
+			// this is either a reorg which re-injected txs into the pool or
+			// a known transaction has been replaced
+			l.peersStatus.setLowestUnsentNonce(peer.ID(), sender, txs[0].Nonce())
+		}
 	}
 
 	curTxs, ok := l.accounts[sender]
@@ -305,24 +318,25 @@ func (l *localsTxBroadcaster) addLocals(txs []*types.Transaction) {
 	}
 }
 
+// Stop stops the long-running go-routine event loop for the localsTxBroadcaster
 func (l *localsTxBroadcaster) Stop() {
 	l.chainHeadSub.Unsubscribe()
 	l.localTxsSub.Unsubscribe()
 }
 
+// Run starts the long-running go-routine event loop for the localsTxBroadcaster
 func (l *localsTxBroadcaster) Run(wg *sync.WaitGroup) {
 	defer wg.Done()
 	l.loop()
 }
 
+// loop is a long-running method which manages the life-cycle for the localsTxBroadcaster
 func (l *localsTxBroadcaster) loop() {
 	for {
 		select {
 		case <-l.chainHeadCh:
 			l.trimLocals()
 		case evt := <-l.localTxsCh:
-			// I assume that these are mostly transactions originating from this same node
-			// TODO: explore edge-cases if they aren't
 			l.addLocals(evt.Txs)
 			l.maybeBroadcast()
 		case <-l.broadcastTrigger.C:
