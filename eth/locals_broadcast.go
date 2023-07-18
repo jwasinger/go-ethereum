@@ -12,23 +12,23 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
-const broadcastWaitTime = 600 * time.Millisecond
+const broadcastWaitTime = 1 * time.Second
 
 type localAccountStatus struct {
 	lowestUnsentNonce uint64
 	lastBroadcastTime *time.Time
 }
 
-// pp implements a 2-level cache keyed by peer network ID and address and mapping to a 
+// peerStateCache implements a 2-level lookup keyed by peer network ID and address and mapping to a 
 // localAccountStatus that corresponds (if this node had direct-broadcasted local
 // transactions to that peer in the past)
-type pp struct {
+type peerStateCache struct {
 	internal lru.BasicLRU[string, map[common.Address]localAccountStatus]
 }
 
 // getLowestUnsentNonce returns the lowest unsent nonce for a peer/addr, creating an entry
 // if none previously existed and returning 0.
-func (p *pp) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
+func (p *peerStateCache) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
 	var peerEntry map[common.Address]localAccountStatus
 
 	peerEntry, ok := p.internal.Get(peerID); 
@@ -45,7 +45,7 @@ func (p *pp) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
 
 // setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
 // if none previously existed.
-func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
+func (p *peerStateCache) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
 	if !ok {
@@ -64,7 +64,7 @@ func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time
 
 // setLastUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
 // if none previously existed.
-func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64) {
+func (p *peerStateCache) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
 	if !ok {
@@ -83,7 +83,7 @@ func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64
 
 // getBroadcastTime returns the latest broadcast time for a given peer/sender, creating
 // an entry if none previously existed and returning nil.
-func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
+func (p *peerStateCache) getBroadcastTime(peer string, addr common.Address) *time.Time {
 	var peerEntry map[common.Address]localAccountStatus
 
 	peerEntry, ok := p.internal.Get(peer); 
@@ -109,7 +109,7 @@ type localsTxBroadcaster struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
 	// cache of a map for every peer with most recent direct broadcast time for a sender account
-	peersStatus pp 
+	peersStatus peerStateCache
 	chain *core.BlockChain
 	peers *peerSet
 	chainHeadCh <-chan core.ChainHeadEvent
@@ -129,9 +129,9 @@ func newLocalsTxBroadcaster(txpool txPool, chain *core.BlockChain, peers *peerSe
 	// TODO: this is randomly chosen.  figure out how to choose 
 	// proper value based on node configuration
 	maxPeers := 16 
-	l := localsTxState{
+	l := localsTxBroadcaster{
 		make(map[common.Address][]*types.Transaction),
-		pp{lru.NewBasicLRU[string, map[common.Address]localAccountStatus](maxPeers)},
+		peerStateCache{lru.NewBasicLRU[string, map[common.Address]localAccountStatus](maxPeers)},
 		chain,
 		peers,
 		chainHeadCh,
@@ -139,7 +139,8 @@ func newLocalsTxBroadcaster(txpool txPool, chain *core.BlockChain, peers *peerSe
 		localTxsCh,
 		localTxsSub,
 		time.NewTicker(1 * time.Nanosecond),
-		// TODO: this can never be pre-eip155 right?
+		// TODO: I feel like initiating the signer once with
+		// LatestSigner might be problematic but I can't explain why :)
 		types.LatestSigner(chain.Config()),
 	}
 
@@ -191,6 +192,9 @@ func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *
 	return nil
 }
 
+// maybeBroadcast sends all transactions to a peer where:
+//	1) another transaction from the same sender has not been sent to the peer recently.
+//	2) the peer does not already have the transaction
 func (l *localsTxBroadcaster) maybeBroadcast() {
 	allPeers := l.peers.allEthPeers()
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
@@ -211,6 +215,7 @@ func (l *localsTxBroadcaster) maybeBroadcast() {
 	}
 }
 
+// trimLocals 
 func (l *localsTxBroadcaster) trimLocals() {
 	for addr, txs := range l.accounts {
 		var cutPoint int
