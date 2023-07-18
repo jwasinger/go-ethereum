@@ -19,7 +19,7 @@ const broadcastWaitTime = 1 * time.Second
 type localAccountStatus struct {
 	// the lowest nonce that has not had a transaction sent to the peer from us
 	lowestUnsentNonce uint64
-	// the last time we sent a transaction from this account
+	// the last time we sent a transaction from this account to the associated peer
 	lastBroadcastTime *time.Time
 }
 
