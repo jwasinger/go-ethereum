@@ -159,7 +159,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		handlerDoneCh:  make(chan struct{}),
 		handlerStartCh: make(chan struct{}),
 	}
-	h.locals = newLocalsTxBroadcaster(h.txpool, h.chain, h.peers)
+	h.localsBroadcaster = newLocalsTxBroadcaster(h.txpool, h.chain, h.peers)
 
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap

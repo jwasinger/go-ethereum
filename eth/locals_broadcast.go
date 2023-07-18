@@ -242,13 +242,16 @@ func (l *localsTxBroadcaster) trimLocals() {
 	}
 }
 
+// TODO: randomly noting edge-case/food-for-thought here...:  if we receive replacement transaction(s), we should broadcast them out ASAP
+// to increase the chances they get included?
+
 // addLocalsFromSender inserts a list of nonce-ordered transactions into the tracking
 // queue for the associated account.
 func (l *localsTxBroadcaster) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
 	var curTxs []*types.Transaction
 
 	for _, peer := range l.peers.allEthPeers() {
-		lastUnsentNonce := l.peersStatus.gtLowestUnsentNonce(peer.ID(), sender)
+		lastUnsentNonce := l.peersStatus.getLowestUnsentNonce(peer.ID(), sender)
 		if txs[0].Nonce() <= lastUnsentNonce {
 			// this is either a reorg which re-injected txs into the pool or
 			// a known transaction has been replaced
