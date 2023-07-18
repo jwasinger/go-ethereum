@@ -19,11 +19,16 @@ type localAccountStatus struct {
 	lastBroadcastTime *time.Time
 }
 
+// pp implements a 2-level cache keyed by peer network ID and address and mapping to a 
+// localAccountStatus that corresponds (if this node had direct-broadcasted local
+// transactions to that peer in the past)
 type pp struct {
 	internal lru.BasicLRU[string, map[common.Address]localAccountStatus]
 }
 
-func (p *pp) getLastUnsentNonce(peerID string, addr common.Address) uint64 {
+// getLowestUnsentNonce returns the lowest unsent nonce for a peer/addr, creating an entry
+// if none previously existed and returning 0.
+func (p *pp) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
 	var peerEntry map[common.Address]localAccountStatus
 
 	peerEntry, ok := p.internal.Get(peerID); 
@@ -38,6 +43,8 @@ func (p *pp) getLastUnsentNonce(peerID string, addr common.Address) uint64 {
 	return accountEntry.lowestUnsentNonce
 }
 
+// setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
+// if none previously existed.
 func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
@@ -55,6 +62,8 @@ func (p *pp) setBroadcastTime(peerID string, addr common.Address, time time.Time
 	p.internal.Add(peerID, peerEntry)
 }
 
+// setLastUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
+// if none previously existed.
 func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
@@ -72,6 +81,8 @@ func (p *pp) setLastUnsentNonce(peerID string, addr common.Address, nonce uint64
 	p.internal.Add(peerID, peerEntry)
 }
 
+// getBroadcastTime returns the latest broadcast time for a given peer/sender, creating
+// an entry if none previously existed and returning nil.
 func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
 	var peerEntry map[common.Address]localAccountStatus
 
@@ -87,7 +98,14 @@ func (p *pp) getBroadcastTime(peer string, addr common.Address) *time.Time {
 	return accountEntry.lastBroadcastTime
 }
 
-type localsTxState struct {
+// localsTxBroadcaster implements new logic for direct broadcast of local transactions.
+// previously they were directly-broadcasted in nonce-order to a square root of the peerset
+// who didn't have the transaction.
+// 
+// now: transactions are broadcast nonce-ordered to a square root of the peerset,
+// a delay of 1 second is added between sending consecutive transactions from the
+// same account.
+type localsTxBroadcaster struct {
 	// map of local sender address to a nonce-ordered array of transactions
 	accounts map[common.Address][]*types.Transaction
 	// cache of a map for every peer with most recent direct broadcast time for a sender account
@@ -102,7 +120,7 @@ type localsTxState struct {
 	signer types.Signer
 }
 
-func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxState {
+func newLocalsTxBroadcaster(txpool txPool, chain *core.BlockChain, peers *peerSet) *localsTxBroadcaster {
 	chainHeadCh := make(chan core.ChainHeadEvent, 10)
 	chainHeadSub := chain.SubscribeChainHeadEvent(chainHeadCh)
 	localTxsCh := make(chan core.NewTxsEvent, 10)
@@ -130,7 +148,7 @@ func newLocalsTxState(txpool txPool, chain *core.BlockChain, peers *peerSet) *lo
 }
 
 // get the nonce of an account at the head block
-func (l *localsTxState) GetNonce(addr common.Address) uint64 {
+func (l *localsTxBroadcaster) GetNonce(addr common.Address) uint64 {
 	curState, err := l.chain.State()
 	if err != nil {
 		// TODO figure out what this could be
@@ -140,7 +158,7 @@ func (l *localsTxState) GetNonce(addr common.Address) uint64 {
 }
 
 // returns whether or not we sent a given peer a local transaction from sender
-func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool {
+func (l *localsTxBroadcaster) sentRecently(peerID string, sender common.Address) bool {
 	bt := l.peersStatus.getBroadcastTime(peerID, sender)
 	if bt != nil && time.Since(*bt) >= broadcastWaitTime + 100 * time.Millisecond {
 		return true
@@ -148,8 +166,9 @@ func (l *localsTxState) sentRecently(peerID string, sender common.Address) bool 
 	return false
 } 
 
-func (l *localsTxState) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
-	lowestUnsentNonce := l.peersStatus.getLastUnsentNonce(peer.ID(), sender)
+//
+func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
+	lowestUnsentNonce := l.peersStatus.getLowestUnsentNonce(peer.ID(), sender)
 	for i, tx := range txs {
 		if tx.Nonce() > lowestUnsentNonce {
 			if !peer.KnownTransaction(tx.Hash()) {
@@ -172,7 +191,7 @@ func (l *localsTxState) nextTxToBroadcast(txs []*types.Transaction, peer *ethPee
 	return nil
 }
 
-func (l *localsTxState) maybeBroadcast() {
+func (l *localsTxBroadcaster) maybeBroadcast() {
 	allPeers := l.peers.allEthPeers()
 	directBroadcastPeers := allPeers[:int(math.Sqrt(float64(len(allPeers))))]
 	for _, peer := range directBroadcastPeers {
@@ -192,7 +211,7 @@ func (l *localsTxState) maybeBroadcast() {
 	}
 }
 
-func (l *localsTxState) trimLocals() {
+func (l *localsTxBroadcaster) trimLocals() {
 	for addr, txs := range l.accounts {
 		var cutPoint int
 		currentNonce := l.GetNonce(addr)
@@ -212,7 +231,7 @@ func (l *localsTxState) trimLocals() {
 	}
 }
 
-func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
+func (l *localsTxBroadcaster) addLocalsFromSender(sender common.Address, txs []*types.Transaction) {
 	var curTxs []*types.Transaction
 
 	for _, peer := range l.peers.allEthPeers() {
@@ -265,13 +284,7 @@ func (l *localsTxState) addLocalsFromSender(sender common.Address, txs []*types.
 //	1) txs is a nonce-ordered, account-grouped list of transactions
 //	2) there are no nonce gaps, multiple calls to addLocals pass transactions
 //	   with nonces that are contiguous/overlapping with values from previous calls.
-func (l *localsTxState) addLocals(txs []*types.Transaction) {
-	// TODO: do we need to get the txpool configuration that determines how many
-	// pending txs can exist in the pool per-account.
-	// if one of our transaction queues were to overflow it:
-	//	1) we panic as it's a tx-pool invariant?
-	//      2) we log some warning that this is weird and shouldn't happen?
-	//	3) we do nothing?  we don't want to leak internal config details of tx pool into here
+func (l *localsTxBroadcaster) addLocals(txs []*types.Transaction) {
 	acctTxs := make(map[common.Address][]*types.Transaction)
 	lastSender := common.Address{}
 	for _, tx := range txs {
@@ -287,16 +300,17 @@ func (l *localsTxState) addLocals(txs []*types.Transaction) {
 	}
 }
 
-func (l *localsTxState) Stop() {
+func (l *localsTxBroadcaster) Stop() {
 	l.chainHeadSub.Unsubscribe()
 	l.localTxsSub.Unsubscribe()
 }
 
-func (l *localsTxState) Run(wg *sync.WaitGroup) {
+func (l *localsTxBroadcaster) Run(wg *sync.WaitGroup) {
 	defer wg.Done()
 	l.loop()
 }
-func (l *localsTxState) loop() {
+
+func (l *localsTxBroadcaster) loop() {
 	for {
 		select {
 		case <-l.chainHeadCh:

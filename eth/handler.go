@@ -120,7 +120,7 @@ type handler struct {
 	peers        *peerSet
 	merger       *consensus.Merger
 
-	locals *localsTxState
+	localsBroadcaster *localsTxBroadcaster
 
 	eventMux      *event.TypeMux
 	remoteTxsCh         chan core.NewTxsEvent
@@ -159,7 +159,7 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		handlerDoneCh:  make(chan struct{}),
 		handlerStartCh: make(chan struct{}),
 	}
-	h.locals = newLocalsTxState(h.txpool, h.chain, h.peers)
+	h.locals = newLocalsTxBroadcaster(h.txpool, h.chain, h.peers)
 
 	if config.Sync == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the snap
@@ -553,14 +553,14 @@ func (h *handler) Start(maxPeers int) {
 	go h.protoTracker()
 
 	h.wg.Add(1)
-	go h.locals.Run(&h.wg)
+	go h.localsBroadcaster.Run(&h.wg)
 }
 
 func (h *handler) Stop() {
 	h.remoteTxsSub.Unsubscribe()        // quits txBroadcastLoop
 	h.minedBlockSub.Unsubscribe() // quits blockBroadcastLoop
 
-	h.locals.Stop()
+	h.localsBroadcaster.Stop()
 
 	// Quit chainSync and txsync64.
 	// After this is done, no new peers will be accepted.
