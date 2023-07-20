@@ -272,13 +272,13 @@ func (l *localsTxBroadcaster) addLocalsFromSender(sender common.Address, txs []*
 	res := types.Transactions{}
 	curIdx, txsIdx := 0, 0
 	for ; curIdx < len(curTxs) || txsIdx < len(txs) ; {
-		if curIdx > len(curTxs) {
+		if curIdx < len(curTxs) {
 			res = append(res, curTxs[curIdx])
 			curIdx++
 			continue
 		}
-		if txsIdx > len(txs) {
-			res = append(res, curTxs[txsIdx])
+		if txsIdx < len(txs) {
+			res = append(res, txs[txsIdx])
 			txsIdx++
 			continue
 		}
