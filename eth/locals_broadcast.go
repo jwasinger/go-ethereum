@@ -17,10 +17,16 @@ const broadcastWaitTime = 1 * time.Second
 // localAccountStatus represents the state of local transaction broadcast for a given peer
 // and sender Ethereum address
 type localAccountStatus struct {
+	// TODO: maybe change the below (and associated logic) to
+	// "highest" to avoid confusion
 	// the lowest nonce that has not had a transaction sent to the peer from us
 	lowestUnsentNonce uint64
+	// lowest 
+	lowestUnannouncedNonce uint64
 	// the last time we sent a transaction from this account to the associated peer
 	lastBroadcastTime *time.Time
+	// the last time we announced a transaction from this account to the associated peer
+	lastAnnounceTime *time.Time
 }
 
 // peerStateCache implements a 2-level lookup keyed by peer network ID and address and mapping to a 
@@ -50,9 +56,24 @@ func (p *peerStateCache) getLowestUnsentNonce(peerID string, addr common.Address
 	return accountEntry.lowestUnsentNonce
 }
 
+func (p *peerStateCache) getLowestUnannouncedNonce(peerID string, addr common.Address) uint64 {
+	var peerEntry map[common.Address]localAccountStatus
+
+	peerEntry, ok := p.internal.Get(peerID); 
+	if !ok {
+		return 0
+	}
+
+	accountEntry, ok := peerEntry[addr]
+	if !ok {
+		return 0
+	}
+	return accountEntry.lowestUnannouncedNonce
+}
+
 // setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
 // if none previously existed.
-func (p *peerStateCache) setBroadcastTime(peerID string, addr common.Address, time time.Time) {
+func (p *peerStateCache) setLastBroadcastTime(peerID string, addr common.Address, time time.Time) {
 	var peerEntry map[common.Address]localAccountStatus
 	peerEntry, ok := p.internal.Get(peerID)
 	if !ok {
@@ -65,6 +86,25 @@ func (p *peerStateCache) setBroadcastTime(peerID string, addr common.Address, ti
 	}
 
 	accountEntry.lastBroadcastTime = &time
+	peerEntry[addr] = accountEntry
+	p.internal.Add(peerID, peerEntry)
+}
+
+// setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
+// if none previously existed.
+func (p *peerStateCache) setLastAnnounceTime(peerID string, addr common.Address, time time.Time) {
+	var peerEntry map[common.Address]localAccountStatus
+	peerEntry, ok := p.internal.Get(peerID)
+	if !ok {
+		peerEntry = make(map[common.Address]localAccountStatus)
+	}
+
+	accountEntry, ok := peerEntry[addr]
+	if !ok {
+		accountEntry = localAccountStatus{}
+	}
+
+	accountEntry.lastAnnounceTime = &time
 	peerEntry[addr] = accountEntry
 	p.internal.Add(peerID, peerEntry)
 }
@@ -105,6 +145,8 @@ func (p *peerStateCache) getBroadcastTime(peer string, addr common.Address) *tim
 	return accountEntry.lastBroadcastTime
 }
 
+// TODO: change below struct name (it now supports announcements)
+
 // localsTxBroadcaster implements new logic for direct broadcast of local transactions:
 // transactions are broadcast nonce-ordered to a square root of the peerset,
 // a delay of 1 second is added between sending consecutive transactions from the
@@ -120,6 +162,7 @@ type localsTxBroadcaster struct {
 	localTxsCh <-chan core.NewTxsEvent
 	localTxsSub event.Subscription
 	broadcastTrigger *time.Ticker
+	announceTrigger *time.Ticker
 	signer types.Signer
 }
 
@@ -172,9 +215,9 @@ func (l *localsTxBroadcaster) sentRecently(peerID string, sender common.Address)
 
 // nextTxToBroadcast retrieves the next unsent transaction from an account with the lowest nonce and returns it.  The internal state
 // of localsTxBroadcaster is modified to reflect the tx as being sent to the peer.
-func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
+func (l *localsTxBroadcaster) nextTxToBroadcast(acctTxs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
 	lowestUnsentNonce := l.peersStatus.getLowestUnsentNonce(peer.ID(), sender)
-	for i, tx := range txs {
+	for i, tx := range l.accounts[sender] {
 		if tx.Nonce() > lowestUnsentNonce {
 			// we set lowestUnsentNonce even if we weren't the ones sending the transaction to the other node
 			l.peersStatus.setLowestUnsentNonce(peer.ID(), sender, tx.Nonce() + 1)
@@ -197,6 +240,29 @@ func (l *localsTxBroadcaster) nextTxToBroadcast(txs []*types.Transaction, peer *
 	return nil
 }
 
+// 
+func (l *localsTxBroadcaster) nextTxToAnnounce(acctTxs []*types.Transaction, peer *ethPeer, sender common.Address) *common.Hash {
+	lowestUnsentNonce := l.peersStatus.getLowestUnsentNonce(peer.ID(), sender)
+	for i, tx := range l.accounts[sender] {
+		if tx.Nonce() > lowestUnannouncedNonce {
+			// we set lowestUnsentNonce even if we weren't the ones sending the transaction to the other node
+			l.peersStatus.setLowestUnannouncedNonce(peer.ID(), sender, tx.Nonce() + 1)
+			l.peersStatus.setAnnounceTime(peer.ID(), sender, time.Now())
+
+			if i != len(txs) - 1 {
+				// there is a higher nonce transaction on the queue
+				// after this one.  reset the timer to ensure it will be announced
+				l.announceTrigger.Reset(announceWaitTime)
+			}
+
+			res := tx.Hash()
+			return &res
+		}
+	}
+
+	return nil
+}
+
 // maybeBroadcast sends all transactions to a peer where:
 //	1) another transaction from the same sender has not been sent to the peer recently.
 //	2) the peer does not already have the transaction
@@ -206,16 +272,36 @@ func (l *localsTxBroadcaster) maybeBroadcast() {
 	for _, peer := range directBroadcastPeers {
 		var txsToBroadcast []common.Hash
 
-		for addr, txs := range l.accounts {
+		for addr, _ := range l.accounts {
 			if l.sentRecently(peer.ID(), addr) {
 				continue
 			}
-			if tx := l.nextTxToBroadcast(txs, peer, addr); tx != nil {
+			if tx := l.nextTxToBroadcast(addr, peer); tx != nil {
 				txsToBroadcast = append(txsToBroadcast, *tx)
 			}
 		}
 		if len(txsToBroadcast) > 0 {
 			peer.AsyncSendTransactions(txsToBroadcast)
+		}
+	}
+}
+
+func (l *localsTxBroadcaster) maybeAnnounce() {
+	allPeers := l.peers.allEthPeers()
+	announcePeers := allPeers[:len(directBroadcastPeers)]:int(math.Sqrt(float64(len(allPeers))))
+	for _, peer := range announcePeers {
+		var txsToBroadcast []common.Hash
+
+		for addr, _ := range l.accounts {
+			if l.announcedRecently(peer.ID(), addr) {
+				continue
+			}
+			if tx := l.nextTxToAnnounce(addr, peer); tx != nil {
+				txsToAnnounce = append(txsToAnnounce, *tx)
+			}
+		}
+		if len(txsToAnnounce) > 0 {
+			peer.AnnounceTransactions(txsToAnnounce)
 		}
 	}
 }
@@ -342,8 +428,11 @@ func (l *localsTxBroadcaster) loop() {
 		case evt := <-l.localTxsCh:
 			l.addLocals(evt.Txs)
 			l.maybeBroadcast()
+			l.maybeAnnounce()
 		case <-l.broadcastTrigger.C:
 			l.maybeBroadcast()
+		case <-l.announceTrigger.C:
+			l.maybeAnnounce()
 		case <-l.localTxsSub.Err():
 			return
 		}
