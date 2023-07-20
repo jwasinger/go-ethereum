@@ -120,7 +120,7 @@ type handler struct {
 	peers        *peerSet
 	merger       *consensus.Merger
 
-	localsBroadcaster *localsTxBroadcaster
+	localsBroadcaster *localTxHandler
 
 	eventMux      *event.TypeMux
 	remoteTxsCh         chan core.NewTxsEvent
