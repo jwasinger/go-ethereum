@@ -46,128 +46,75 @@ type peerStateCache struct {
 
 // TODO: remove "get" as prefix
 
-// getLowestUnsentNonce returns the lowest unsent nonce for a peer/addr, creating an entry
-// if none previously existed and returning 0.
-func (p *peerStateCache) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
+func (p *peerStateCache) getOrNew(peerID string, addr common.Address) (map[common.Address]localAccountStatus, localAccountStatus) {
 	var peerEntry map[common.Address]localAccountStatus
 
 	peerEntry, ok := p.internal.Get(peerID); 
 	if !ok {
-		return 0
+		peerEntry := make(map[common.Address]localAccountStatus)
 	}
 
 	accountEntry, ok := peerEntry[addr]
 	if !ok {
-		return 0
+		accountEntry = localAccountStatus{}
+		peerEntry[addr] = accountEntry
+		p.internal.Set(peerID, peerEntry)
 	}
+	return peerEntry, accountEntry
+}
+
+func (p *peerStateCache) set(peerID string, addr common.Address, l *localAccountStatus) {
+	p.internal[peerID].Set(addr, l)
+}
+
+// getLowestUnsentNonce returns the lowest unsent nonce for a peer/addr, creating an entry
+// if none previously existed and returning 0.
+func (p *peerStateCache) getLowestUnsentNonce(peerID string, addr common.Address) uint64 {
+	accountEntry := p.internal.getOrNew(peerID, addr)
 	return accountEntry.lowestUnsentNonce
 }
 
 func (p *peerStateCache) getLowestUnannouncedNonce(peerID string, addr common.Address) uint64 {
-	var peerEntry map[common.Address]localAccountStatus
-
-	peerEntry, ok := p.internal.Get(peerID); 
-	if !ok {
-		return 0
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		return 0
-	}
+	accountEntry := p.internal.getOrNew(peerID, addr)
 	return accountEntry.lowestUnannouncedNonce
 }
 
 // setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
 // if none previously existed.
 func (p *peerStateCache) setLastBroadcastTime(peerID string, addr common.Address, time time.Time) {
-	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.internal.Get(peerID)
-	if !ok {
-		peerEntry = make(map[common.Address]localAccountStatus)
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		accountEntry = localAccountStatus{}
-	}
-
-	accountEntry.lastBroadcastTime = &time
-	peerEntry[addr] = accountEntry
-	p.internal.Add(peerID, peerEntry)
+	accountEntry := p.internal.getOrNew(peerID, addr)
+	accountEntry.lastBroadcastTime = time
+	p.internal.set(peerID, addr, accountEntry)
 }
 
 // setBroadcastTime sets the latest broadcast time for a peer/addr, creating an entry
 // if none previously existed.
 func (p *peerStateCache) setLastAnnounceTime(peerID string, addr common.Address, time time.Time) {
-	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.internal.Get(peerID)
-	if !ok {
-		peerEntry = make(map[common.Address]localAccountStatus)
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		accountEntry = localAccountStatus{}
-	}
-
-	accountEntry.lastAnnounceTime = &time
-	peerEntry[addr] = accountEntry
-	p.internal.Add(peerID, peerEntry)
+	accountEntry := p.internal.getOrNew(peerID, addr)
+	accountEntry.lastAnnounceTime = time
+	p.internal.set(peerID, addr, accountEntry)
 }
 
 // setLowestUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
 // if none previously existed.
 func (p *peerStateCache) setLowestUnsentNonce(peerID string, addr common.Address, nonce uint64) {
-	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.internal.Get(peerID)
-	if !ok {
-		peerEntry = make(map[common.Address]localAccountStatus)
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		accountEntry = localAccountStatus{}
-	}
-
+	accountEntry := p.internal.getOrNew(peerID, addr)
 	accountEntry.lowestUnsentNonce = nonce
-	peerEntry[addr] = accountEntry
-	p.internal.Add(peerID, peerEntry)
+	p.internal.set(peerID, addr, accountEntry)
 }
 
 // setLowestUnsentNonce sets the last unsent nonce for a peer/addr, creating an entry
 // if none previously existed.
 func (p *peerStateCache) setLowestUnannouncedNonce(peerID string, addr common.Address, nonce uint64) {
-	var peerEntry map[common.Address]localAccountStatus
-	peerEntry, ok := p.internal.Get(peerID)
-	if !ok {
-		peerEntry = make(map[common.Address]localAccountStatus)
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		accountEntry = localAccountStatus{}
-	}
-
-	accountEntry.lowestUnsentNonce = nonce
-	peerEntry[addr] = accountEntry
-	p.internal.Add(peerID, peerEntry)
+	accountEntry := p.internal.getOrNew(peerID, addr)
+	accountEntry.lowestUnannouncedNonce = nonce
+	p.internal.set(peerID, addr, accountEntry)
 }
 
 // getBroadcastTime returns the latest broadcast time for a given peer/sender, creating
 // an entry if none previously existed and returning nil.
 func (p *peerStateCache) getBroadcastTime(peer string, addr common.Address) *time.Time {
-	var peerEntry map[common.Address]localAccountStatus
-
-	peerEntry, ok := p.internal.Get(peer); 
-	if !ok {
-		return nil
-	}
-
-	accountEntry, ok := peerEntry[addr]
-	if !ok {
-		return nil
-	}
+	accountEntry := p.internal.getOrNew(peerID, addr)
 	return accountEntry.lastBroadcastTime
 }
 
