@@ -32,7 +32,30 @@ var (
 	genesisFile   = "./testdata/genesis.json"
 	halfchainFile = "./testdata/halfchain.rlp"
 	fullchainFile = "./testdata/chain.rlp"
+	prefundedGenesisFile = "./testdata/prefundedGenesis.json"
 )
+
+func TestLocalTxSuite(t *testing.T) {
+	geth, err := runGeth()
+	if err != nil {
+		t.Fatalf("could not run geth: %v", err)
+	}
+	defer geth.Close()
+
+	// TODO: which chain to use?
+	suite, err := NewSuite(geth.Server().Self(), fullchainFile, localTxGenesisFile)
+	if err != nil {
+		t.Fatalf("could not create new test suite: %v", err)
+	}
+	for _, test := range suite.EthTests() {
+		t.Run(test.Name, func(t *testing.T) {
+			result := utesting.RunTAP([]utesting.Test{{Name: test.Name, Fn: test.Fn}}, os.Stdout)
+			if result[0].Failed {
+				t.Fatal()
+			}
+		})
+	}
+}
 
 func TestEthSuite(t *testing.T) {
 	geth, err := runGeth()
