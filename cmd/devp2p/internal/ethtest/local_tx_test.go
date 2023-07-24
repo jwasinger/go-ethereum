@@ -1,5 +1,14 @@
 package ethtest
 
+import (
+	"errors"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/utesting"
+)
+
 // local_tx_test creates a geth node and establishes a lot of peer connections.
 // transactions are created, signed and inserted into the node via RPC.
 // tests ensure that local transactions are broadcasted/announced with delays
@@ -14,8 +23,8 @@ func loadAccountKeypairs() {
 
 }
 
-func generateSignedLocalTx(account common.Addr, nonce uint64, maxPriorityFee uint64) types.Transaction {
-	return []types.Transaction{}
+func generateSignedLocalTx(account common.Address, nonce uint64, maxPriorityFee uint64) types.Transaction {
+	return types.Transaction{}
 }
 
 // generate txs from a lot of accounts, with a lot of txs per account
@@ -24,18 +33,18 @@ func generateTestTxs() []types.Transaction {
 }
 
 // check that the tx hashes announce/broadcast were sent from different sender accounts
-func checkUniqueSenders(txHashes) bool {
+func checkUniqueSenders(txHashes []common.Hash) bool {
 	return false
 }
 
 type peerTxReport struct {
-	peerIdx int
-	hash common.Hash
+	PeerIdx int
+	Hashes []common.Hash
 }
 
 // wait for test transactions to be announced or propagated
-func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Hash]types.Transaction) {
-	timeout := time.NewTimer(10 * time.Seconds)
+func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Hash]types.Transaction) error {
+	timeout := time.NewTimer(10 * time.Second)
 	for {
 		select {
 		case report := <-txSendCh:
@@ -70,12 +79,17 @@ func peerLoop(peerIdx int, c *Conn, txsCh, txHashesCh chan peerTxReport) {
 		case *Ping:
 			// pong (TODO: see how often this should happen)
 			panic("no pong!")
-		case *PooledTransactionHashes:
-			txHashesCh <- peerTxReport{peerIdx, PooledTransactionHashes}
-		case *NewTransactions:
+		case *NewPooledTransactionHashes:
+			hashes := msg.Hashes
+			txHashesCh <- peerTxReport{peerIdx, hashes}
+			panic("no 66")
+		case *NewPooledTransactionHashes66:
+			panic("66")
+		case *Transactions:
+			txs := msg
 			var hashes []common.Hash
-			for _, tx := range NewTransactions {
-				hashes = append(hashes, tx)
+			for _, tx := range *txs {
+				hashes = append(hashes, tx.Hash())
 			}
 			txsCh <- peerTxReport{peerIdx, hashes}
 		default:
@@ -85,7 +99,7 @@ func peerLoop(peerIdx int, c *Conn, txsCh, txHashesCh chan peerTxReport) {
 }
 
 func (s *Suite) TestLocalTxBasic(t *utesting.T) {
-	var peer1, peer2 Conn
+	var peer1, peer2 *Conn
 	// create geth node
 	// create a few peer cxns
 	peer1, err := s.dial()
@@ -93,13 +107,13 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 		t.Fatal("fuck1")
 	}
 
-	peer2, err := s.dial()
+	peer2, err = s.dial()
 	if err != nil {
 		t.Fatal("fuck2")
 	}
 
-	defer peer1.close()
-	defer peer2.close()
+	defer peer1.Close()
+	defer peer2.Close()
 
 	peer1.statusExchange(s.chain, nil)
 	peer2.statusExchange(s.chain, nil)
@@ -116,21 +130,9 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 
 	// optional:  make a peer broadcast transactions to us and test remote tx propagation
 
-	for {
-		select {
-		case txs := <-txsCh:
-
-			// check there was proper delay
-			// fill the result txs map
-			// if the hashes map and txs map are full: return
-		case hashes := <-txHashesCh:
-			// validate the txHashes (nonce is the next one we want, no multiple txs from same acct, there was proper delay)
-			// check there was proper delay
-			// fill the result txHashes map
-			// if the hashes map and txs map are full: return
-		case <-timeoutCh:
-			// fail test
-		}
+	expectedTxs := make(map[common.Hash]types.Transaction)
+	if err = waitForTxs(txsCh, txHashesCh, expectedTxs); err != nil {
+		panic(err)
 	}
 
 	// check that hashes were broadcasted to square root subset of peers

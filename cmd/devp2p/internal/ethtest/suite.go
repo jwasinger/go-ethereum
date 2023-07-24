@@ -49,15 +49,9 @@ func NewSuite(dest *enode.Node, chainfile string, genesisfile string) (*Suite, e
 	}, nil
 }
 
-func (s *Suite) LocalTxTests() []utesting.Test {
-	return []utesting.Test{
-		// status
-		{Name: "TestStatus", Fn: s.TestLocalBasic},
-	}
-}
-
 func (s *Suite) EthTests() []utesting.Test {
 	return []utesting.Test{
+		{Name: "TestLocalTxBasic", Fn: s.TestLocalTxBasic},
 		// status
 		{Name: "TestStatus", Fn: s.TestStatus},
 		// get block headers
