@@ -15,7 +15,7 @@ func loadAccountKeypairs() {
 }
 
 func generateSignedLocalTx(account common.Addr, nonce uint64, maxPriorityFee uint64) types.Transaction {
-
+	return []types.Transaction{}
 }
 
 // generate txs from a lot of accounts, with a lot of txs per account
@@ -28,8 +28,13 @@ func checkUniqueSenders(txHashes) bool {
 	return false
 }
 
+type peerTxReport struct {
+	peerIdx int
+	hash common.Hash
+}
+
 // wait for test transactions to be announced or propagated
-func waitForTxs(txSendCh, txHashAnnounceCh chan common.Hash, txs map[common.Hash]types.Transaction) {
+func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Hash]types.Transaction) {
 	timeout := time.NewTimer(10 * time.Seconds)
 	for {
 		select {
@@ -38,29 +43,33 @@ func waitForTxs(txSendCh, txHashAnnounceCh chan common.Hash, txs map[common.Hash
 			if !checkUniqueSenders(txHashes) {
 				return errors.New("list of senders for transactions in announce/broadcast should be unique")
 			}
+			// validate the txs (nonce is the next one we want for the given account, no multiple txs from same acct, there was proper delay)
 
-			// TODO: check that delay from last announcement was sufficient
+			// check that delay from last announcement was sufficient
+			// add it to tx hashes result map
+			// if both result maps are full, return
 		case report := <-txHashAnnounceCh:
+			txHashes := report.Hashes
 			if !checkUniqueSenders(txHashes) {
 				return errors.New("list of senders for transactions in announce/broadcast should be unique")
 			}
-			// TODO: check that delay from last announcement was sufficient
+			// validate the tx hashes (nonce is the next one we want for the given account, no multiple txs from same acct, there was proper delay)
+			// check that delay from last announcement was sufficient
+			// add it to tx hashes result map
+			// if both result maps are full, return
 		case <-timeout.C:
 			return errors.New("timeout without all txs being announced/broadcasted")
 		}
 	}
 }
 
-type peerTxReport struct {
-	peerIdx int
-	hash common.Hash
-}
 
-func peerLoop(peerIdx int, c *Conn) {
+func peerLoop(peerIdx int, c *Conn, txsCh, txHashesCh chan peerTxReport) {
 	for {
 		switch msg := c.Read().(type) {
 		case *Ping:
 			// pong (TODO: see how often this should happen)
+			panic("no pong!")
 		case *PooledTransactionHashes:
 			txHashesCh <- peerTxReport{peerIdx, PooledTransactionHashes}
 		case *NewTransactions:
@@ -95,10 +104,11 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 	peer1.statusExchange(s.chain, nil)
 	peer2.statusExchange(s.chain, nil)
 
-	ctx := context.Background()
+	txsCh := make(chan peerTxReport)
+	txHashesCh := make(chan peerTxReport)
 
-	go peerLoop(ctx, peer1)
-	go peerLoop(ctx, peer2)
+	go peerLoop(0, peer1, txsCh, txHashesCh)
+	go peerLoop(1, peer2, txsCh, txHashesCh)
 
 	// insert txs from many local accounts, many txs per account
 	// testTxs := generateTestTxs()
@@ -106,17 +116,14 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 
 	// optional:  make a peer broadcast transactions to us and test remote tx propagation
 
-	// check that they were announced/broadcasted properly
-	// waitForTxs(toMap(testTxs))
-
 	for {
 		select {
 		case txs := <-txsCh:
-			// validate the txs (nonce is the next one we want, no multiple txs from same acct, there was proper delay)
+
 			// check there was proper delay
 			// fill the result txs map
 			// if the hashes map and txs map are full: return
-		case hashes := <-hashesCh:
+		case hashes := <-txHashesCh:
 			// validate the txHashes (nonce is the next one we want, no multiple txs from same acct, there was proper delay)
 			// check there was proper delay
 			// fill the result txHashes map

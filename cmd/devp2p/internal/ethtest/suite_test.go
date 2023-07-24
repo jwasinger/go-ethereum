@@ -35,28 +35,6 @@ var (
 	prefundedGenesisFile = "./testdata/prefundedGenesis.json"
 )
 
-func TestLocalTxSuite(t *testing.T) {
-	geth, err := runGeth()
-	if err != nil {
-		t.Fatalf("could not run geth: %v", err)
-	}
-	defer geth.Close()
-
-	// TODO: which chain to use?
-	suite, err := NewSuite(geth.Server().Self(), fullchainFile, localTxGenesisFile)
-	if err != nil {
-		t.Fatalf("could not create new test suite: %v", err)
-	}
-	for _, test := range suite.EthTests() {
-		t.Run(test.Name, func(t *testing.T) {
-			result := utesting.RunTAP([]utesting.Test{{Name: test.Name, Fn: test.Fn}}, os.Stdout)
-			if result[0].Failed {
-				t.Fatal()
-			}
-		})
-	}
-}
-
 func TestEthSuite(t *testing.T) {
 	geth, err := runGeth()
 	if err != nil {
@@ -102,6 +80,7 @@ func TestSnapSuite(t *testing.T) {
 // runGeth creates and starts a geth node
 func runGeth() (*node.Node, error) {
 	stack, err := node.New(&node.Config{
+		//JWTSecret: make([]byte, 32),
 		P2P: p2p.Config{
 			ListenAddr:  "127.0.0.1:0",
 			NoDiscovery: true,
