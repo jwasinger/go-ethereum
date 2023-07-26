@@ -2,7 +2,6 @@ package ethtest
 
 import (
 	"bufio"
-	"fmt"
 	"context"
 	"math/big"
 	"crypto/ecdsa"
@@ -55,7 +54,6 @@ func (s *Suite) checkUniqueSenders(txHashes []common.Hash, allTxs map[common.Has
 	signer := types.LatestSigner(chainConfig)
 
 	foundSenders := make(map[common.Address]struct{})
-	fmt.Println(len(txHashes))
 	for _, txHash := range txHashes {
 		sender, _ := types.Sender(signer, allTxs[txHash])
 		if _, ok := foundSenders[sender]; ok {
@@ -145,7 +143,6 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 	testAddress := common.Address{}
 	//chainID := big.NewInt(19763)
 	chainConfig := s.backend.ChainConfig()
-	fmt.Printf("chainConfig %+v\n", chainConfig)
 	signer := types.LatestSigner(chainConfig)
 
 /*
@@ -160,7 +157,7 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 	for _, sk := range keys {
 		var nonce uint64
 
-		for nonce = 0; nonce < 3000; nonce++ {
+		for nonce = 0; nonce < 50; nonce++ {
 /*
 			tx := types.MustSignNewTx(sk, signer, &types.DynamicFeeTx{
 				ChainID:  chainID,

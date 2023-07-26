@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	broadcastWaitTime = 400 * time.Millisecond
-	announceWaitTime = 400 * time.Millisecond
+	broadcastWaitTime = 1 * time.Millisecond
+	announceWaitTime = 1 * time.Millisecond
 )
 
 // localAccountStatus represents the state of local transaction broadcast for a given peer
@@ -183,7 +183,7 @@ func (l *localTxHandler) GetNonce(addr common.Address) uint64 {
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localTxHandler) announcedRecently(peerID string, sender common.Address) bool {
 	bt := l.peersStatus.getBroadcastTime(peerID, sender)
-	if bt != nil && time.Since(*bt) >= broadcastWaitTime + 100 * time.Millisecond {
+	if bt != nil && time.Since(*bt) <= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
@@ -192,7 +192,7 @@ func (l *localTxHandler) announcedRecently(peerID string, sender common.Address)
 // returns whether or not we sent a given peer a local transaction from sender
 func (l *localTxHandler) sentRecently(peerID string, sender common.Address) bool {
 	bt := l.peersStatus.getBroadcastTime(peerID, sender)
-	if bt != nil && time.Since(*bt) >= broadcastWaitTime + 100 * time.Millisecond {
+	if bt != nil && time.Since(*bt) <= broadcastWaitTime + 100 * time.Millisecond {
 		return true
 	}
 	return false
