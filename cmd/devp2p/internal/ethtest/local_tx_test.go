@@ -2,6 +2,7 @@ package ethtest
 
 import (
 	"bufio"
+	"fmt"
 	"context"
 	"math/big"
 	"crypto/ecdsa"
@@ -73,6 +74,7 @@ func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Has
 			// check that delay from last announcement was sufficient
 			// add it to tx hashes result map
 			// if both result maps are full, return
+			fmt.Println("A")
 		case report := <-txHashAnnounceCh:
 			txHashes := report.Hashes
 			if !checkUniqueSenders(txHashes) {
@@ -82,6 +84,7 @@ func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Has
 			// check that delay from last announcement was sufficient
 			// add it to tx hashes result map
 			// if both result maps are full, return
+			fmt.Println("B")
 		case <-timeout.C:
 			return errors.New("timeout without all txs being announced/broadcasted")
 		}
@@ -118,20 +121,41 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 	var txs []*types.Transaction
 
 	testAddress := common.Address{}
-	chainID := big.NewInt(19763)
-	signer := types.LatestSigner(s.backend.ChainConfig())
+	//chainID := big.NewInt(19763)
+	chainConfig := s.backend.ChainConfig()
+	fmt.Printf("chainConfig %+v\n", chainConfig)
+	signer := types.LatestSigner(chainConfig)
+
+/*
+	block, err := s.backend.BlockByNumber(context.Background(), rpc.LatestBlockNumber)
+	if err != nil {
+		panic(err)
+	}
+
+	baseFee := block.BaseFee()
+*/
 
 	for _, sk := range keys {
 		var nonce uint64
 
 		for nonce = 0; nonce < 64; nonce++ {
-			tx := types.MustSignNewTx(sk, signer, &types.LegacyTx{
+/*
+			tx := types.MustSignNewTx(sk, signer, &types.DynamicFeeTx{
 				ChainID:  chainID,
 				Nonce:    nonce,
 				To:       &testAddress,
 				Value:    big.NewInt(1000),
 				Gas:      params.TxGas,
-				GasPrice: big.NewInt(params.InitialBaseFee),
+				GasFeeCap: baseFee,
+				GasTipCap: baseFee,
+			})
+*/
+			tx := types.MustSignNewTx(sk, signer, &types.LegacyTx{
+				Nonce:    nonce,
+				To:       &testAddress,
+				Value:    big.NewInt(1000),
+				Gas:      params.TxGas,
+				GasPrice:   big.NewInt(params.InitialBaseFee),
 			})
 			txs = append(txs, tx)
 		}
