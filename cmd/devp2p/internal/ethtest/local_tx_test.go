@@ -2,10 +2,10 @@ package ethtest
 
 import (
 	"bufio"
+	"context"
 	"math/big"
 	"crypto/ecdsa"
 	"errors"
-	"fmt"
 	"time"
 	"os"
 
@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/utesting"
-	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -126,7 +125,7 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 		var nonce uint64
 
 		for nonce = 0; nonce < 64; nonce++ {
-			tx := types.MustSignNewTx(sk, signer, &types.AccessListTx{
+			tx := types.MustSignNewTx(sk, signer, &types.LegacyTx{
 				ChainID:  chainID,
 				Nonce:    nonce,
 				To:       &testAddress,
@@ -170,7 +169,7 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 	go peerLoop(1, peer2, txsCh, txHashesCh)
 
 	// insert txs from many local accounts, many txs per account
-	testTxs := generateTestTxs()
+	testTxs := s.generateTestTxs(keys)
 
 	for _, tx := range testTxs {
 		s.backend.SendTx(context.Background(), tx)

@@ -59,7 +59,7 @@ func TestEthSuite(t *testing.T) {
 }
 
 func TestSnapSuite(t *testing.T) {
-	geth, err := runGeth()
+	geth, _, err := runGeth()
 	if err != nil {
 		t.Fatalf("could not run geth: %v", err)
 	}
@@ -91,17 +91,17 @@ func runGeth() (*node.Node, ethapi.Backend, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	backend, err = setupGeth(stack)
+	backend, err := setupGeth(stack)
 	if err != nil {
 		stack.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	if err = stack.Start(); err != nil {
 		stack.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	return stack, backend, nil
 }
@@ -109,7 +109,7 @@ func runGeth() (*node.Node, ethapi.Backend, error) {
 func setupGeth(stack *node.Node) (ethapi.Backend, error) {
 	chain, err := loadChain(halfchainFile, genesisFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	backend, err := eth.New(stack, &ethconfig.Config{
@@ -126,5 +126,5 @@ func setupGeth(stack *node.Node) (ethapi.Backend, error) {
 	}
 
 	_, err = backend.BlockChain().InsertChain(chain.blocks[1:])
-	return backend, err
+	return backend.APIBackend, err
 }
