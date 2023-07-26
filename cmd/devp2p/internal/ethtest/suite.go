@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/internal/utesting"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
@@ -29,6 +30,7 @@ import (
 // to the eth protocol.
 type Suite struct {
 	Dest *enode.Node
+	backend ethapi.Backend
 
 	chain     *Chain
 	fullChain *Chain

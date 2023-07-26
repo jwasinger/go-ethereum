@@ -1,12 +1,21 @@
 package ethtest
 
 import (
+	"bufio"
+	"math/big"
+	"crypto/ecdsa"
 	"errors"
+	"fmt"
 	"time"
+	"os"
+
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/utesting"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // local_tx_test creates a geth node and establishes a lot of peer connections.
@@ -19,17 +28,25 @@ import (
 // automatically assume that the engine API is available, assume fixed jwt secret
 
 // load pre-generated test private keys from a file under testdata
-func loadAccountKeypairs() {
+func loadAccountKeypairs() []*ecdsa.PrivateKey {
+    file, err := os.Open("testdata/pk_list.txt")
+    if err != nil {
+	panic(err)
+    }
+    defer file.Close()
 
-}
+    keys := []*ecdsa.PrivateKey{}
 
-func generateSignedLocalTx(account common.Address, nonce uint64, maxPriorityFee uint64) types.Transaction {
-	return types.Transaction{}
-}
-
-// generate txs from a lot of accounts, with a lot of txs per account
-func generateTestTxs() []types.Transaction {
-	return []types.Transaction{}
+    scanner := bufio.NewScanner(file)
+    // optionally, resize scanner's capacity for lines over 64K, see next example
+    for scanner.Scan() {
+        privateKey, err := crypto.HexToECDSA(scanner.Text())
+	if err != nil {
+		panic(err)
+	}
+	keys = append(keys, privateKey)
+    }
+    return keys
 }
 
 // check that the tx hashes announce/broadcast were sent from different sender accounts
@@ -98,6 +115,32 @@ func peerLoop(peerIdx int, c *Conn, txsCh, txHashesCh chan peerTxReport) {
 	}
 }
 
+func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
+	var txs []*types.Transaction
+
+	testAddress := common.Address{}
+	chainID := big.NewInt(19763)
+	signer := types.LatestSigner(s.backend.ChainConfig())
+
+	for _, sk := range keys {
+		var nonce uint64
+
+		for nonce = 0; nonce < 64; nonce++ {
+			tx := types.MustSignNewTx(sk, signer, &types.AccessListTx{
+				ChainID:  chainID,
+				Nonce:    nonce,
+				To:       &testAddress,
+				Value:    big.NewInt(1000),
+				Gas:      params.TxGas,
+				GasPrice: big.NewInt(params.InitialBaseFee),
+			})
+			txs = append(txs, tx)
+		}
+	}
+
+	return txs
+}
+
 func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 	var peer1, peer2 *Conn
 	// create geth node
@@ -121,12 +164,17 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 	txsCh := make(chan peerTxReport)
 	txHashesCh := make(chan peerTxReport)
 
+	keys := loadAccountKeypairs()
+
 	go peerLoop(0, peer1, txsCh, txHashesCh)
 	go peerLoop(1, peer2, txsCh, txHashesCh)
 
 	// insert txs from many local accounts, many txs per account
-	// testTxs := generateTestTxs()
-	// gethNode.InsertLocalTxs(testTxs)
+	testTxs := generateTestTxs()
+
+	for _, tx := range testTxs {
+		s.backend.SendTx(context.Background(), tx)
+	}
 
 	// optional:  make a peer broadcast transactions to us and test remote tx propagation
 
