@@ -87,6 +87,7 @@ func (c *Conn) peer(chain *Chain, status *Status) error {
 	if err := c.handshake(); err != nil {
 		return fmt.Errorf("handshake failed: %v", err)
 	}
+	panic("handshake passed")
 	if _, err := c.statusExchange(chain, status); err != nil {
 		return fmt.Errorf("status exchange failed: %v", err)
 	}

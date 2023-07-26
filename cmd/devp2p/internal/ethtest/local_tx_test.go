@@ -181,8 +181,21 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 	defer peer1.Close()
 	defer peer2.Close()
 
-	peer1.statusExchange(s.chain, nil)
-	peer2.statusExchange(s.chain, nil)
+	if err := peer1.handshake(); err != nil {
+		panic(err)	
+	}
+
+	if err := peer2.handshake(); err != nil {
+		panic(err)	
+	}
+
+	if _, err = peer1.statusExchange(s.chain, nil); err != nil {
+		panic(err)
+	}
+
+	if _, err = peer2.statusExchange(s.chain, nil); err != nil {
+		panic(err)
+	}
 
 	txsCh := make(chan peerTxReport)
 	txHashesCh := make(chan peerTxReport)
@@ -191,6 +204,8 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 
 	go peerLoop(0, peer1, txsCh, txHashesCh)
 	go peerLoop(1, peer2, txsCh, txHashesCh)
+
+	time.Sleep(30 * time.Second)
 
 	// insert txs from many local accounts, many txs per account
 	testTxs := s.generateTestTxs(keys)
