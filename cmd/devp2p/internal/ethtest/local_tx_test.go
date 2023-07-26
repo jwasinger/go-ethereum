@@ -50,8 +50,20 @@ func loadAccountKeypairs() []*ecdsa.PrivateKey {
 }
 
 // check that the tx hashes announce/broadcast were sent from different sender accounts
-func checkUniqueSenders(txHashes []common.Hash) bool {
-	return false
+func (s *Suite) checkUniqueSenders(txHashes []common.Hash, allTxs map[common.Hash]*types.Transaction) bool {
+	chainConfig := s.backend.ChainConfig()
+	signer := types.LatestSigner(chainConfig)
+
+	foundSenders := make(map[common.Address]struct{})
+	fmt.Println(len(txHashes))
+	for _, txHash := range txHashes {
+		sender, _ := types.Sender(signer, allTxs[txHash])
+		if _, ok := foundSenders[sender]; ok {
+			return false
+		}
+		foundSenders[sender] = struct{}{}
+	}
+	return true
 }
 
 type peerTxReport struct {
@@ -60,13 +72,13 @@ type peerTxReport struct {
 }
 
 // wait for test transactions to be announced or propagated
-func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Hash]types.Transaction) error {
+func (s *Suite) waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, allTxs map[common.Hash]*types.Transaction) error {
 	timeout := time.NewTimer(10 * time.Second)
 	for {
 		select {
 		case report := <-txSendCh:
 			txHashes := report.Hashes
-			if !checkUniqueSenders(txHashes) {
+			if !s.checkUniqueSenders(txHashes, allTxs) {
 				return errors.New("list of senders for transactions in announce/broadcast should be unique")
 			}
 			// validate the txs (nonce is the next one we want for the given account, no multiple txs from same acct, there was proper delay)
@@ -74,36 +86,46 @@ func waitForTxs(txSendCh, txHashAnnounceCh chan peerTxReport, txs map[common.Has
 			// check that delay from last announcement was sufficient
 			// add it to tx hashes result map
 			// if both result maps are full, return
-			fmt.Println("A")
 		case report := <-txHashAnnounceCh:
 			txHashes := report.Hashes
-			if !checkUniqueSenders(txHashes) {
+			if !s.checkUniqueSenders(txHashes, allTxs) {
 				return errors.New("list of senders for transactions in announce/broadcast should be unique")
 			}
 			// validate the tx hashes (nonce is the next one we want for the given account, no multiple txs from same acct, there was proper delay)
 			// check that delay from last announcement was sufficient
 			// add it to tx hashes result map
 			// if both result maps are full, return
-			fmt.Println("B")
 		case <-timeout.C:
 			return errors.New("timeout without all txs being announced/broadcasted")
 		}
 	}
 }
 
+func (s *Suite) peerLoop(peerIdx int, txsCh, txHashesCh chan peerTxReport) {
+	peerConn, err := s.dial()
+	if err != nil {
+		panic(err)
+	}
 
-func peerLoop(peerIdx int, c *Conn, txsCh, txHashesCh chan peerTxReport) {
+	// TODO: what do:
+	// defer peerConn.Close()
+
+	if err := peerConn.handshake(); err != nil {
+		panic(err)
+	}
+
+	if _, err = peerConn.statusExchange(s.chain, nil); err != nil {
+		panic(err)
+	}
+
 	for {
-		switch msg := c.Read().(type) {
+		switch msg := peerConn.Read().(type) {
 		case *Ping:
 			// pong (TODO: see how often this should happen)
 			panic("no pong!")
 		case *NewPooledTransactionHashes:
 			hashes := msg.Hashes
 			txHashesCh <- peerTxReport{peerIdx, hashes}
-			panic("no 66")
-		case *NewPooledTransactionHashes66:
-			panic("66")
 		case *Transactions:
 			txs := msg
 			var hashes []common.Hash
@@ -138,7 +160,7 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 	for _, sk := range keys {
 		var nonce uint64
 
-		for nonce = 0; nonce < 64; nonce++ {
+		for nonce = 0; nonce < 3000; nonce++ {
 /*
 			tx := types.MustSignNewTx(sk, signer, &types.DynamicFeeTx{
 				ChainID:  chainID,
@@ -165,47 +187,15 @@ func (s *Suite) generateTestTxs(keys []*ecdsa.PrivateKey) []*types.Transaction {
 }
 
 func (s *Suite) TestLocalTxBasic(t *utesting.T) {
-	var peer1, peer2 *Conn
-	// create geth node
-	// create a few peer cxns
-	peer1, err := s.dial()
-	if err != nil {
-		t.Fatal("fuck1")
-	}
-
-	peer2, err = s.dial()
-	if err != nil {
-		t.Fatal("fuck2")
-	}
-
-	defer peer1.Close()
-	defer peer2.Close()
-
-	if err := peer1.handshake(); err != nil {
-		panic(err)	
-	}
-
-	if err := peer2.handshake(); err != nil {
-		panic(err)	
-	}
-
-	if _, err = peer1.statusExchange(s.chain, nil); err != nil {
-		panic(err)
-	}
-
-	if _, err = peer2.statusExchange(s.chain, nil); err != nil {
-		panic(err)
-	}
-
 	txsCh := make(chan peerTxReport)
 	txHashesCh := make(chan peerTxReport)
 
 	keys := loadAccountKeypairs()
 
-	go peerLoop(0, peer1, txsCh, txHashesCh)
-	go peerLoop(1, peer2, txsCh, txHashesCh)
-
-	time.Sleep(30 * time.Second)
+	numPeers := 3
+	for i := 0; i < numPeers; i++ {
+		go s.peerLoop(i, txsCh, txHashesCh)
+	}
 
 	// insert txs from many local accounts, many txs per account
 	testTxs := s.generateTestTxs(keys)
@@ -216,8 +206,12 @@ func (s *Suite) TestLocalTxBasic(t *utesting.T) {
 
 	// optional:  make a peer broadcast transactions to us and test remote tx propagation
 
-	expectedTxs := make(map[common.Hash]types.Transaction)
-	if err = waitForTxs(txsCh, txHashesCh, expectedTxs); err != nil {
+	expectedTxs := make(map[common.Hash]*types.Transaction)
+	for _, tx := range testTxs {
+		expectedTxs[tx.Hash()] = tx
+	}
+
+	if err := s.waitForTxs(txsCh, txHashesCh, expectedTxs); err != nil {
 		panic(err)
 	}
 

@@ -46,7 +46,7 @@ func NewSuite(dest *enode.Node, chainfile string, genesisfile string) (*Suite, e
 	}
 	return &Suite{
 		Dest:      dest,
-		chain:     chain.Shorten(1000),
+		chain:     chain.Shorten(1501),
 		fullChain: chain,
 	}, nil
 }
