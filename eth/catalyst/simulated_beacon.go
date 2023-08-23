@@ -78,7 +78,12 @@ type SimulatedBeacon struct {
 
 	engineAPI          *ConsensusAPI
 	curForkchoiceState engine.ForkchoiceStateV1
+
 	lastBlockTime      uint64
+	lastBlockNumber    uint64
+
+	newHeadSub event.Subscription
+	newHeadCh chan<- core.ChainHeadEvent
 }
 
 func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, error) {
@@ -94,8 +99,13 @@ func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, err
 	}
 	engineAPI := NewConsensusAPI(eth)
 
+	// TODO need to close these at end of lifecycle?
+	newHeadCh := make(chan<- core.ChainHeadEvent)
+	newHeadSub := eth.BlockChain().SubscribeChainHeadEvent(newHeadCh)
+
 	// if genesis block, send forkchoiceUpdated to trigger transition to PoS
-	if block.Number.Sign() == 0 {
+	lastBlockNumber := block.Number().Uint64()
+	if lastBlockNumber == 0 {
 		if _, err := engineAPI.ForkchoiceUpdatedV2(current, nil); err != nil {
 			return nil, err
 		}
@@ -108,7 +118,26 @@ func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, err
 		lastBlockTime:      block.Time,
 		curForkchoiceState: current,
 		withdrawals:        withdrawalQueue{make(chan *types.Withdrawal, 20)},
+		lastBlockNumber: lastBlockNumber,
+		newHeadCh: newHeadCh,
+		newHeadSub: newHeadSub,
 	}, nil
+}
+
+func (c* SimulatedBeacon) maybeResetForkchoiceState(newBlock *types.Block) {
+	if newBlock.Number == c.lastBlockNumber + 1 {
+		c.lastBlockNumber = newBlock.Number
+		return
+	}
+	c.lastBlockNumber = newBlock.Number
+
+	block := c.eth.BlockChain().CurrentBlock()
+	c.curForkChoiceState = engine.ForkchoiceStateV1{
+		HeadBlockHash:      block.Hash(),
+		SafeBlockHash:      block.Hash(),
+		FinalizedBlockHash: block.Hash(),
+	}
+	// TODO set c.lastBlockTime as well
 }
 
 func (c *SimulatedBeacon) setFeeRecipient(feeRecipient common.Address) {
@@ -151,6 +180,9 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal) error {
 	})
 	if err != nil {
 		return fmt.Errorf("error calling forkchoice update: %v", err)
+	} else if fcResponse.Status == engine.STATUS_SYNCING {
+		// this can happen if debug_setHead is called
+		return errors.New("")
 	}
 
 	envelope, err := c.engineAPI.getPayload(*fcResponse.PayloadID, true)
@@ -163,11 +195,17 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal) error {
 	if payload.Number%devEpochLength == 0 {
 		finalizedHash = payload.BlockHash
 	} else {
-		finalizedHash = c.eth.BlockChain().GetBlockByNumber((payload.Number - 1) / devEpochLength * devEpochLength).Hash()
+		finalizedBlock = c.eth.BlockChain().GetBlockByNumber((payload.Number - 1) / devEpochLength * devEpochLength)
+		if finalizedBlock == nil {
+			// TODO: verify that this can (only) happen with setHead
+			return errors.New("")
+		}
+		finalizedHash = finalizedBlock.Hash()
 	}
 
 	// mark the payload as canon
 	if _, err = c.engineAPI.NewPayloadV2(*payload); err != nil {
+		// TODO: verify that this can also happen with setHead
 		return fmt.Errorf("failed to mark payload as canonical: %v", err)
 	}
 	c.curForkchoiceState = engine.ForkchoiceStateV1{
@@ -177,6 +215,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal) error {
 	}
 	// mark the block containing the payload as canonical
 	if _, err = c.engineAPI.ForkchoiceUpdatedV2(c.curForkchoiceState, nil); err != nil {
+		// TODO: verify that this can also happen with setHead
 		return fmt.Errorf("failed to mark block as canonical: %v", err)
 	}
 	c.lastBlockTime = payload.Timestamp
@@ -207,6 +246,8 @@ func (c *SimulatedBeacon) loopOnDemand() {
 				log.Error("Error performing sealing-work", "err", err)
 				return
 			}
+		case evt := <-c.newHeadCh:
+			c.maybeResetForkchoiceState(evt.Block)
 		}
 	}
 }
@@ -225,6 +266,8 @@ func (c *SimulatedBeacon) loop() {
 				return
 			}
 			timer.Reset(time.Second * time.Duration(c.period))
+		case evt := <-c.newHeadCh:
+			c.maybeResetForkchoiceState(evt.Block)
 		}
 	}
 }
