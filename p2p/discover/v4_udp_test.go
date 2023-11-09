@@ -565,7 +565,7 @@ func startLocalhostV4(t *testing.T, cfg Config) *UDPv4 {
 			return nil
 		}
 
-		t.Logf("%s %s", lprefix, log.TerminalFormat(r, false))
+		t.Logf("%s %s", lprefix, log.TerminalFormat(r, make(map[string]int), false))
 		return nil
 	}))
 

@@ -165,7 +165,7 @@ func (l *logger) New(ctx ...interface{}) log.Logger {
 func (l *logger) flush() {
 	l.t.Helper()
 	for _, r := range l.h.buf {
-		l.t.Logf("%s", log.TerminalFormat(r, false))
+		l.t.Logf("%s", log.TerminalFormat(r, make(map[string]int), false))
 	}
 	l.h.buf = nil
 }

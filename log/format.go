@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"reflect"
 	"strconv"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,21 +24,6 @@ const (
 	termMsgJust       = 40
 	termCtxMaxPadding = 40
 )
-
-// ResetGlobalState resets the fieldPadding, which is useful for producing
-// predictable output.
-func ResetGlobalState() {
-	fieldPaddingLock.Lock()
-	fieldPadding = make(map[string]int)
-	fieldPaddingLock.Unlock()
-}
-
-// fieldPadding is a global map with maximum field value lengths seen until now
-// to allow padding log contexts in a bit smarter way.
-var fieldPadding = make(map[string]int)
-
-// fieldPaddingLock is a global mutex protecting the field padding map.
-var fieldPaddingLock sync.RWMutex
 
 type Format interface {
 	Format(r slog.Record) []byte
@@ -64,16 +48,7 @@ type TerminalStringer interface {
 	TerminalString() string
 }
 
-// TerminalFormat formats log records optimized for human readability on
-// a terminal with color-coded level output and terser human friendly timestamp.
-// This format should only be used for interactive programs or while developing.
-//
-//	[LEVEL] [TIME] MESSAGE key=value key=value ...
-//
-// Example:
-//
-//	[DBUG] [May 16 20:58:45] remove route ns=haproxy addr=127.0.0.1:50002
-func TerminalFormat(r slog.Record, commonAttrs []slog.Attr, usecolor bool) []byte {
+func TerminalFormat(r slog.Record, fieldPadding map[string]int, commonAttrs []slog.Attr, usecolor bool) []byte {
 	msg := escapeMessage(r.Message)
 	var color = 0
 	if usecolor {
@@ -106,11 +81,12 @@ func TerminalFormat(r slog.Record, commonAttrs []slog.Attr, usecolor bool) []byt
 		b.Write(bytes.Repeat([]byte{' '}, termMsgJust-length))
 	}
 	// print the keys logfmt style
-	logfmt(b, commonAttrs, r, color, true)
+	logfmt(b, fieldPadding, commonAttrs, r, color)
+
 	return b.Bytes()
 }
 
-func logfmt(buf *bytes.Buffer, commonAttrs []slog.Attr, r slog.Record, color int, term bool) {
+func logfmt(buf *bytes.Buffer, fieldPadding map[string]int, commonAttrs []slog.Attr, r slog.Record, color int) {
 	attrs := []slog.Attr{}
 	r.Attrs(func(attr slog.Attr) bool {
 		attrs = append(attrs, attr)
@@ -130,17 +106,12 @@ func logfmt(buf *bytes.Buffer, commonAttrs []slog.Attr, r slog.Record, color int
 
 		// XXX: we should probably check that all of your key bytes aren't invalid
 		// TODO (jwasinger) above comment was from log15 code.  what does it mean?  check that key bytes are ascii characters?
-		fieldPaddingLock.RLock()
 		padding := fieldPadding[key]
-		fieldPaddingLock.RUnlock()
 
 		length := utf8.RuneCountInString(val)
 		if padding < length && length <= termCtxMaxPadding {
 			padding = length
-
-			fieldPaddingLock.Lock()
 			fieldPadding[key] = padding
-			fieldPaddingLock.Unlock()
 		}
 		if color > 0 {
 			fmt.Fprintf(buf, "\x1b[%dm%s\x1b[0m=", color, key)
