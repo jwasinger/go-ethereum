@@ -74,7 +74,7 @@ type stateObject struct {
 	originStorage  Storage // Storage cache of original entries to dedup rewrites
 	pendingStorage Storage // Storage entries that need to be flushed to disk, at the end of an entire block
 	dirtyStorage   Storage // Storage entries that have been modified in the current transaction execution, reset for every transaction
-	readStorage []common.Hash
+	readStorage map[common.Hash]struct{}
 
 	// Cache flags.
 	dirtyCode bool // true if the code was updated
@@ -112,7 +112,7 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		originStorage:  make(Storage),
 		pendingStorage: make(Storage),
 		dirtyStorage:   make(Storage),
-		readStorage:    []common.Hash{},
+		readStorage:    make(map[common.Hash]struct{}),
 	}
 }
 
@@ -160,6 +160,7 @@ func (s *stateObject) getTrie() (Trie, error) {
 // GetState retrieves a value from the account storage trie.
 func (s *stateObject) GetState(key common.Hash) common.Hash {
 	// If we have a dirty value for this state entry, return it
+	s.readStorage[key] = struct{}{}
 	value, dirty := s.dirtyStorage[key]
 	if dirty {
 		return value
@@ -260,7 +261,7 @@ func (s *stateObject) finalise(prefetch bool) {
 	}
 
 	// prefetch slots that are read so that they will appear in witness
-	for _, value := range s.readStorage {
+	for value, _ := range s.readStorage {
 		if _, ok := s.dirtyStorage[value]; !ok {
 			slotsToPrefetch = append(slotsToPrefetch, common.CopyBytes(value[:]))
 		}
@@ -273,7 +274,7 @@ func (s *stateObject) finalise(prefetch bool) {
 		s.dirtyStorage = make(Storage)
 	}
 	if len(s.readStorage) > 0 {
-		s.readStorage = []common.Hash{}
+		s.readStorage = make(map[common.Hash]struct{})
 	}
 }
 
