@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"os"
 )
@@ -20,7 +22,12 @@ func (w *Witness) GetBlockHash(num uint64) common.Hash {
 	return w.blockHashes[num]
 }
 
+func (w *Witness) Root() common.Hash {
+	return w.root
+}
+
 type encodedWitness struct {
+	block       types.Block
 	root        common.Hash
 	owners      []common.Hash
 	allPaths    [][]string
@@ -50,12 +57,12 @@ func (e *encodedWitness) ToWitness() *Witness {
 	return &res
 }
 
-func DecodeWitnessRLP(b []byte) (*Witness, error) {
+func DecodeWitnessRLP(b []byte) (*types.Block, *Witness, error) {
 	var res encodedWitness
 	if err := rlp.DecodeBytes(b, &res); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return res.ToWitness(), nil
+	return &res.block, res.ToWitness(), nil
 }
 
 func (w *Witness) EncodeRLP(b *types.Block) []byte {
@@ -160,6 +167,21 @@ func (w *Witness) Dump() {
 			fmt.Printf("%x: %x\n", []byte(path), node)
 		}
 	}
+}
+
+func (w *Witness) PopulateMemoryDB() ethdb.Database {
+	db := rawdb.NewMemoryDatabase()
+	for codeHash, code := range w.codes {
+		rawdb.WriteCode(db, codeHash, code)
+	}
+
+	for owner, owned := range w.lists {
+		for path, node := range owned {
+			rawdb.WriteTrieNode(db, owner, []byte(path), common.Hash{}, node, rawdb.PathScheme)
+		}
+	}
+
+	return db
 }
 
 func NewWitness() *Witness {

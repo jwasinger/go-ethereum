@@ -3,8 +3,8 @@ package stateless
 import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 	"os"
@@ -20,8 +20,8 @@ var (
 func main() {
 	var config params.ChainConfig
 	var engine consensus.Engine
+	var vmConfig vm.Config
 
-	memoryDb := rawdb.NewMemoryDatabase()
 	validator := core.NewBlockValidator(&config, nil, engine)
 	processor := core.NewStateProcessor(&config, nil, engine)
 	f, err := os.Open("block_witness_flag")
@@ -31,10 +31,25 @@ func main() {
 
 	var b []byte
 	f.Read(b)
-	witness, err = state.DecodeWitnessRLP(b)
+	block, witness, err := state.DecodeWitnessRLP(b)
 	if err != nil {
 		panic(err)
 	}
 
-	// TODO: create statedb instance
+	memoryDb := witness.PopulateMemoryDB()
+	db, err := state.New(witness.Root(), state.NewDatabase(memoryDb), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	receipts, logs, usedGas, err := processor.ProcessStateless(witness, block, db, vmConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	_ = logs
+
+	if err := validator.ValidateState(block, db, receipts, usedGas); err != nil {
+		panic(err)
+	}
 }
