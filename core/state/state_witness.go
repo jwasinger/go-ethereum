@@ -107,6 +107,11 @@ func (w Witness) Copy() Witness {
 	panic("not implemented")
 }
 
+func (w *Witness) LogSizeWithBlock(b *types.Block) {
+	enc := w.EncodeRLP(b)
+	fmt.Printf("block %d witness+block size: %d\n", b.Number(), len(enc))
+}
+
 func NewWitness() *Witness {
 	return &Witness{
 		make(map[uint64]common.Hash),
