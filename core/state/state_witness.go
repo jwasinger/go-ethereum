@@ -2,12 +2,14 @@ package state
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type Witness struct {
@@ -192,6 +194,88 @@ func (w *Witness) Copy() *Witness {
 	}
 	return &res
 }
+
+func (w *Witness) sortedWitness() *rlpWitness {
+	var sortedCodeHashes []common.Hash
+	for key, _ := range w.codes {
+		sortedCodeHashes = append(sortedCodeHashes, key)
+	}
+	sort.Slice(sortedCodeHashes, func(i, j int) bool {
+		return bytes.Compare(sortedCodeHashes[i][:], sortedCodeHashes[j][:]) > 0
+	})
+
+	// sort the list of owners
+	var owners []common.Hash
+	for owner, _ := range w.lists {
+		owners = append(owners, owner)
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		return bytes.Compare(owners[i][:], owners[j][:]) > 0
+	})
+
+	var ownersPaths [][]string
+	var ownersNodes [][][]byte
+
+	// sort the noes of each owner by path
+	for _, owner := range owners {
+		nodes := w.lists[owner]
+		// sort each node set
+		var ownerPaths []string
+		for path, _ := range nodes {
+			ownerPaths = append(ownerPaths, path)
+		}
+		sort.Strings(ownerPaths)
+
+		var ownerNodes [][]byte
+		for _, path := range ownerPaths {
+			ownerNodes = append(ownerNodes, nodes[path])
+		}
+		ownersPaths = append(ownersPaths, ownerPaths)
+		ownersNodes = append(ownersNodes, ownerNodes)
+	}
+
+	var blockNrs []uint64
+	var blockHashes []common.Hash
+	for blockNr, blockHash := range w.blockHashes {
+		blockNrs = append(blockNrs, blockNr)
+		blockHashes = append(blockHashes, blockHash)
+	}
+
+	var codeHashes []common.Hash
+	var codes []Code
+	for codeHash, _ := range w.codes {
+		codeHashes = append(codeHashes, codeHash)
+	}
+	sort.Slice(codeHashes, func(i, j int) bool {
+		return bytes.Compare(codeHashes[i][:], codeHashes[j][:]) > 0
+	})
+
+	for _, codeHash := range codeHashes {
+		codes = append(codes, w.codes[codeHash])
+	}
+
+	return &rlpWitness{
+		Block:       w.block,
+		Root:        common.Hash{},
+		Owners:      owners,
+		AllPaths:    ownersPaths,
+		AllNodes:    ownersNodes,
+		BlockNums:   blockNrs,
+		BlockHashes: blockHashes,
+		Codes:       codes,
+		CodeHashes:  codeHashes,
+	}
+}
+
+func (w *Witness) Hash() common.Hash {
+	res, err := rlp.EncodeToBytes(w.sortedWitness())
+	if err != nil {
+		panic(err)
+	}
+
+	return common.Hash(sha256.Sum256(res[:]))
+}
+
 func NewWitness() *Witness {
 	return &Witness{
 		block:       nil,

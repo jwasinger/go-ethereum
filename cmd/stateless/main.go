@@ -3,13 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/console/prompt"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/automaxprocs/maxprocs"
 	"os"
@@ -20,14 +16,38 @@ var (
 		Name:  "block-witness",
 		Usage: "foo bar",
 	}
+
+	BlockWitness1Flag = &cli.StringFlag{
+		Name:  "witness1",
+		Usage: "foo bar",
+	}
+	BlockWitness2Flag = &cli.StringFlag{
+		Name:  "witness2",
+		Usage: "foo bar",
+	}
+
+	WitnessDiffCommand = &cli.Command{
+		Action:    witnessDiff,
+		Name:      "diff",
+		Usage:     "",
+		ArgsUsage: "<genesisPath>",
+		Flags: []cli.Flag{
+			BlockWitness1Flag,
+			BlockWitness2Flag,
+		},
+		Description: `placeholder description`,
+	}
 )
 
 var app = flags.NewApp("stateless block executor")
 
 func init() {
 	// Initialize the CLI app and start Geth
-	app.Action = stateless
+	//app.Action = stateless
 	app.Copyright = "Copyright 2013-2023 The go-ethereum Authors"
+	app.Commands = []*cli.Command{
+		WitnessDiffCommand,
+	}
 
 	app.Flags = []cli.Flag{
 		BlockWitnessFlag,
@@ -47,6 +67,7 @@ func init() {
 	}
 }
 
+/*
 func stateless(ctx *cli.Context) error {
 	var vmConfig vm.Config
 
@@ -91,6 +112,39 @@ func stateless(ctx *cli.Context) error {
 		panic(err)
 	}
 
+	return nil
+}
+*/
+
+func witnessDiff(ctx *cli.Context) error {
+	witness1Path := ctx.String(BlockWitness1Flag.Name)
+	witness2Path := ctx.String(BlockWitness2Flag.Name)
+
+	b1, err := os.ReadFile(witness1Path)
+	if err != nil {
+		return err
+	}
+
+	b2, err := os.ReadFile(witness2Path)
+	if err != nil {
+		return err
+	}
+
+	w1, err := state.DecodeWitnessRLP(b1)
+	if err != nil {
+		return err
+	}
+
+	w2, err := state.DecodeWitnessRLP(b2)
+	if err != nil {
+		return err
+	}
+
+	w1Hash := w1.Hash()
+	w2Hash := w2.Hash()
+	if w1Hash != w2Hash {
+		fmt.Printf("witness 1 hash (%x) != witness 2 hash (%x)\n", w1Hash, w2Hash)
+	}
 	return nil
 }
 
