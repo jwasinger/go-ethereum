@@ -277,8 +277,8 @@ func (w *Witness) PrettyPrint() string {
 		fmt.Fprintf(b, "%x:\n", owner)
 		ownerPaths := sorted.AllPaths[i]
 		ownerNodes := sorted.AllNodes[i]
-		for _, path := range ownerPaths {
-			fmt.Fprintf(b, "\t%x:%x\n", []byte(path), ownerNodes[i])
+		for j, path := range ownerPaths {
+			fmt.Fprintf(b, "\t%x:%x\n", []byte(path), ownerNodes[j])
 		}
 	}
 	fmt.Fprintf(b, "block hashes:\n")
