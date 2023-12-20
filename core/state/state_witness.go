@@ -60,11 +60,11 @@ func (e *rlpWitness) ToWitness() *Witness {
 }
 
 func DecodeWitnessRLP(b []byte) (*Witness, error) {
-	var res Witness
+	var res rlpWitness
 	if err := rlp.DecodeBytes(b, &res); err != nil {
 		return nil, err
 	}
-	return &res, nil
+	return res.ToWitness(), nil
 }
 
 func (w *Witness) EncodeRLP() ([]byte, error) {

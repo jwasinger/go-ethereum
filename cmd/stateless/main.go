@@ -132,12 +132,12 @@ func witnessDiff(ctx *cli.Context) error {
 
 	w1, err := state.DecodeWitnessRLP(b1)
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	w2, err := state.DecodeWitnessRLP(b2)
 	if err != nil {
-		return err
+		panic(err)
 	}
 
 	w1Hash := w1.Hash()
