@@ -267,6 +267,33 @@ func (w *Witness) sortedWitness() *rlpWitness {
 	}
 }
 
+func (w *Witness) PrettyPrint() string {
+	sorted := w.sortedWitness()
+	b := new(bytes.Buffer)
+	fmt.Fprintf(b, "block: %+v\n", sorted.Block)
+	fmt.Fprintf(b, "root: %x\n", sorted.Root)
+	fmt.Fprint(b, "owners:\n")
+	for i, owner := range sorted.Owners {
+		fmt.Fprintf(b, "%x:\n", owner)
+		ownerPaths := sorted.AllPaths[i]
+		ownerNodes := sorted.AllNodes[i]
+		for _, path := range ownerPaths {
+			fmt.Fprintf(b, "\t%x:%x\n", []byte(path), ownerNodes[i])
+		}
+	}
+	fmt.Fprintf(b, "block hashes:\n")
+	for i, blockNum := range sorted.BlockNums {
+		blockHash := sorted.BlockHashes[i]
+		fmt.Fprintf(b, "\t%d:%x\n", blockNum, blockHash)
+	}
+	fmt.Fprintf(b, "codes:\n")
+	for i, codeHash := range sorted.CodeHashes {
+		code := sorted.Codes[i]
+		fmt.Fprintf(b, "\t%x:%x\n", codeHash, code)
+	}
+	return b.String()
+}
+
 func (w *Witness) Hash() common.Hash {
 	res, err := rlp.EncodeToBytes(w.sortedWitness())
 	if err != nil {

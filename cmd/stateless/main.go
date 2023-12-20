@@ -37,6 +37,16 @@ var (
 		},
 		Description: `placeholder description`,
 	}
+	PPCommand = &cli.Command{
+		Action:    pp,
+		Name:      "pp",
+		Usage:     "",
+		ArgsUsage: "<genesisPath>",
+		Flags: []cli.Flag{
+			BlockWitnessFlag,
+		},
+		Description: `placeholder description`,
+	}
 )
 
 var app = flags.NewApp("stateless block executor")
@@ -47,6 +57,7 @@ func init() {
 	app.Copyright = "Copyright 2013-2023 The go-ethereum Authors"
 	app.Commands = []*cli.Command{
 		WitnessDiffCommand,
+		PPCommand,
 	}
 
 	app.Flags = []cli.Flag{
@@ -68,53 +79,67 @@ func init() {
 }
 
 /*
-func stateless(ctx *cli.Context) error {
-	var vmConfig vm.Config
+	func stateless(ctx *cli.Context) error {
+		var vmConfig vm.Config
 
-	blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
-	if blockWitnessPath == "" {
-		panic("block witness required")
+		blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
+		if blockWitnessPath == "" {
+			panic("block witness required")
+		}
+
+		b, err := os.ReadFile(blockWitnessPath)
+		if err != nil {
+			panic(err)
+		}
+
+		block, witness, err := state.DecodeWitnessRLP(b)
+		if err != nil {
+			panic(err)
+		}
+
+		memoryDb := witness.PopulateMemoryDB()
+		db, err := state.New(witness.Root(), state.NewDatabase(memoryDb), nil)
+		if err != nil {
+			panic(err)
+		}
+
+		// TODO: we will want to parameterize the chain config.  hard-coding here for testing in the mean-time.
+		chainConfig := params.AllDevChainProtocolChanges //params.MainnetChainConfig
+		engine, err := ethconfig.CreateConsensusEngine(chainConfig, memoryDb)
+		if err != nil {
+			panic(err)
+		}
+		validator := core.NewBlockValidator(chainConfig, nil, engine)
+		processor := core.NewStateProcessor(chainConfig, nil, engine)
+
+		receipts, logs, usedGas, err := processor.ProcessStateless(witness, block, db, vmConfig)
+		if err != nil {
+			panic(err)
+		}
+
+		_ = logs
+
+		if err := validator.ValidateState(block, db, receipts, usedGas); err != nil {
+			panic(err)
+		}
+
+		return nil
 	}
-
-	b, err := os.ReadFile(blockWitnessPath)
+*/
+func pp(ctx *cli.Context) error {
+	witnessPath := ctx.String(BlockWitnessFlag.Name)
+	b, err := os.ReadFile(witnessPath)
+	if err != nil {
+		return err
+	}
+	w, err := state.DecodeWitnessRLP(b)
 	if err != nil {
 		panic(err)
 	}
 
-	block, witness, err := state.DecodeWitnessRLP(b)
-	if err != nil {
-		panic(err)
-	}
-
-	memoryDb := witness.PopulateMemoryDB()
-	db, err := state.New(witness.Root(), state.NewDatabase(memoryDb), nil)
-	if err != nil {
-		panic(err)
-	}
-
-	// TODO: we will want to parameterize the chain config.  hard-coding here for testing in the mean-time.
-	chainConfig := params.AllDevChainProtocolChanges //params.MainnetChainConfig
-	engine, err := ethconfig.CreateConsensusEngine(chainConfig, memoryDb)
-	if err != nil {
-		panic(err)
-	}
-	validator := core.NewBlockValidator(chainConfig, nil, engine)
-	processor := core.NewStateProcessor(chainConfig, nil, engine)
-
-	receipts, logs, usedGas, err := processor.ProcessStateless(witness, block, db, vmConfig)
-	if err != nil {
-		panic(err)
-	}
-
-	_ = logs
-
-	if err := validator.ValidateState(block, db, receipts, usedGas); err != nil {
-		panic(err)
-	}
-
+	fmt.Println(w.PrettyPrint())
 	return nil
 }
-*/
 
 func witnessDiff(ctx *cli.Context) error {
 	witness1Path := ctx.String(BlockWitness1Flag.Name)
