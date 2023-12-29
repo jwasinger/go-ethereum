@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/automaxprocs/maxprocs"
 	"os"
@@ -115,7 +116,7 @@ func stateless(ctx *cli.Context) error {
 	if err := witness.PopulateDB(rdb); err != nil {
 		panic(err)
 	}
-	db, err := state.New(witness.Root(), state.NewDatabase(rdb), nil)
+	db, err := state.New(witness.Root(), state.NewDatabaseWithConfig(rdb, trie.PathDefaults), nil)
 	if err != nil {
 		panic(err)
 	}

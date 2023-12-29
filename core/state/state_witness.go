@@ -44,8 +44,7 @@ type rlpWitness struct {
 }
 
 func (e *rlpWitness) ToWitness() *Witness {
-	res := NewWitness()
-	res.root = e.Root
+	res := NewWitness(e.Root)
 	res.Block = e.Block
 	for i := 0; i < len(e.Codes); i++ {
 		res.codes[e.CodeHashes[i]] = e.Codes[i]
@@ -74,6 +73,7 @@ func DecodeWitnessRLP(b []byte) (*Witness, error) {
 func (w *Witness) EncodeRLP() ([]byte, error) {
 	var encWit rlpWitness
 	encWit.Block = w.Block
+	encWit.Root = w.root
 
 	for owner, nodeMap := range w.lists {
 		encWit.Owners = append(encWit.Owners, owner)
@@ -307,12 +307,12 @@ func (w *Witness) Hash() common.Hash {
 	return common.Hash(sha256.Sum256(res[:]))
 }
 
-func NewWitness() *Witness {
+func NewWitness(root common.Hash) *Witness {
 	return &Witness{
 		Block:       nil,
 		blockHashes: make(map[uint64]common.Hash),
 		codes:       make(map[common.Hash]Code),
-		root:        common.Hash{},
+		root:        root,
 		lists:       make(map[common.Hash]map[string][]byte),
 	}
 }
