@@ -52,17 +52,27 @@ var (
 		},
 		Description: `placeholder description`,
 	}
+	StatelessCommand = &cli.Command{
+		Action:    stateless,
+		Name:      "exec",
+		Usage:     "",
+		ArgsUsage: "<genesisPath>",
+		Flags: []cli.Flag{
+			BlockWitnessFlag,
+		},
+		Description: `placeholder description`,
+	}
 )
 
 var app = flags.NewApp("stateless block executor")
 
 func init() {
 	// Initialize the CLI app and start Geth
-	//app.Action = stateless
 	app.Copyright = "Copyright 2013-2023 The go-ethereum Authors"
 	app.Commands = []*cli.Command{
 		WitnessDiffCommand,
 		PPCommand,
+		StatelessCommand,
 	}
 
 	app.Flags = []cli.Flag{
