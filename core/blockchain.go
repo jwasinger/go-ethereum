@@ -1865,7 +1865,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 
 		if witnessRecordingPath := bc.witnessRecordingPath.Load(); witnessRecordingPath != nil {
 			witness := statedb.GetWitness()
-			witness.SetBlock(block)
+			witness.Block = block
 			if err := state.DumpBlockWitnessToFile(witness, *witnessRecordingPath); err != nil {
 				log.Error("could not dump block witness to file", "err", err)
 			} else {

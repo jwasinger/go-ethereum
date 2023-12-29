@@ -47,12 +47,22 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 	return validator
 }
 
+// NewBlockValidator returns a new block validator which is safe for re-use
+func NewStatelessBlockValidator(config *params.ChainConfig, engine consensus.Engine) *BlockValidator {
+	validator := &BlockValidator{
+		config: config,
+		engine: engine,
+		bc:     nil,
+	}
+	return validator
+}
+
 // ValidateBody validates the given block's uncles and verifies the block
 // header's transaction and uncle roots. The headers are assumed to be already
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	// Check whether the block is already imported.
-	if v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	if v.bc != nil && v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
 	}
 

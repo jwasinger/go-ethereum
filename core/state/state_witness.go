@@ -46,6 +46,7 @@ type rlpWitness struct {
 func (e *rlpWitness) ToWitness() *Witness {
 	res := NewWitness()
 	res.root = e.Root
+	res.Block = e.Block
 	for i := 0; i < len(e.Codes); i++ {
 		res.codes[e.CodeHashes[i]] = e.Codes[i]
 	}
@@ -168,10 +169,6 @@ func (w *Witness) Summary() string {
 	fmt.Fprintf(b, "block (%4d txs): %v\n", len(w.Block.Transactions()), common.StorageSize(totBlock))
 	fmt.Fprintf(b, "Total size: %v\n ", common.StorageSize(totWit))
 	return b.String()
-}
-
-func (w *Witness) SetBlock(b *types.Block) {
-	w.Block = b
 }
 
 func (w *Witness) Copy() *Witness {

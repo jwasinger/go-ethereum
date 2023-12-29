@@ -126,8 +126,12 @@ func stateless(ctx *cli.Context) error {
 	if err != nil {
 		panic(err)
 	}
-	validator := core.NewBlockValidator(chainConfig, nil, engine)
-	processor := core.NewStateProcessor(chainConfig, nil, engine)
+	validator := core.NewStatelessBlockValidator(chainConfig, engine)
+	chainCtx := core.NewStatelessChainContext(rdb, engine)
+
+	// note: this will crash with ethash consensus because it reads chainConfig in
+	// Finalize from bc
+	processor := core.NewStatelessStateProcessor(chainConfig, chainCtx, engine)
 
 	receipts, logs, usedGas, err := processor.Process(witness.Block, db, vmConfig)
 	if err != nil {
@@ -135,11 +139,12 @@ func stateless(ctx *cli.Context) error {
 	}
 
 	_ = logs
-
+	if err := validator.ValidateBody(witness.Block); err != nil {
+		panic(err)
+	}
 	if err := validator.ValidateState(witness.Block, db, receipts, usedGas); err != nil {
 		panic(err)
 	}
-
 	return nil
 }
 
