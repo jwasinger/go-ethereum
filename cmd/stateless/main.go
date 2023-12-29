@@ -3,9 +3,14 @@ package main
 import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/console/prompt"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/automaxprocs/maxprocs"
 	"os"
@@ -78,54 +83,56 @@ func init() {
 	}
 }
 
-/*
-	func stateless(ctx *cli.Context) error {
-		var vmConfig vm.Config
+func stateless(ctx *cli.Context) error {
+	var vmConfig vm.Config
 
-		blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
-		if blockWitnessPath == "" {
-			panic("block witness required")
-		}
-
-		b, err := os.ReadFile(blockWitnessPath)
-		if err != nil {
-			panic(err)
-		}
-
-		block, witness, err := state.DecodeWitnessRLP(b)
-		if err != nil {
-			panic(err)
-		}
-
-		memoryDb := witness.PopulateMemoryDB()
-		db, err := state.New(witness.Root(), state.NewDatabase(memoryDb), nil)
-		if err != nil {
-			panic(err)
-		}
-
-		// TODO: we will want to parameterize the chain config.  hard-coding here for testing in the mean-time.
-		chainConfig := params.AllDevChainProtocolChanges //params.MainnetChainConfig
-		engine, err := ethconfig.CreateConsensusEngine(chainConfig, memoryDb)
-		if err != nil {
-			panic(err)
-		}
-		validator := core.NewBlockValidator(chainConfig, nil, engine)
-		processor := core.NewStateProcessor(chainConfig, nil, engine)
-
-		receipts, logs, usedGas, err := processor.ProcessStateless(witness, block, db, vmConfig)
-		if err != nil {
-			panic(err)
-		}
-
-		_ = logs
-
-		if err := validator.ValidateState(block, db, receipts, usedGas); err != nil {
-			panic(err)
-		}
-
-		return nil
+	blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
+	if blockWitnessPath == "" {
+		panic("block witness required")
 	}
-*/
+
+	b, err := os.ReadFile(blockWitnessPath)
+	if err != nil {
+		panic(err)
+	}
+
+	witness, err := state.DecodeWitnessRLP(b)
+	if err != nil {
+		panic(err)
+	}
+
+	rdb := rawdb.NewMemoryDatabase()
+	if err := witness.PopulateDB(rdb); err != nil {
+		panic(err)
+	}
+	db, err := state.New(witness.Root(), state.NewDatabase(rdb), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	// TODO: we will want to parameterize the chain config.  hard-coding here for testing in the mean-time.
+	chainConfig := params.AllDevChainProtocolChanges //params.MainnetChainConfig
+	engine, err := ethconfig.CreateConsensusEngine(chainConfig, rdb)
+	if err != nil {
+		panic(err)
+	}
+	validator := core.NewBlockValidator(chainConfig, nil, engine)
+	processor := core.NewStateProcessor(chainConfig, nil, engine)
+
+	receipts, logs, usedGas, err := processor.Process(witness.Block, db, vmConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	_ = logs
+
+	if err := validator.ValidateState(witness.Block, db, receipts, usedGas); err != nil {
+		panic(err)
+	}
+
+	return nil
+}
+
 func pp(ctx *cli.Context) error {
 	witnessPath := ctx.String(BlockWitnessFlag.Name)
 	b, err := os.ReadFile(witnessPath)

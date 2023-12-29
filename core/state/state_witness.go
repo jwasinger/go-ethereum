@@ -5,15 +5,18 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
 )
 
 type Witness struct {
-	block       *types.Block
+	Block       *types.Block
 	blockHashes map[uint64]common.Hash
 	codes       map[common.Hash]Code
 	root        common.Hash
@@ -69,7 +72,7 @@ func DecodeWitnessRLP(b []byte) (*Witness, error) {
 
 func (w *Witness) EncodeRLP() ([]byte, error) {
 	var encWit rlpWitness
-	encWit.Block = w.block
+	encWit.Block = w.Block
 
 	for owner, nodeMap := range w.lists {
 		encWit.Owners = append(encWit.Owners, owner)
@@ -132,7 +135,7 @@ func (w *Witness) LogSizeWithBlock(b *types.Block) {
 
 func (w *Witness) Summary() string {
 	b := new(bytes.Buffer)
-	xx, err := rlp.EncodeToBytes(w.block)
+	xx, err := rlp.EncodeToBytes(w.Block)
 	if err != nil {
 		panic(err)
 	}
@@ -162,18 +165,18 @@ func (w *Witness) Summary() string {
 	fmt.Fprintf(b, "%4d paths:  %v\n", nodePathCount, common.StorageSize(totPaths))
 	fmt.Fprintf(b, "%4d codes:  %v\n", len(w.codes), common.StorageSize(totCode))
 	fmt.Fprintf(b, "%4d codeHashes: %v\n", len(w.codes), common.StorageSize(len(w.codes)*32))
-	fmt.Fprintf(b, "block (%4d txs): %v\n", len(w.block.Transactions()), common.StorageSize(totBlock))
+	fmt.Fprintf(b, "block (%4d txs): %v\n", len(w.Block.Transactions()), common.StorageSize(totBlock))
 	fmt.Fprintf(b, "Total size: %v\n ", common.StorageSize(totWit))
 	return b.String()
 }
 
 func (w *Witness) SetBlock(b *types.Block) {
-	w.block = b
+	w.Block = b
 }
 
 func (w *Witness) Copy() *Witness {
 	var res Witness
-	res.block = w.block // we don't actually mutate the block in the witness so don't deep copy
+	res.Block = w.Block // we don't actually mutate the block in the witness so don't deep copy
 
 	for blockNr, blockHash := range w.blockHashes {
 		res.blockHashes[blockNr] = blockHash
@@ -255,7 +258,7 @@ func (w *Witness) sortedWitness() *rlpWitness {
 	}
 
 	return &rlpWitness{
-		Block:       w.block,
+		Block:       w.Block,
 		Root:        common.Hash{},
 		Owners:      owners,
 		AllPaths:    ownersPaths,
@@ -274,11 +277,15 @@ func (w *Witness) PrettyPrint() string {
 	fmt.Fprintf(b, "root: %x\n", sorted.Root)
 	fmt.Fprint(b, "owners:\n")
 	for i, owner := range sorted.Owners {
-		fmt.Fprintf(b, "%x:\n", owner)
+		if owner == (common.Hash{}) {
+			fmt.Fprintf(b, "\troot:\n")
+		} else {
+			fmt.Fprintf(b, "\t%x:\n", owner)
+		}
 		ownerPaths := sorted.AllPaths[i]
 		ownerNodes := sorted.AllNodes[i]
 		for j, path := range ownerPaths {
-			fmt.Fprintf(b, "\t%x:%x\n", []byte(path), ownerNodes[j])
+			fmt.Fprintf(b, "\t\t%x:%x\n", []byte(path), ownerNodes[j])
 		}
 	}
 	fmt.Fprintf(b, "block hashes:\n")
@@ -305,7 +312,7 @@ func (w *Witness) Hash() common.Hash {
 
 func NewWitness() *Witness {
 	return &Witness{
-		block:       nil,
+		Block:       nil,
 		blockHashes: make(map[uint64]common.Hash),
 		codes:       make(map[common.Hash]Code),
 		root:        common.Hash{},
@@ -316,11 +323,41 @@ func NewWitness() *Witness {
 func DumpBlockWitnessToFile(w *Witness, path string) error {
 	enc, _ := w.EncodeRLP()
 
-	blockHash := w.block.Hash()
-	outputFName := fmt.Sprintf("%d-%x.rlp", w.block.NumberU64(), blockHash[0:8])
+	blockHash := w.Block.Hash()
+	outputFName := fmt.Sprintf("%d-%x.rlp", w.Block.NumberU64(), blockHash[0:8])
 	path = filepath.Join(path, outputFName)
 	err := os.WriteFile(path, enc, 0644)
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// This takes ownership over the trie nodes (and what else?) in this Witness object
+func (w *Witness) PopulateDB(db ethdb.Database) error {
+	batch := db.NewBatch()
+	for owner, nodes := range w.lists {
+		for path, node := range nodes {
+			if owner == (common.Hash{}) {
+				rawdb.WriteAccountTrieNode(batch, []byte(path), node)
+			} else {
+				rawdb.WriteStorageTrieNode(batch, owner, []byte(path), node)
+			}
+		}
+	}
+
+	for blockNum, blockHash := range w.blockHashes {
+		fakeHeader := types.Header{}
+		fakeHeader.ParentHash = blockHash
+		fakeHeader.Number = new(big.Int).SetUint64(blockNum)
+		rawdb.WriteHeader(batch, &fakeHeader)
+	}
+
+	for codeHash, code := range w.codes {
+		rawdb.WriteCode(batch, codeHash, code)
+	}
+
+	if err := batch.Write(); err != nil {
 		return err
 	}
 	return nil
