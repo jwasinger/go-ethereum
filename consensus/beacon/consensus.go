@@ -352,13 +352,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
 		return
 	}
-	// Withdrawals processing.
-	for _, w := range withdrawals {
-		// Convert amount from gwei to wei.
-		amount := new(big.Int).SetUint64(w.Amount)
-		amount = amount.Mul(amount, big.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount)
-	}
+	state.ApplyWithdrawals(withdrawals)
 	// No block reward which is issued by consensus layer instead.
 }
 

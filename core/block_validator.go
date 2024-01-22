@@ -19,7 +19,6 @@ package core
 import (
 	"errors"
 	"fmt"
-
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -47,12 +46,25 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 	return validator
 }
 
+// NewBlockValidator returns a new block validator which is safe for re-use
+func NewStatelessBlockValidator(config *params.ChainConfig, engine consensus.Engine) *BlockValidator {
+	validator := &BlockValidator{
+		config: config,
+		engine: engine,
+		bc: &BlockChain{
+			chainConfig: config,
+			engine:      engine,
+		},
+	}
+	return validator
+}
+
 // ValidateBody validates the given block's uncles and verifies the block
 // header's transaction and uncle roots. The headers are assumed to be already
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	// Check whether the block is already imported.
-	if v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	if v.bc != nil && v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
 	}
 
@@ -110,7 +122,7 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	}
 
 	// Ancestor block must be known.
-	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+	if v.bc != nil && !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
 		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
 			return consensus.ErrUnknownAncestor
 		}
@@ -133,6 +145,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
 	}
 	// Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
+	fmt.Printf("receipts is %v\n", receipts)
 	receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
 	if receiptSha != header.ReceiptHash {
 		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)

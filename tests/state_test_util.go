@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/cmd/utils"
 	"math/big"
 	"strconv"
 	"strings"
@@ -156,6 +157,8 @@ func GetChainConfig(forkString string) (baseConfig *params.ChainConfig, eips []i
 			eips = append(eips, eipNum)
 		}
 	}
+	var w *state.Witness
+	utils.StatelessVerify(nil, w)
 	return baseConfig, eips, nil
 }
 

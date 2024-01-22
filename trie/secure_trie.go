@@ -17,6 +17,9 @@
 package trie
 
 import (
+	"fmt"
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -86,10 +89,13 @@ func (t *StateTrie) MustGet(key []byte) []byte {
 // If the specified storage slot is not in the trie, nil will be returned.
 // If a trie node is not found in the database, a MissingNodeError is returned.
 func (t *StateTrie) GetStorage(_ common.Address, key []byte) ([]byte, error) {
-	enc, err := t.trie.Get(t.hashKey(key))
+	hashKey := t.hashKey(key)
+	log.Trace("GetStorage", "owner", t.trie.owner, "key", fmt.Sprintf("%x", key), "hashKey", fmt.Sprintf("%x", hashKey))
+	enc, err := t.trie.Get(hashKey)
 	if err != nil || len(enc) == 0 {
 		return nil, err
 	}
+	log.Trace("GetStorage", "result", enc)
 	_, content, _, err := rlp.Split(enc)
 	return content, err
 }
@@ -98,7 +104,9 @@ func (t *StateTrie) GetStorage(_ common.Address, key []byte) ([]byte, error) {
 // If the specified account is not in the trie, nil will be returned.
 // If a trie node is not found in the database, a MissingNodeError is returned.
 func (t *StateTrie) GetAccount(address common.Address) (*types.StateAccount, error) {
-	res, err := t.trie.Get(t.hashKey(address.Bytes()))
+	hashKey := t.hashKey(address.Bytes())
+	log.Trace("GetAccount", "address", address.String(), "hashAddress", fmt.Sprintf("%x", hashKey))
+	res, err := t.trie.Get(hashKey)
 	if res == nil || err != nil {
 		return nil, err
 	}
@@ -214,6 +222,22 @@ func (t *StateTrie) GetKey(shaKey []byte) []byte {
 		return nil
 	}
 	return t.preimages.preimage(common.BytesToHash(shaKey))
+}
+
+func (t *StateTrie) CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *trienode.NodeSet, map[string][]byte, error) {
+	// Write all the pre-images to the actual disk database
+	if len(t.getSecKeyCache()) > 0 {
+		if t.preimages != nil {
+			preimages := make(map[common.Hash][]byte)
+			for hk, key := range t.secKeyCache {
+				preimages[common.BytesToHash([]byte(hk))] = key
+			}
+			t.preimages.insertPreimage(preimages)
+		}
+		t.secKeyCache = make(map[string][]byte)
+	}
+	// Commit the trie and return its modified nodeset.
+	return t.trie.CommitAndObtainAccessList(collectLeaf)
 }
 
 // Commit collects all dirty nodes in the trie and replaces them with the

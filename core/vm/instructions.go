@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -383,6 +384,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 	addr := common.Address(a.Bytes20())
+	interpreter.evm.StateDB.GetWitness().AddCode(interpreter.evm.StateDB.GetCodeHash(addr), interpreter.evm.StateDB.GetCode(addr))
 	codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 
@@ -421,6 +423,8 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
 	} else {
+		_ = interpreter.evm.StateDB.GetCode(address) // ensure the account leaf is fetched and included in the witnessgi
+		interpreter.evm.StateDB.GetWitness().AddCodeHash(interpreter.evm.StateDB.GetCodeHash(address))
 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
 	}
 	return nil, nil
@@ -447,7 +451,11 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 		lower = upper - 256
 	}
 	if num64 >= lower && num64 < upper {
-		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
+		res := interpreter.evm.Context.GetHash(num64).Bytes()
+		var bh common.Hash
+		copy(bh[:], res[:])
+		interpreter.evm.StateDB.GetWitness().AddBlockHash(bh, num64)
+		num.SetBytes(res[:])
 	} else {
 		num.Clear()
 	}
@@ -515,6 +523,7 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
+	log.Trace("sstore", "key", hash)
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
 	return nil, nil

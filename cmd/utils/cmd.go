@@ -22,6 +22,11 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	"io"
 	"os"
 	"os/signal"
@@ -672,4 +677,74 @@ func ExportChaindata(fn string, kind string, iter ChainDataIterator, interrupt c
 	log.Info("Exported chain data", "file", fn, "kind", kind, "count", count,
 		"elapsed", common.PrettyDuration(time.Since(start)))
 	return nil
+}
+
+func StatelessVerify(logOutput io.Writer, witness *state.Witness) (bool, error) {
+	var vmConfig vm.Config
+	logconfig := &logger.Config{
+		EnableMemory:     false,
+		DisableStack:     false,
+		DisableStorage:   false,
+		EnableReturnData: true,
+		Debug:            false,
+	}
+	if logOutput != nil {
+		vmConfig.Tracer = logger.NewJSONLogger(logconfig, logOutput)
+	}
+
+	fmt.Printf("stateless verify witness - %v\n", witness)
+	// TODO: create memorydb wrapper that fails hard if a key doesn't resolve from the trie
+	rdb := rawdb.NewMemoryDatabase()
+	if err := witness.PopulateDB(rdb); err != nil {
+		return false, err
+	}
+	db, err := state.New(witness.Root(), state.NewDatabaseWithConfig(rdb, trie.PathDefaults), nil)
+	if err != nil {
+		return false, err
+	}
+
+	// TODO: we will want to parameterize the chain config.  hard-coding here for testing in the mean-time.
+	chainConfig := params.MainnetChainConfig
+	engine, err := ethconfig.CreateConsensusEngine(chainConfig, rdb)
+	if err != nil {
+		return false, err
+	}
+	validator := core.NewStatelessBlockValidator(chainConfig, engine)
+	chainCtx := core.NewStatelessChainContext(rdb, engine)
+
+	/*
+		old := log.Root().GetHandler()
+		log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StdoutHandler))
+		defer log.Root().SetHandler(old)
+	*/
+	// note: this will crash with ethash consensus (because the stateprocessor BlockChain is nil)
+	processor := core.NewStatelessStateProcessor(chainConfig, chainCtx, engine)
+
+	receipts, logs, usedGas, err := processor.Process(witness.Block, db, vmConfig)
+	if err != nil {
+		return false, err
+	}
+
+	// TODO: enumerate failure cases and divide them into:
+	// * errors that are caused by invalidly-formed proof
+	// * errors that could be consensus bugs
+
+	// TODO skip validation of built proofs and re-add it later after they are executing thru the verifier
+	// reason is that we are missing some things (withdrawals) that alter the state but don't appear in the prestate
+	_ = logs
+	/*
+		if err := validator.ValidateBody(witness.Block); err != nil {
+			return false, err
+		}
+	*/
+	if err := validator.ValidateState(witness.Block, db, receipts, usedGas); err != nil {
+		return false, err
+	}
+	/*
+		// TODO:
+		if err is only state root mismatch {
+			return false, nil
+		}
+	*/
+	return true, nil
 }

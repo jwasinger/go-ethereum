@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"github.com/ethereum/go-ethereum/core/state"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -78,6 +79,8 @@ type StateDB interface {
 
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
+
+	GetWitness() *state.Witness
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM

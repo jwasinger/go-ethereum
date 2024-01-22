@@ -19,6 +19,9 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -36,9 +39,10 @@ import (
 //
 // StateProcessor implements Processor.
 type StateProcessor struct {
-	config *params.ChainConfig // Chain configuration options
-	bc     *BlockChain         // Canonical block chain
-	engine consensus.Engine    // Consensus engine used for block rewards
+	config   *params.ChainConfig // Chain configuration options
+	bc       *BlockChain         // Canonical block chain
+	engine   consensus.Engine    // Consensus engine used for block rewards
+	chainCtx *StatelessChainContext
 }
 
 // NewStateProcessor initialises a new StateProcessor.
@@ -47,6 +51,18 @@ func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consen
 		config: config,
 		bc:     bc,
 		engine: engine,
+	}
+}
+
+func NewStatelessStateProcessor(config *params.ChainConfig, chainCtx *StatelessChainContext, engine consensus.Engine) *StateProcessor {
+	return &StateProcessor{
+		config:   config,
+		chainCtx: chainCtx,
+		engine:   engine,
+		bc: &BlockChain{
+			chainConfig: config,
+			engine:      engine,
+		},
 	}
 }
 
@@ -72,15 +88,22 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		misc.ApplyDAOHardFork(statedb)
 	}
 	var (
-		context = NewEVMBlockContext(header, p.bc, nil)
-		vmenv   = vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
+		context vm.BlockContext
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
+	if p.bc != nil {
+		context = NewEVMBlockContext(header, p.bc, nil)
+	} else {
+		context = NewEVMBlockContext(header, p.chainCtx, nil)
+	}
+	vmenv := vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
+
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		log.Trace("process tx", "hash", tx.Hash())
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
@@ -98,6 +121,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if len(withdrawals) > 0 && !p.config.IsShanghai(block.Number(), block.Time()) {
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
+
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
 
@@ -188,4 +212,24 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, vmenv *vm.EVM, statedb *stat
 	statedb.AddAddressToAccessList(params.BeaconRootsStorageAddress)
 	_, _, _ = vmenv.Call(vm.AccountRef(msg.From), *msg.To, msg.Data, 30_000_000, common.Big0)
 	statedb.Finalise(true)
+}
+
+type StatelessChainContext struct {
+	chaindb ethdb.Database
+	engine  consensus.Engine
+}
+
+func (s *StatelessChainContext) GetHeader(hash common.Hash, number uint64) *types.Header {
+	return rawdb.ReadHeader(s.chaindb, hash, number)
+}
+
+func (s *StatelessChainContext) Engine() consensus.Engine {
+	return s.engine
+}
+
+func NewStatelessChainContext(chaindb ethdb.Database, engine consensus.Engine) *StatelessChainContext {
+	return &StatelessChainContext{
+		chaindb,
+		engine,
+	}
 }

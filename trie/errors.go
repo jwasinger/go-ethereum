@@ -19,8 +19,9 @@ package trie
 import (
 	"errors"
 	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+	"runtime"
 )
 
 // ErrCommitted is returned when a already committed trie is requested for usage.
@@ -45,6 +46,10 @@ func (err *MissingNodeError) Unwrap() error {
 }
 
 func (err *MissingNodeError) Error() string {
+	b := make([]byte, 2048) // adjust buffer size to be larger than expected stack
+	n := runtime.Stack(b, false)
+	s := string(b[:n])
+	log.Trace("stack trace from trie MissingNodeError", "trace", s)
 	if err.Owner == (common.Hash{}) {
 		return fmt.Sprintf("missing trie node %x (path %x) %v", err.NodeHash, err.Path, err.err)
 	}
