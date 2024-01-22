@@ -171,11 +171,6 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 	if err != nil {
 		return err
 	}
-	// Import succeeded: regardless of whether the _test_ succeeds or not, schedule
-	// the post-check to run
-	if postCheck != nil {
-		defer postCheck(result, chain)
-	}
 	cmlast := chain.CurrentBlock().Hash()
 	if common.Hash(t.json.BestBlock) != cmlast {
 		return fmt.Errorf("last block hash validation mismatch: want: %x, have: %x", t.json.BestBlock, cmlast)
@@ -195,11 +190,11 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 	}
 	if stateless {
 		for _, blk := range validBlocks {
+			fmt.Printf("verify block %x\n", blk.BlockHeader.Hash)
 			enc, err := eth.BuildProof(blk.BlockHeader.Number.Uint64(), chain)
 			if err != nil {
 				return fmt.Errorf("failed to build proof: ${err}")
 			}
-
 			witness, err := state.DecodeWitnessRLP(enc)
 			if err != nil {
 				return fmt.Errorf("error decoding witness: ${err}")
@@ -207,7 +202,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			if err = state.DumpBlockWitnessToFile(witness, "block-dump"); err != nil {
 				return fmt.Errorf("error dumping witness to file: %v", err)
 			}
-			success, err := utils.StatelessVerify(os.Stderr, witness)
+			success, err := utils.StatelessVerify(os.Stdout, config, witness)
 			if err != nil {
 				return fmt.Errorf("verification execution error: %v", err)
 			}

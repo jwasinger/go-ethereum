@@ -1207,8 +1207,6 @@ func (s *StateDB) ApplyWithdrawals(withdrawals types.Withdrawals) {
 
 	if s.recordWitness {
 		_, _, al, _ := s.trie.CommitAndObtainAccessList(true)
-		fmt.Println(s.witness)
-		fmt.Println(s.witness.lists)
 		s.witness.addAccessList(common.Hash{}, al)
 	}
 }

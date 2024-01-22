@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 	"io"
 	"net/http"
@@ -52,7 +53,7 @@ func handleVerifyBlockRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	correct, err := utils.StatelessVerify(nil, witness)
+	correct, err := utils.StatelessVerify(nil, params.MainnetChainConfig, witness)
 	if err != nil {
 		respError("error verifying stateless proof", err)
 		return

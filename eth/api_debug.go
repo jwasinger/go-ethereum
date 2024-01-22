@@ -470,7 +470,6 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 		blockCtx = core.NewEVMBlockContext(block.Header(), bc, nil)
 		signer   = types.MakeSigner(bc.Config(), block.Number(), block.Time())
 	)
-	fmt.Println("here")
 	for i, tx := range txs {
 		fmt.Printf("tx %x\n", tx.Hash())
 		// Generate the next state snapshot fast without tracing
@@ -505,18 +504,19 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 
 func (api *DebugAPI) BuildProof(hash rpc.BlockNumber, filepath string) ([]byte, error) {
 	// TODO: error if genesis is specified
-	old := log.Root().GetHandler()
+	//old := log.Root().GetHandler()
 	err := os.Remove(filepath)
 	if err != nil {
 		log.Warn("error removing file", "error", err)
 	}
-	f, err := log.FileHandler(filepath, log.TerminalFormat(false))
-	if err != nil {
-		return nil, err
-	}
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, f))
-	defer log.Root().SetHandler(old)
-	_ = old
+	/*
+		f, err := log.FileHandler(filepath, log.TerminalFormat(false))
+		if err != nil {
+			return nil, err
+		}
+		log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, f))
+		defer log.Root().SetHandler(old)
+	*/
 	block, err := api.eth.APIBackend.BlockByNumber(context.Background(), hash)
 	if err != nil {
 		return nil, fmt.Errorf("BlockByNumber error: %w", err)

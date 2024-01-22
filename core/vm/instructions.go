@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -523,7 +522,6 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
-	log.Trace("sstore", "key", hash)
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
 	return nil, nil

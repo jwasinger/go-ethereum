@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 	"go.uber.org/automaxprocs/maxprocs"
 	"os"
@@ -135,10 +136,7 @@ func statelessCmd(ctx *cli.Context) error {
 		panic(err)
 	}
 
-	fmt.Println(witness.Block.GasUsed())
-	fmt.Printf("%+v\n", witness.Block.Header())
-
-	correct, err := utils.StatelessVerify(logWriter, witness)
+	correct, err := utils.StatelessVerify(os.Stdout, params.MainnetChainConfig, witness)
 	if err != nil {
 		panic(err)
 	}
