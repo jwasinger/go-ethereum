@@ -39,10 +39,11 @@ import (
 //
 // StateProcessor implements Processor.
 type StateProcessor struct {
-	config   *params.ChainConfig // Chain configuration options
-	bc       *BlockChain         // Canonical block chain
-	engine   consensus.Engine    // Consensus engine used for block rewards
-	chainCtx *StatelessChainContext
+	config            *params.ChainConfig // Chain configuration options
+	bc                *BlockChain         // Canonical block chain
+	engine            consensus.Engine    // Consensus engine used for block rewards
+	chainCtx          *StatelessChainContext
+	statelessVerifier bool
 }
 
 // NewStateProcessor initialises a new StateProcessor.
@@ -63,6 +64,7 @@ func NewStatelessStateProcessor(config *params.ChainConfig, chainCtx *StatelessC
 			chainConfig: config,
 			engine:      engine,
 		},
+		statelessVerifier: true,
 	}
 }
 
@@ -91,10 +93,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		context vm.BlockContext
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
-	if p.bc != nil {
-		context = NewEVMBlockContext(header, p.bc, nil)
+	if p.statelessVerifier {
+		context = NewStatelessEVMBlockContext(statedb.GetWitness(), header, p.chainCtx, nil)
 	} else {
-		context = NewEVMBlockContext(header, p.chainCtx, nil)
+		context = NewEVMBlockContext(header, p.bc, nil)
 	}
 	vmenv := vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
 
