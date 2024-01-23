@@ -3,11 +3,13 @@ package state
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"math/big"
 	"os"
@@ -329,16 +331,27 @@ func NewWitness(root common.Hash) *Witness {
 	}
 }
 
-func DumpBlockWitnessToFile(w *Witness, path string) error {
+func DumpBlockWitnessToFile(cfg *params.ChainConfig, w *Witness, path string) error {
 	enc, _ := w.EncodeRLP()
 
 	blockHash := w.Block.Hash()
-	outputFName := fmt.Sprintf("%d-%x.rlp", w.Block.NumberU64(), blockHash[0:8])
-	path = filepath.Join(path, outputFName)
-	err := os.WriteFile(path, enc, 0644)
+	witnessOutputFName := fmt.Sprintf("%d-%x.rlp", w.Block.NumberU64(), blockHash[0:8])
+	witnessPath := filepath.Join(path, witnessOutputFName)
+	err := os.WriteFile(witnessPath, enc, 0644)
 	if err != nil {
 		return err
 	}
+
+	cfgOutputFName := fmt.Sprintf("%d-%x-chaincfg.json", w.Block.NumberU64(), blockHash[0:8])
+	cfgPath := filepath.Join(path, cfgOutputFName)
+	f, err := os.OpenFile(cfgPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	cfgWriter := json.NewEncoder(f)
+	cfgWriter.Encode(cfg)
 	return nil
 }
 

@@ -199,7 +199,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			if err != nil {
 				return fmt.Errorf("error decoding witness: ${err}")
 			}
-			if err = state.DumpBlockWitnessToFile(witness, "block-dump"); err != nil {
+			if err = state.DumpBlockWitnessToFile(config, witness, "block-dump"); err != nil {
 				return fmt.Errorf("error dumping witness to file: %v", err)
 			}
 			success, err := utils.StatelessVerify(os.Stdout, config, witness)

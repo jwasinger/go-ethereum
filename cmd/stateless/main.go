@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/console/prompt"
@@ -18,6 +20,10 @@ var (
 	BlockWitnessFlag = &cli.StringFlag{
 		Name:  "block-witness",
 		Usage: "foo bar",
+	}
+	ChainConfigFlag = &cli.StringFlag{
+		Name:  "chain-config",
+		Usage: "path to a genesis file to source a chain configuration from",
 	}
 
 	BlockWitness1Flag = &cli.StringFlag{
@@ -62,6 +68,7 @@ var (
 		ArgsUsage: "<genesisPath>",
 		Flags: []cli.Flag{
 			BlockWitnessFlag,
+			ChainConfigFlag,
 			LogFileFlag,
 		},
 		Description: `placeholder description`,
@@ -126,6 +133,22 @@ func statelessCmd(ctx *cli.Context) error {
 		defer logWriter.Flush()
 	}
 
+	var chainConfig *params.ChainConfig
+	chainConfigFile := ctx.String(ChainConfigFlag.Name)
+	if chainConfigFile != "" {
+		configBytes, err := os.ReadFile(chainConfigFile)
+		if err != nil {
+			panic(err)
+		}
+		dec := json.NewDecoder(bytes.NewBuffer(configBytes))
+		err = dec.Decode(&chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		panic("chain config must be specified")
+	}
+
 	b, err := os.ReadFile(blockWitnessPath)
 	if err != nil {
 		panic(err)
@@ -136,7 +159,7 @@ func statelessCmd(ctx *cli.Context) error {
 		panic(err)
 	}
 
-	correct, err := utils.StatelessVerify(os.Stdout, params.MainnetChainConfig, witness)
+	correct, err := utils.StatelessVerify(os.Stdout, chainConfig, witness)
 	if err != nil {
 		panic(err)
 	}
