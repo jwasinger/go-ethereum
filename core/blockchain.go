@@ -1424,7 +1424,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 				// TODO: dump the erroneous block witness to disk
 				log.Error("cross validation failed", "error", err, "correct", valid, "block number", block.NumberU64())
 
-				if err = state.DumpBlockWitnessToFile(witness, bc.witnessRecordingPath); err != nil {
+				if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
 					log.Error("failed to dump block to file", "error", err)
 				}
 

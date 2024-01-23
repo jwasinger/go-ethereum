@@ -453,7 +453,10 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 		res := interpreter.evm.Context.GetHash(num64).Bytes()
 		var bh common.Hash
 		copy(bh[:], res[:])
-		interpreter.evm.StateDB.GetWitness().AddBlockHash(bh, num64)
+		// TODO: ensure that we aren't building a witness in stateless execution mode
+		if interpreter.evm.StateDB.GetWitness() != nil {
+			interpreter.evm.StateDB.GetWitness().AddBlockHash(bh, num64)
+		}
 		num.SetBytes(res[:])
 	} else {
 		num.Clear()

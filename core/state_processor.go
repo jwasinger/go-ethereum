@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -67,6 +66,13 @@ func NewStatelessStateProcessor(config *params.ChainConfig, chainCtx *StatelessC
 		statelessVerifier: true,
 	}
 }
+func (p *StateProcessor) ProcessStateless(witness *state.Witness, block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
+	return p.process(witness, block, statedb, cfg)
+}
+
+func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
+	return p.process(nil, block, statedb, cfg)
+}
 
 // Process processes the state changes according to the Ethereum rules by running
 // the transaction messages using the statedb and applying any rewards to both
@@ -75,7 +81,7 @@ func NewStatelessStateProcessor(config *params.ChainConfig, chainCtx *StatelessC
 // Process returns the receipts and logs accumulated during the process and
 // returns the amount of gas that was used in the process. If any of the
 // transactions failed to execute due to insufficient gas it will return an error.
-func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
+func (p *StateProcessor) process(witness *state.Witness, block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
 	var (
 		receipts    types.Receipts
 		usedGas     = new(uint64)
@@ -93,8 +99,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		context vm.BlockContext
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
-	if p.statelessVerifier {
-		context = NewStatelessEVMBlockContext(statedb.GetWitness(), header, p.chainCtx, nil)
+	if witness != nil {
+		context = NewStatelessEVMBlockContext(witness, header, p.chainCtx, nil)
 	} else {
 		context = NewEVMBlockContext(header, p.bc, nil)
 	}
@@ -105,7 +111,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		log.Trace("process tx", "hash", tx.Hash())
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
