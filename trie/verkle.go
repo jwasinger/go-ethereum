@@ -218,6 +218,10 @@ func (t *VerkleTrie) Hash() common.Hash {
 	return t.root.Commit().Bytes()
 }
 
+func (t *VerkleTrie) AccessList() map[string][]byte {
+	panic("not implemented")
+}
+
 func (t *VerkleTrie) CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *trienode.NodeSet, map[string][]byte, error) {
 	panic("not implemented")
 }

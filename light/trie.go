@@ -181,6 +181,10 @@ func (t *odrTrie) CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *tri
 	panic("not implemented")
 }
 
+func (t *odrTrie) AccessList() map[string][]byte {
+	panic("not implemented")
+}
+
 func (t *odrTrie) Commit(collectLeaf bool) (common.Hash, *trienode.NodeSet, error) {
 	if t.trie == nil {
 		return t.id.Root, nil, nil

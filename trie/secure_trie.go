@@ -223,6 +223,9 @@ func (t *StateTrie) GetKey(shaKey []byte) []byte {
 	}
 	return t.preimages.preimage(common.BytesToHash(shaKey))
 }
+func (t *StateTrie) AccessList() map[string][]byte {
+	return t.trie.AccessList()
+}
 
 func (t *StateTrie) CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *trienode.NodeSet, map[string][]byte, error) {
 	// Write all the pre-images to the actual disk database

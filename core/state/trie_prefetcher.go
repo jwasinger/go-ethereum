@@ -72,12 +72,6 @@ func newTriePrefetcher(db Database, root common.Hash, namespace string) *triePre
 	return p
 }
 
-func (p *triePrefetcher) waitAll() {
-	for _, fetcher := range p.fetchers {
-		fetcher.wait() // safe to do multiple times
-	}
-}
-
 // close iterates over all the subfetchers, aborts any that were left spinning
 // and reports the stats to the metrics subsystem.
 func (p *triePrefetcher) close() {
@@ -243,9 +237,6 @@ func newSubfetcher(db Database, state common.Hash, owner common.Hash, root commo
 
 // schedule adds a batch of trie keys to the queue to prefetch.
 func (sf *subfetcher) schedule(keys [][]byte) {
-	for _, key := range keys {
-		log.Trace("prefetcher: key scheduled", "key", fmt.Sprintf("%x", key), "owner", sf.owner)
-	}
 	// Append the tasks to the current queue
 	sf.lock.Lock()
 	sf.tasks = append(sf.tasks, keys...)
@@ -315,11 +306,13 @@ func (sf *subfetcher) loop() {
 				continue
 			}
 			if len(task) == common.AddressLength {
-				log.Trace("prefetch account", "owner", common.BytesToAddress(task))
 				sf.trie.GetAccount(common.BytesToAddress(task))
 			} else {
-				log.Trace("prefetch storage", "owner", sf.owner, "key", fmt.Sprintf("%x", task))
-				sf.trie.GetStorage(sf.addr, task)
+				_, err := sf.trie.GetStorage(sf.addr, task)
+				if err != nil {
+					// TODO: see what needs to be done in this case
+					fmt.Printf("prefetch storage failed: %+v\n", err)
+				}
 			}
 			sf.seen[string(task)] = struct{}{}
 		}

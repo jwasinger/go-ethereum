@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 )
 
@@ -144,6 +145,22 @@ func (t *Trie) Get(key []byte) ([]byte, error) {
 	if t.committed {
 		return nil, ErrCommitted
 	}
+	if n, ok := t.root.(*shortNode); ok && len(key) == 32 {
+		// case where trie has one entry.  record this key as read in order to make it appear in the
+		// witness (TODO: this is only relevant when building a witness and probably shouldn't happen normally)
+		// TODO: double-check this has test coverage
+		b, err := rlp.EncodeToBytes(n)
+		if err != nil {
+			return nil, err
+		}
+		t.tracer.onRead([]byte{}, b)
+		b, err = rlp.EncodeToBytes(n.Val)
+		if err != nil {
+			return nil, err
+		}
+		t.tracer.onRead(key, b)
+	}
+
 	value, newroot, didResolve, err := t.get(t.root, keybytesToHex(key), 0)
 	if err == nil && didResolve {
 		t.root = newroot
@@ -602,6 +619,10 @@ func (t *Trie) Hash() common.Hash {
 	hash, cached := t.hashRoot()
 	t.root = cached
 	return common.BytesToHash(hash.(hashNode))
+}
+
+func (t *Trie) AccessList() map[string][]byte {
+	return t.tracer.accessList
 }
 
 func (t *Trie) CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *trienode.NodeSet, map[string][]byte, error) {

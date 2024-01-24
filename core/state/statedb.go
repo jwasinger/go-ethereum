@@ -196,9 +196,7 @@ func (s *StateDB) StartPrefetcher(namespace string) {
 	}
 	if s.snap != nil {
 		s.prefetcher = newTriePrefetcher(s.db, s.originalRoot, namespace)
-	}
-	if namespace == "apidebug" {
-		log.Trace("apidebug namespace and snap not enabled")
+	} else if namespace == "apidebug" {
 		s.prefetcher = newTriePrefetcher(s.db, s.originalRoot, namespace)
 	}
 }
@@ -911,6 +909,23 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if s.prefetcher != nil {
 		defer func() {
 			s.prefetcher.close()
+			if s.recordWitness {
+				// add any storage slot witnesses that were read from non-mutated accounts
+				for addr, obj := range s.stateObjects {
+					if _, ok := s.stateObjectsDirty[addr]; !ok {
+						tr := s.prefetcher.trie(obj.addrHash, obj.Root())
+						if tr == nil {
+							// EOA account?
+							continue
+						}
+						// TODO: verify this case is hit with tests (storage trie with one key, obviously covered).
+						accessList := tr.AccessList()
+						if len(accessList) > 0 {
+							s.witness.addAccessList(obj.addrHash, accessList)
+						}
+					}
+				}
+			}
 			s.prefetcher = nil
 		}()
 	}
@@ -924,6 +939,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 			obj.updateRoot()
 		}
 	}
+
 	// Now we're about to start to write changes to the trie. The trie is so far
 	// _untouched_. We can check with the prefetcher, if it can give us a trie
 	// which has the same root, but also has some content loaded into it.
@@ -1277,27 +1293,6 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 			updates, deleted := set.Size()
 			storageTrieNodesUpdated += updates
 			storageTrieNodesDeleted += deleted
-		}
-	}
-	if s.recordWitness {
-		// wait until all active prefetchers have finished
-		// this ensures that storage trie nodes for non-mutated objects
-		// are resolved before we add them to the witness
-		if s.prefetcher != nil {
-			s.prefetcher.waitAll()
-		}
-
-		// add any storage slot witnesses that were read from non-mutated accounts
-		for addr, obj := range s.stateObjects {
-			if _, ok := s.stateObjectsDirty[addr]; !ok {
-				_, accessList, err := obj.commit()
-				if err != nil {
-					return common.Hash{}, err
-				}
-				if len(accessList) > 0 {
-					s.witness.addAccessList(obj.addrHash, accessList)
-				}
-			}
 		}
 	}
 	if codeWriter.ValueSize() > 0 {

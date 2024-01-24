@@ -19,7 +19,6 @@ package state
 import (
 	"bytes"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"io"
 	"math/big"
 	"time"
@@ -167,7 +166,6 @@ func (s *stateObject) GetState(key common.Hash) common.Hash {
 	if dirty {
 		return value
 	}
-	log.Trace("stateObject.GetState", "owner", s.addrHash, "addr", fmt.Sprintf("%x", s.address), "key", key)
 	// Otherwise return the entry's original value
 	return s.GetCommittedState(key)
 }
@@ -210,6 +208,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			value.SetBytes(content)
 		}
 	}
+
 	if s.db.recordWitness && s.db.prefetcher != nil {
 		// always prefetch to ensure that read storage slots will end up in the witness
 		s.db.prefetcher.prefetch(s.addrHash, s.data.Root, s.address, [][]byte{key[:]})

@@ -127,6 +127,8 @@ type Trie interface {
 
 	CommitAndObtainAccessList(collectLeaf bool) (common.Hash, *trienode.NodeSet, map[string][]byte, error)
 
+	AccessList() map[string][]byte
+
 	// NodeIterator returns an iterator that returns nodes of the trie. Iteration
 	// starts at the key after the given start key. And error will be returned
 	// if fails to create node iterator.

@@ -471,7 +471,6 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 		signer   = types.MakeSigner(bc.Config(), block.Number(), block.Time())
 	)
 	for i, tx := range txs {
-		fmt.Printf("tx %x\n", tx.Hash())
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 
