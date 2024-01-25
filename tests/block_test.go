@@ -17,7 +17,11 @@
 package tests
 
 import (
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/log"
+	"golang.org/x/exp/slog"
 	"math/rand"
+	"os"
 	"runtime"
 	"testing"
 
@@ -172,6 +176,17 @@ func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
 }
 
 func execBlockTestStateless(t *testing.T, bt *testMatcher, test *BlockTest) {
+	handler := log.NewTerminalHandlerWithLevel(os.Stdout, slog.Level(667), false)
+	log.SetDefault(log.NewLogger(handler))
+	logconfig := &logger.Config{
+		EnableMemory:     false,
+		DisableStack:     false,
+		DisableStorage:   false,
+		EnableReturnData: true,
+		Debug:            true,
+	}
+	tracer := logger.NewJSONLogger(logconfig, os.Stdout)
+	_ = tracer
 	if err := bt.checkFailure(t, test.RunStateless(false, rawdb.HashScheme, nil)); err != nil {
 		t.Errorf("test in hash mode without snapshotter failed: %v", err)
 		return

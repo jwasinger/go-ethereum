@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"io"
@@ -680,16 +681,15 @@ func ExportChaindata(fn string, kind string, iter ChainDataIterator, interrupt c
 
 func StatelessVerify(logOutput io.Writer, chainCfg *params.ChainConfig, witness *state.Witness) (bool, error) {
 	var vmConfig vm.Config
-	/*
-		logconfig := &logger.Config{
-			EnableMemory:     false,
-			DisableStack:     false,
-			DisableStorage:   false,
-			EnableReturnData: true,
-			Debug:            true,
-		}
-		vmConfig.Tracer = logger.NewJSONLogger(logconfig, logOutput)
-	*/
+	logconfig := &logger.Config{
+		EnableMemory:     false,
+		DisableStack:     false,
+		DisableStorage:   false,
+		EnableReturnData: true,
+		Debug:            true,
+	}
+	_ = logconfig
+	//vmConfig.Tracer = logger.NewJSONLogger(logconfig, logOutput)
 
 	// TODO: create memorydb wrapper that fails hard if a key doesn't resolve from the trie
 	rdb := rawdb.NewMemoryDatabase()

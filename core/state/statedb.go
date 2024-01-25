@@ -18,7 +18,9 @@
 package state
 
 import (
+	"context"
 	"fmt"
+	"golang.org/x/exp/slog"
 	"math/big"
 	"sort"
 	"time"
@@ -366,8 +368,11 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 func (s *StateDB) GetCommittedState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
-		return stateObject.GetCommittedState(hash)
+		res := stateObject.GetCommittedState(hash)
+		slog.Log(context.Background(), 666, "statedb.go: GetCommittedState", "addr", fmt.Sprintf("%x", addr), "hash", fmt.Sprintf("%x", hash), "val", fmt.Sprintf("%x", res))
+		return res
 	}
+	slog.Log(context.Background(), 666, "statedb.go: GetCommittedState", "addr", fmt.Sprintf("%x", addr), "hash", fmt.Sprintf("%x", hash), "val", fmt.Sprintf("%x", common.Hash{}))
 	return common.Hash{}
 }
 
@@ -574,11 +579,6 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 // flag set. This is needed by the state journal to revert to the correct s-
 // destructed object instead of wiping all knowledge about the state object.
 func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
-	if s.recordWitness && s.prefetcher != nil {
-		// always prefetch to ensure written/read accounts appear in the witness
-		// regardless of whether snapshot is enabled
-		s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, [][]byte{addr[:]})
-	}
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
 		return obj
@@ -624,7 +624,14 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 		if data == nil {
 			return nil
 		}
+		slog.Log(context.Background(), 666, "getDeletedStateObject: read account from trie", "addr", addr, "root", data.Root)
 	}
+	if s.recordWitness && s.prefetcher != nil {
+		// when building stateless proof, prefetch every accessed account from the trie to include it in the
+		//witness
+		s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, [][]byte{addr[:]})
+	}
+
 	// Insert into the live set
 	obj := newObject(s, addr, data)
 	s.setStateObject(obj)
@@ -846,6 +853,7 @@ func (s *StateDB) GetRefund() uint64 {
 func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 	addressesToPrefetch := make([][]byte, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
+		slog.Log(context.Background(), 666, "finalizing dirty account", "address", addr)
 		obj, exist := s.stateObjects[addr]
 		if !exist {
 			// ripeMD is 'touched' at block 1714175, in tx 0x1237f737031e40bcde4a8b7e717b2d15e3ecadfe49bb1bbc71ee9deb09c6fcf2
@@ -884,6 +892,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		// the commit-phase will be a lot faster
 		addressesToPrefetch = append(addressesToPrefetch, common.CopyBytes(addr[:])) // Copy needed for closure
 	}
+	// iterate "touched" accounts: accounts that have read storage slots (via sstore/sload) but not been modified
 	if s.prefetcher != nil && len(addressesToPrefetch) > 0 {
 		s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, addressesToPrefetch)
 	}
@@ -908,24 +917,26 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	prefetcher := s.prefetcher
 	if s.prefetcher != nil {
 		defer func() {
-			s.prefetcher.close()
+			s.prefetcher.wait()
 			if s.recordWitness {
-				// add any storage slot witnesses that were read from non-mutated accounts
 				for addr, obj := range s.stateObjects {
-					if _, ok := s.stateObjectsDirty[addr]; !ok {
-						tr := s.prefetcher.trie(obj.addrHash, obj.Root())
-						if tr == nil {
-							// EOA account?
-							continue
-						}
-						// TODO: verify this case is hit with tests (storage trie with one key, obviously covered).
-						accessList := tr.AccessList()
-						if len(accessList) > 0 {
-							s.witness.addAccessList(obj.addrHash, accessList)
-						}
+					if _, ok := s.stateObjectsDirty[addr]; ok {
+						// we accrue access lists for dirty accounts when they are committed
+						continue
+					}
+					tr := s.prefetcher.trie(obj.addrHash, obj.Root())
+					if tr == nil {
+						continue
+					}
+					// TODO: verify this case is hit with tests (storage trie with one key, obviously covered).
+					accessList := tr.AccessList()
+					if len(accessList) > 0 {
+						s.witness.addAccessList(obj.addrHash, accessList)
 					}
 				}
 			}
+
+			s.prefetcher.close()
 			s.prefetcher = nil
 		}()
 	}

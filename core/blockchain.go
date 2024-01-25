@@ -18,8 +18,10 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/exp/slog"
 	"io"
 	"math/big"
 	"runtime"
@@ -1891,6 +1893,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			wstart = time.Now()
 			status WriteStatus
 		)
+		slog.Log(context.Background(), 666, "writing block")
 		if !setHead {
 			// Don't set the head, only insert the block
 			err = bc.writeBlockWithState(block, receipts, statedb)

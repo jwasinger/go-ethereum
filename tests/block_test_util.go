@@ -19,11 +19,13 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/eth"
+	"golang.org/x/exp/slog"
 	"math/big"
 	"os"
 	"reflect"
@@ -190,9 +192,11 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 	}
 	if stateless {
 		for _, blk := range validBlocks {
+			slog.Log(context.Background(), 666, "block_test.go: evaluating block", "hash", fmt.Sprintf("%x\n", blk.BlockHeader.Hash))
+			slog.Log(context.Background(), 666, "block_test_util.go: build proof")
 			enc, err := eth.BuildProof(blk.BlockHeader.Number.Uint64(), chain)
 			if err != nil {
-				return fmt.Errorf("failed to build proof: ${err}")
+				return fmt.Errorf("failed to build proof: %v", err)
 			}
 			witness, err := state.DecodeWitnessRLP(enc)
 			if err != nil {
@@ -201,6 +205,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			if err = state.DumpBlockWitnessToFile(config, witness, "block-dump"); err != nil {
 				return fmt.Errorf("error dumping witness to file: %v", err)
 			}
+			slog.Log(context.Background(), 666, "block_test_util.go: verify proof")
 			success, err := utils.StatelessVerify(os.Stdout, config, witness)
 			if err != nil {
 				return fmt.Errorf("verification execution error: %v", err)
@@ -208,6 +213,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			if !success {
 				return fmt.Errorf("verification return false")
 			}
+
 		}
 	}
 	return t.validateImportedHeaders(chain, validBlocks)

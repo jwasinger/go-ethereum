@@ -71,13 +71,16 @@ func newTriePrefetcher(db Database, root common.Hash, namespace string) *triePre
 	}
 	return p
 }
+func (p *triePrefetcher) wait() {
+	for _, fetcher := range p.fetchers {
+		fetcher.wait()
+	}
+}
 
 // close iterates over all the subfetchers, aborts any that were left spinning
 // and reports the stats to the metrics subsystem.
 func (p *triePrefetcher) close() {
 	for _, fetcher := range p.fetchers {
-		fetcher.wait() // safe to do multiple times
-
 		if metrics.Enabled {
 			if fetcher.root == p.root {
 				p.accountLoadMeter.Mark(int64(len(fetcher.seen)))
@@ -254,6 +257,7 @@ func (sf *subfetcher) wait() {
 	// Signal termination by nil tasks
 	sf.lock.Lock()
 	if sf.closing {
+		sf.lock.Unlock()
 		return // already exiting
 	}
 	sf.closing = true

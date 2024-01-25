@@ -487,9 +487,9 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 
 	consensusEngine := beacon.New(ethash.NewFaker())
 
-	root, err := db.Commit(block.NumberU64(), is158)
-
 	consensusEngine.Finalize(bc, block.Header(), db, block.Transactions(), block.Uncles(), block.Withdrawals())
+	root, err := db.Commit(block.NumberU64(), is158)
+	
 	_ = root
 
 	proof := db.GetWitness()
