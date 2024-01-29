@@ -18,9 +18,7 @@ package state
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"golang.org/x/exp/slog"
 	"io"
 	"math/big"
 	"time"
@@ -197,10 +195,9 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 		value common.Hash
 	)
 
-	// TODO: if recording witness:  prefetch the storage key here
-	// 			and make the account storage as "touched": it will have an owner entry in the witness
 	if s.db.recordWitness && s.db.prefetcher != nil {
-		// always prefetch to ensure that read storage slots will end up in the witness
+		// when collecting witness data, always prefetch every read key to
+		// ensure that read storage slots will end up in the witness
 		s.db.prefetcher.prefetch(s.addrHash, s.data.Root, s.address, [][]byte{key[:]})
 	}
 
@@ -218,7 +215,6 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			value.SetBytes(content)
 		}
 	}
-
 	// If the snapshot is unavailable or reading from it fails, load from the database.
 	if s.db.snap == nil || err != nil {
 		start := time.Now()
@@ -228,7 +224,6 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			return common.Hash{}
 		}
 		val, err := tr.GetStorage(s.address, key.Bytes())
-		slog.Log(context.Background(), 666, "GetCommittedState (no snapshot)", "address", s.address, "val", fmt.Sprintf("%x", val))
 		if metrics.EnabledExpensive {
 			s.db.StorageReads += time.Since(start)
 		}
@@ -259,7 +254,6 @@ func (s *stateObject) SetState(key, value common.Hash) {
 }
 
 func (s *stateObject) setState(key, value common.Hash) {
-	slog.Log(context.Background(), 666, "setState", "key", fmt.Sprintf("%x", key), "val", fmt.Sprintf("%x", value))
 	s.dirtyStorage[key] = value
 }
 
@@ -270,7 +264,6 @@ func (s *stateObject) finalise(prefetch bool) {
 	for key, value := range s.dirtyStorage {
 		s.pendingStorage[key] = value
 		if value != s.originStorage[key] {
-			slog.Log(context.Background(), 666, "slot to prefetch", "address", fmt.Sprintf("%x", s.address), "key", fmt.Sprintf("%x", key))
 			slotsToPrefetch = append(slotsToPrefetch, common.CopyBytes(key[:])) // Copy needed for closure
 		}
 	}

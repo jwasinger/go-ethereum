@@ -3,10 +3,11 @@ package core
 import (
 	"bytes"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/state"
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/ethereum/go-ethereum/core/state"
 )
 
 // CrossValidate posts the provided witness to the URL at {endpoint}/verify_block and returns whether the remote

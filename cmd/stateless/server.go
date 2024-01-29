@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
-	"io"
-	"net/http"
 )
 
 func server(ctx *cli.Context) error {
