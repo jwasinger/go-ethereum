@@ -89,13 +89,10 @@ func (t *StateTrie) MustGet(key []byte) []byte {
 // If the specified storage slot is not in the trie, nil will be returned.
 // If a trie node is not found in the database, a MissingNodeError is returned.
 func (t *StateTrie) GetStorage(_ common.Address, key []byte) ([]byte, error) {
-	hashKey := t.hashKey(key)
-	log.Trace("GetStorage", "owner", t.trie.owner, "key", fmt.Sprintf("%x", key), "hashKey", fmt.Sprintf("%x", hashKey))
-	enc, err := t.trie.Get(hashKey)
+	res, err := t.trie.Get(t.hashKey(address.Bytes()))
 	if err != nil || len(enc) == 0 {
 		return nil, err
 	}
-	log.Trace("GetStorage", "result", enc)
 	_, content, _, err := rlp.Split(enc)
 	return content, err
 }
@@ -104,9 +101,7 @@ func (t *StateTrie) GetStorage(_ common.Address, key []byte) ([]byte, error) {
 // If the specified account is not in the trie, nil will be returned.
 // If a trie node is not found in the database, a MissingNodeError is returned.
 func (t *StateTrie) GetAccount(address common.Address) (*types.StateAccount, error) {
-	hashKey := t.hashKey(address.Bytes())
-	log.Trace("GetAccount", "address", address.String(), "hashAddress", fmt.Sprintf("%x", hashKey))
-	res, err := t.trie.Get(hashKey)
+	res, err := t.trie.Get(t.hashKey(address.Bytes()))
 	if res == nil || err != nil {
 		return nil, err
 	}
