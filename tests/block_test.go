@@ -134,10 +134,16 @@ func TestStatelessBlockchain(t *testing.T) {
 		if runtime.GOARCH == "386" && runtime.GOOS == "windows" && rand.Int63()%2 == 0 {
 			t.Skip("test (randomly) skipped on 32-bit windows")
 		}
-		if networkPostMerge(test.json.Network) {
+
+		config, ok := Forks[test.json.Network]
+		if !ok {
+			t.Fatalf("test malformed: doesn't have chain config embedded")
+		}
+		isMerged := config.TerminalTotalDifficulty != nil && config.TerminalTotalDifficulty.BitLen() == 0
+		if isMerged {
 			execBlockTestStateless(t, bt, test)
 		} else {
-			t.Skip("skipping pre-byzantium test")
+			t.Skip("skipping pre-merge test")
 		}
 	})
 	// There is also a LegacyTests folder, containing blockchain tests generated

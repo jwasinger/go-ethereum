@@ -191,6 +191,8 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 	}
 	if stateless {
 		for _, blk := range validBlocks {
+			// TODO: set up test chassis to do verification on block import (in BlockChain) in addition to BuildProof
+			// (used by standalone witness execution path)
 			enc, err := eth.BuildProof(blk.BlockHeader.Number.Uint64(), chain)
 			if err != nil {
 				return fmt.Errorf("failed to build proof: %v", err)
@@ -209,7 +211,6 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			if !success {
 				return fmt.Errorf("verification return false")
 			}
-
 		}
 	}
 	return t.validateImportedHeaders(chain, validBlocks)
