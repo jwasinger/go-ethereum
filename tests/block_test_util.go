@@ -154,7 +154,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 	// Wrap the original engine within the beacon-engine
 	engine := beacon.New(ethash.NewFaker())
 
-	cache := &core.CacheConfig{TrieCleanLimit: 0, StateScheme: scheme, Preimages: true}
+	cache := &core.CacheConfig{TrieCleanLimit: 0, StateScheme: scheme, Preimages: true, TrieDirtyDisabled: true}
 	if snapshotter {
 		cache.SnapshotLimit = 1
 		cache.SnapshotWait = true

@@ -37,15 +37,17 @@ type ChainContext interface {
 	GetHeader(common.Hash, uint64) *types.Header
 }
 
+// NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	return newEVMBlockContext(nil, header, chain, author)
 }
 
+// NewStatelessEVMBlockContext creates a new context for use in the EVM in stateless execution mode.  The BLOCKHASH
+// opcode sources block hashes from the provided witness in stateless execution mode.
 func NewStatelessEVMBlockContext(witness *state.Witness, header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	return newEVMBlockContext(witness, header, chain, author)
 }
 
-// NewEVMBlockContext creates a new context for use in the EVM.
 func newEVMBlockContext(witness *state.Witness, header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	var (
 		beneficiary common.Address

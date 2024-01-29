@@ -912,12 +912,13 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 
 var CrossValidationEndpointFlag = &cli.StringFlag{
 	Name:  "crossvalidation.endpoint",
-	Usage: "http endpoints to cross validate blocks against",
+	Usage: "http endpoint(s) to cross validate blocks against.  Formatted as a comma-separated list of URLs",
 	Value: "",
 }
 var WitnessRecordingPathFlag = &cli.StringFlag{
 	Name:  "crossvalidation.badblockdir",
-	Usage: "location to store rlp-encoded blocks that do not cross-validate with self",
+	Usage: "location to store rlp-encoded block witnesses that do not pass cross validation",
+	// TODO: default to some directory under the datadir
 	Value: "",
 }
 

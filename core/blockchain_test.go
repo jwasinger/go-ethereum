@@ -4717,6 +4717,7 @@ func TestEIP3651(t *testing.T) {
 	}
 }
 
+// TODO: expand this into witness unit tests.
 func TestIncrementSlotAcrossManyBlocks(t *testing.T) {
 	//testDeleteRecreateSlotsAcrossManyBlocks(t, rawdb.HashScheme)
 	testIncrementSlotAcrossManyBlocks(t, rawdb.PathScheme)

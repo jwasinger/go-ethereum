@@ -28,11 +28,11 @@ var (
 
 	BlockWitness1Flag = &cli.StringFlag{
 		Name:  "witness1",
-		Usage: "foo bar",
+		Usage: "path to a file containing an rlp-encoded block witness",
 	}
 	BlockWitness2Flag = &cli.StringFlag{
 		Name:  "witness2",
-		Usage: "foo bar",
+		Usage: "path to a file containing an rlp-encoded block witness",
 	}
 
 	LogFileFlag = &cli.StringFlag{
@@ -41,15 +41,15 @@ var (
 	}
 
 	WitnessDiffCommand = &cli.Command{
-		Action:    witnessDiff,
-		Name:      "diff",
-		Usage:     "",
+		Action:    witnessCmp,
+		Name:      "cmp",
+		Usage:     "outputs whether two block witnesses are equal",
 		ArgsUsage: "<genesisPath>",
 		Flags: []cli.Flag{
 			BlockWitness1Flag,
 			BlockWitness2Flag,
 		},
-		Description: `placeholder description`,
+		Description: ``,
 	}
 	PPCommand = &cli.Command{
 		Action:    pp,
@@ -59,10 +59,10 @@ var (
 		Flags: []cli.Flag{
 			BlockWitnessFlag,
 		},
-		Description: `placeholder description`,
+		Description: `pretty-print a block witness`,
 	}
-	StatelessCommand = &cli.Command{
-		Action:    statelessCmd,
+	ExecCommand = &cli.Command{
+		Action:    execCmd,
 		Name:      "exec",
 		Usage:     "",
 		ArgsUsage: "<genesisPath>",
@@ -71,7 +71,7 @@ var (
 			ChainConfigFlag,
 			LogFileFlag,
 		},
-		Description: `placeholder description`,
+		Description: `statelessly execute and verify a block`,
 	}
 	ServerCommand = &cli.Command{
 		Action:      server,
@@ -79,19 +79,18 @@ var (
 		Usage:       "",
 		ArgsUsage:   "<genesisPath>",
 		Flags:       []cli.Flag{},
-		Description: `placeholder description`,
+		Description: `Runs an HTTP server which provides an API for stateless block verification`,
 	}
 )
 
-var app = flags.NewApp("stateless block executor")
+var app = flags.NewApp("stateless block execution/verification utilities")
 
 func init() {
-	// Initialize the CLI app and start Geth
-	app.Copyright = "Copyright 2013-2023 The go-ethereum Authors"
+	app.Copyright = "Copyright 2013-2024 The go-ethereum Authors"
 	app.Commands = []*cli.Command{
 		WitnessDiffCommand,
 		PPCommand,
-		StatelessCommand,
+		ExecCommand,
 		ServerCommand,
 	}
 
@@ -113,7 +112,7 @@ func init() {
 	}
 }
 
-func statelessCmd(ctx *cli.Context) error {
+func execCmd(ctx *cli.Context) error {
 	var logWriter *bufio.Writer
 	blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
 	if blockWitnessPath == "" {
@@ -184,7 +183,7 @@ func pp(ctx *cli.Context) error {
 	return nil
 }
 
-func witnessDiff(ctx *cli.Context) error {
+func witnessCmp(ctx *cli.Context) error {
 	witness1Path := ctx.String(BlockWitness1Flag.Name)
 	witness2Path := ctx.String(BlockWitness2Flag.Name)
 

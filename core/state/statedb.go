@@ -145,6 +145,8 @@ type StateDB struct {
 	witness       *Witness
 }
 
+// NewWithWitnessRecording creates a new state from a given trie.  The state is configured to construct a stateless
+// block witness which is fully constructed after committing the state.
 func NewWithWitnessRecording(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
 	sdb, err := New(root, db, snaps)
 	if err != nil {

@@ -18,10 +18,8 @@
 package core
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/exp/slog"
 	"io"
 	"math/big"
 	"runtime"
@@ -261,11 +259,15 @@ type BlockChain struct {
 	forker     *ForkChoice
 	vmConfig   vm.Config
 
-	// If this is non-nil, block witnesses are recorded during execution and dumped into the filepath it contains
-	witnessRecordingPath   string
+	// HTTP endpoint for stateless block validation
 	crossValidatorEndpoint string
+	// path to dump witnesses to disk when cross-validation fails
+	witnessRecordingPath string
 }
 
+// NewBlockchainWithCrossValidator returns a Blockchain configured to cross-validate imported blocks against a single
+// remote stateless validator.  Stateless witnesses are constructed for each imported block and validated against the
+// remote endpoint.  If validation fails, they are dumped to the folder specified at witnessRecordingPath
 func NewBlockchainWithCrossValidator(endpoint string, witnessRecordingPath string, db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis, overrides *ChainOverrides, engine consensus.Engine, vmConfig vm.Config, shouldPreserve func(header *types.Header) bool, txLookupLimit *uint64) (*BlockChain, error) {
 	bc, err := NewBlockChain(db, cacheConfig, genesis, overrides, engine, vmConfig, shouldPreserve, txLookupLimit)
 	bc.crossValidatorEndpoint = endpoint
@@ -1396,6 +1398,22 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 	return nil
 }
 
+func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) bool {
+	var witness *state.Witness
+	witness = db.GetWitness()
+	witness.Block = block
+
+	err := crossValidate(bc.crossValidatorEndpoint, witness)
+	if err != nil {
+		log.Error("cross validation failed", "number", block.Number(), "hash", block.Hash(), "error", err)
+		if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
+			log.Error("failed to dump block to file", "error", err)
+		}
+		return false
+	}
+	return true
+}
+
 // writeBlockWithState writes block, metadata and corresponding state data to the
 // database.
 func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.Receipt, sdb *state.StateDB) error {
@@ -1414,29 +1432,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		return err
 	}
 
-	if bc.crossValidatorEndpoint != "" {
-		// TODO: ensure block is only written if cross-validation succeeds
-		var witness *state.Witness
-		witness = sdb.GetWitness()
-		witness.Block = block
-		// cross-validation (TODO: certain paths such as bulk import from disk may want to disable)
-		for {
-			valid, err := CrossValidate(bc.crossValidatorEndpoint, witness)
-			if !valid || err != nil {
-				// TODO: dump the erroneous block witness to disk
-				log.Error("cross validation failed", "error", err, "correct", valid, "block number", block.NumberU64())
-
-				if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
-					log.Error("failed to dump block to file", "error", err)
-				}
-
-				// keep the import going for now and make this error at some point in the future
-				break
-			}
-			log.Info("block cross-validation success (1/1)")
-			// TODO: keep trying if it timed out
-			break
-		}
+	if bc.crossValidatorEndpoint != "" && !bc.crossValidateBlock(block, sdb) {
 	}
 
 	// Irrelevant of the canonical status, write the block itself to the database.
@@ -1525,8 +1521,8 @@ func (bc *BlockChain) WriteBlockAndSetHead(block *types.Block, receipts []*types
 
 // writeBlockAndSetHead is the internal implementation of WriteBlockAndSetHead.
 // This function expects the chain mutex to be held.
-func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types.Receipt, logs []*types.Log, st *state.StateDB, emitHeadEvent bool) (status WriteStatus, err error) {
-	if err := bc.writeBlockWithState(block, receipts, st); err != nil {
+func (bc *BlockChain) writeBlockAndSetHead(block *types.Block, receipts []*types.Receipt, logs []*types.Log, db *state.StateDB, emitHeadEvent bool) (status WriteStatus, err error) {
+	if err := bc.writeBlockWithState(block, receipts, db); err != nil {
 		return NonStatTy, err
 	}
 	currentBlock := bc.CurrentBlock()
@@ -1893,7 +1889,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			wstart = time.Now()
 			status WriteStatus
 		)
-		slog.Log(context.Background(), 666, "writing block")
 		if !setHead {
 			// Don't set the head, only insert the block
 			err = bc.writeBlockWithState(block, receipts, statedb)

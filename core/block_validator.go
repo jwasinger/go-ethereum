@@ -46,7 +46,8 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 	return validator
 }
 
-// NewBlockValidator returns a new block validator which is safe for re-use
+// NewBlockStatelessBlockValidator returns a BlockValidator which is configured to validate stateless block witnesses
+// without the use of a full backing BlockChain
 func NewStatelessBlockValidator(config *params.ChainConfig, engine consensus.Engine) *BlockValidator {
 	validator := &BlockValidator{
 		config: config,
@@ -64,7 +65,7 @@ func NewStatelessBlockValidator(config *params.ChainConfig, engine consensus.Eng
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	// Check whether the block is already imported.
-	if v.bc != nil && v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	if v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
 	}
 
@@ -122,7 +123,7 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	}
 
 	// Ancestor block must be known.
-	if v.bc != nil && !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
 		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
 			return consensus.ErrUnknownAncestor
 		}

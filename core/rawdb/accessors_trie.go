@@ -67,20 +67,6 @@ func (h *hasher) release() {
 
 // ReadAccountTrieNode retrieves the account trie node and the associated node
 // hash with the specified node path.
-func MustReadAccountTrieNode(db ethdb.KeyValueReader, path []byte) ([]byte, common.Hash) {
-	key := accountTrieNodeKey(path)
-	data, err := db.Get(key)
-	if err != nil {
-		panic(fmt.Errorf("value not found for path %x (key %x)", path, key))
-		//return nil, common.Hash{}
-	}
-	h := newHasher()
-	defer h.release()
-	return data, h.hash(data)
-}
-
-// ReadAccountTrieNode retrieves the account trie node and the associated node
-// hash with the specified node path.
 func ReadAccountTrieNode(db ethdb.KeyValueReader, path []byte) ([]byte, common.Hash) {
 	data, err := db.Get(accountTrieNodeKey(path))
 	if err != nil {
@@ -133,19 +119,6 @@ func ReadStorageTrieNode(db ethdb.KeyValueReader, accountHash common.Hash, path 
 	data, err := db.Get(storageTrieNodeKey(accountHash, path))
 	if err != nil {
 		return nil, common.Hash{}
-	}
-	h := newHasher()
-	defer h.release()
-	return data, h.hash(data)
-}
-
-// ReadStorageTrieNode retrieves the storage trie node and the associated node
-// hash with the specified node path.
-func MustReadStorageTrieNode(db ethdb.KeyValueReader, accountHash common.Hash, path []byte) ([]byte, common.Hash) {
-	key := storageTrieNodeKey(accountHash, path)
-	data, err := db.Get(key)
-	if err != nil {
-		panic(fmt.Errorf("value not found for path %x, key %x, accountHash %x", path, key, accountHash))
 	}
 	h := newHasher()
 	defer h.release()
