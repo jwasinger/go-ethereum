@@ -18,13 +18,10 @@
 package state
 
 import (
-	"context"
 	"fmt"
 	"math/big"
 	"sort"
 	"time"
-
-	"golang.org/x/exp/slog"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -142,18 +139,17 @@ type StateDB struct {
 	// Testing hooks
 	onCommit func(states *triestate.Set) // Hook invoked when commit is performed
 
-	recordWitness bool
-	witness       *Witness
+	witness *Witness
 }
 
 // NewWithWitnessRecording creates a new state from a given trie.  The state is configured to construct a stateless
-// block witness which is fully constructed after committing the state.
+// block witness which is completed after Commit is called.
 func NewWithWitnessRecording(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
 	sdb, err := New(root, db, snaps)
 	if err != nil {
 		return nil, err
 	}
-	sdb.recordWitness = true
+	sdb.witness = NewWitness(root)
 	return sdb, nil
 }
 
@@ -182,8 +178,6 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		accessList:           newAccessList(),
 		transientStorage:     newTransientStorage(),
 		hasher:               crypto.NewKeccakState(),
-
-		witness: NewWitness(root),
 	}
 	if sdb.snaps != nil {
 		sdb.snap = sdb.snaps.Snapshot(root)
@@ -371,11 +365,8 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 func (s *StateDB) GetCommittedState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
-		res := stateObject.GetCommittedState(hash)
-		slog.Log(context.Background(), 666, "statedb.go: GetCommittedState", "addr", fmt.Sprintf("%x", addr), "hash", fmt.Sprintf("%x", hash), "val", fmt.Sprintf("%x", res))
-		return res
+		return stateObject.GetCommittedState(hash)
 	}
-	slog.Log(context.Background(), 666, "statedb.go: GetCommittedState", "addr", fmt.Sprintf("%x", addr), "hash", fmt.Sprintf("%x", hash), "val", fmt.Sprintf("%x", common.Hash{}))
 	return common.Hash{}
 }
 
@@ -627,11 +618,9 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 		if data == nil {
 			return nil
 		}
-		slog.Log(context.Background(), 666, "getDeletedStateObject: read account from trie", "addr", addr, "root", data.Root)
 	}
-	if s.recordWitness && s.prefetcher != nil {
-		// when building stateless proof, prefetch every accessed account from the trie to include it in the
-		//witness
+	if s.witness != nil {
+		// when building witness, prefetch all read accounts to ensure they end up in the witness.
 		s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, [][]byte{addr[:]})
 	}
 
@@ -743,8 +732,7 @@ func (s *StateDB) Copy() *StateDB {
 		snaps: s.snaps,
 		snap:  s.snap,
 	}
-	if s.recordWitness {
-		state.recordWitness = true
+	if s.witness != nil {
 		state.witness = s.witness.Copy()
 	}
 	// Copy the dirty states, logs, and preimages
@@ -856,7 +844,6 @@ func (s *StateDB) GetRefund() uint64 {
 func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 	addressesToPrefetch := make([][]byte, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
-		slog.Log(context.Background(), 666, "finalizing dirty account", "address", addr)
 		obj, exist := s.stateObjects[addr]
 		if !exist {
 			// ripeMD is 'touched' at block 1714175, in tx 0x1237f737031e40bcde4a8b7e717b2d15e3ecadfe49bb1bbc71ee9deb09c6fcf2
@@ -895,12 +882,29 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		// the commit-phase will be a lot faster
 		addressesToPrefetch = append(addressesToPrefetch, common.CopyBytes(addr[:])) // Copy needed for closure
 	}
-	// iterate "touched" accounts: accounts that have read storage slots (via sstore/sload) but not been modified
 	if s.prefetcher != nil && len(addressesToPrefetch) > 0 {
 		s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, addressesToPrefetch)
 	}
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
+}
+
+func (s *StateDB) collectAccessLists() {
+	for addr, obj := range s.stateObjects {
+		if _, ok := s.stateObjectsDirty[addr]; ok {
+			// we accrue access lists for dirty accounts when they are committed
+			continue
+		}
+		tr := s.prefetcher.trie(obj.addrHash, obj.Root())
+		if tr == nil {
+			continue
+		}
+		// TODO: verify this case is hit with tests (storage trie with one key, obviously covered).
+		accessList := tr.AccessList()
+		if len(accessList) > 0 {
+			s.witness.addAccessList(obj.addrHash, accessList)
+		}
+	}
 }
 
 // IntermediateRoot computes the current root hash of the state trie.
@@ -921,24 +925,9 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if s.prefetcher != nil {
 		defer func() {
 			s.prefetcher.wait()
-			if s.recordWitness {
-				for addr, obj := range s.stateObjects {
-					if _, ok := s.stateObjectsDirty[addr]; ok {
-						// we accrue access lists for dirty accounts when they are committed
-						continue
-					}
-					tr := s.prefetcher.trie(obj.addrHash, obj.Root())
-					if tr == nil {
-						continue
-					}
-					// TODO: verify this case is hit with tests (storage trie with one key, obviously covered).
-					accessList := tr.AccessList()
-					if len(accessList) > 0 {
-						s.witness.addAccessList(obj.addrHash, accessList)
-					}
-				}
+			if s.witness != nil {
+				s.collectAccessLists()
 			}
-
 			s.prefetcher.close()
 			s.prefetcher = nil
 		}()
@@ -989,7 +978,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 // TODO: this is a hack that saves me from adding a bunch of extra boilerplate code.
 // before witness building is merged, imo witness recording should only be enabled (or not) at StateDB instance creation
 func (s *StateDB) EnableWitnessRecording() {
-	s.recordWitness = true
+	s.witness = NewWitness(s.originalRoot)
 }
 
 // SetTxContext sets the current transaction hash and index which are
@@ -1216,17 +1205,14 @@ func (s *StateDB) handleDestruction(nodes *trienode.MergedNodeSet) (map[common.A
 	return incomplete, nil
 }
 
-type BlockProof struct {
-	blockHashes []common.Hash
-	codeHashes  []common.Hash
-	codes       []Code
-	witness     Witness
-}
-
-func (s *StateDB) GetWitness() *Witness {
+// Witness returns a block witness object being constructed or nil if the
+// StateDB instance is not configured to record stateless witnesses.
+func (s *StateDB) Witness() *Witness {
 	return s.witness
 }
 
+// ApplyWithdrawals credits the balance of each account that is the recipient
+// of a withdrawal.
 func (s *StateDB) ApplyWithdrawals(withdrawals types.Withdrawals) {
 	for _, w := range withdrawals {
 		// Convert amount from gwei to wei.
@@ -1235,7 +1221,7 @@ func (s *StateDB) ApplyWithdrawals(withdrawals types.Withdrawals) {
 		s.AddBalance(w.Address, amount)
 	}
 
-	if s.recordWitness {
+	if s.witness != nil {
 		_, _, al, _ := s.trie.CommitAndObtainAccessList(true)
 		s.witness.addAccessList(common.Hash{}, al)
 	}
@@ -1277,7 +1263,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	for addr := range s.stateObjectsDirty {
 		obj := s.stateObjects[addr]
 		if obj.deleted {
-			if s.recordWitness {
+			if s.witness != nil {
 				_, accessList, err := obj.commit()
 				if err != nil {
 					return common.Hash{}, err
@@ -1293,7 +1279,9 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 		}
 		// Write any storage changes in the state object to its storage trie
 		set, accessList, err := obj.commit()
-		s.witness.addAccessList(obj.addrHash, accessList)
+		if s.witness != nil {
+			s.witness.addAccessList(obj.addrHash, accessList)
+		}
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -1320,7 +1308,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 		start = time.Now()
 	}
 
-	if s.recordWitness {
+	if s.witness != nil {
 		var accessList map[string][]byte
 		root, set, accessList, err = s.trie.CommitAndObtainAccessList(true)
 		s.witness.addAccessList(common.Hash{}, accessList)

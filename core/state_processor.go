@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -39,11 +38,10 @@ import (
 //
 // StateProcessor implements Processor.
 type StateProcessor struct {
-	config            *params.ChainConfig // Chain configuration options
-	bc                *BlockChain         // Canonical block chain
-	engine            consensus.Engine    // Consensus engine used for block rewards
-	chainCtx          *StatelessChainContext
-	statelessVerifier bool
+	config   *params.ChainConfig    // Chain configuration options
+	bc       *BlockChain            // Canonical block chain
+	engine   consensus.Engine       // Consensus engine used for block rewards
+	chainCtx *StatelessChainContext // chain context shim for stateless verification mode
 }
 
 // NewStateProcessor initialises a new StateProcessor.
@@ -64,7 +62,6 @@ func NewStatelessStateProcessor(config *params.ChainConfig, chainCtx *StatelessC
 			chainConfig: config,
 			engine:      engine,
 		},
-		statelessVerifier: true,
 	}
 }
 func (p *StateProcessor) ProcessStateless(witness *state.Witness, block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
@@ -222,13 +219,16 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, vmenv *vm.EVM, statedb *stat
 	statedb.Finalise(true)
 }
 
+// StatelessChainContext implements a stateless chain context stub
+// which is used in place of a backing blockchain instance.
 type StatelessChainContext struct {
 	chaindb ethdb.Database
 	engine  consensus.Engine
 }
 
 func (s *StatelessChainContext) GetHeader(hash common.Hash, number uint64) *types.Header {
-	return rawdb.ReadHeader(s.chaindb, hash, number)
+	//return rawdb.ReadHeader(s.chaindb, hash, number)
+	panic("not implemented")
 }
 
 func (s *StatelessChainContext) Engine() consensus.Engine {

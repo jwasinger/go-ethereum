@@ -195,8 +195,8 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 		value common.Hash
 	)
 
-	if s.db.recordWitness && s.db.prefetcher != nil {
-		// when collecting witness data, always prefetch every read key to
+	if s.db.witness != nil && s.db.prefetcher != nil {
+		// when collecting witness data with snapshot enabled, always prefetch every read key to
 		// ensure that read storage slots will end up in the witness
 		s.db.prefetcher.prefetch(s.addrHash, s.data.Root, s.address, [][]byte{key[:]})
 	}
@@ -400,7 +400,6 @@ func (s *stateObject) commit() (*trienode.NodeSet, map[string][]byte, error) {
 	// cached mutations. Call commit to acquire a set of nodes that have been
 	// modified, the set can be nil if nothing to commit.
 	root, nodes, accessList, err := s.trie.CommitAndObtainAccessList(false)
-	//root, nodes, err := s.trie.Commit(false)
 	if err != nil {
 		return nil, nil, err
 	}

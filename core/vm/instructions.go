@@ -383,7 +383,10 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 	addr := common.Address(a.Bytes20())
-	interpreter.evm.StateDB.GetWitness().AddCode(interpreter.evm.StateDB.GetCodeHash(addr), interpreter.evm.StateDB.GetCode(addr))
+	if witness := interpreter.evm.StateDB.Witness(); witness != nil {
+		witness.AddCode(interpreter.evm.StateDB.GetCodeHash(addr), interpreter.evm.StateDB.GetCode(addr))
+	}
+
 	codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 
@@ -422,8 +425,10 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
 	} else {
-		_ = interpreter.evm.StateDB.GetCode(address) // ensure the account leaf is fetched and included in the witnessgi
-		interpreter.evm.StateDB.GetWitness().AddCodeHash(interpreter.evm.StateDB.GetCodeHash(address))
+		_ = interpreter.evm.StateDB.GetCode(address) // ensure the account leaf is fetched and included in the witness
+		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
+			witness.AddCodeHash(interpreter.evm.StateDB.GetCodeHash(address))
+		}
 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
 	}
 	return nil, nil
@@ -451,11 +456,10 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	}
 	if num64 >= lower && num64 < upper {
 		res := interpreter.evm.Context.GetHash(num64).Bytes()
-		var bh common.Hash
-		copy(bh[:], res[:])
-		// TODO: ensure that we aren't building a witness in stateless execution mode
-		if interpreter.evm.StateDB.GetWitness() != nil {
-			interpreter.evm.StateDB.GetWitness().AddBlockHash(bh, num64)
+		if witness := interpreter.evm.StateDB.Witness(); witness != nil {
+			var bh common.Hash
+			copy(bh[:], res[:])
+			witness.AddBlockHash(bh, num64)
 		}
 		num.SetBytes(res[:])
 	} else {

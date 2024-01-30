@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/consensus/beacon"
@@ -485,7 +484,6 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 		// Only delete empty objects if EIP158/161 (a.k.a Spurious Dragon) is in effect
 		db.Finalise(is158)
 	}
-
 	consensusEngine := beacon.New(ethash.NewFaker())
 
 	consensusEngine.Finalize(bc, block.Header(), db, block.Transactions(), block.Uncles(), block.Withdrawals())
@@ -493,7 +491,7 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 
 	_ = root
 
-	proof := db.GetWitness()
+	proof := db.Witness()
 	proof.Block = block
 	enc, err := proof.EncodeRLP()
 	if err != nil {
@@ -502,71 +500,6 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 	return enc, nil
 }
 
-func (api *DebugAPI) BuildProof(hash rpc.BlockNumber, filepath string) ([]byte, error) {
-	// TODO: error if genesis is specified
-	//old := log.Root().GetHandler()
-	err := os.Remove(filepath)
-	if err != nil {
-		log.Warn("error removing file", "error", err)
-	}
-	/*
-		f, err := log.FileHandler(filepath, log.TerminalFormat(false))
-		if err != nil {
-			return nil, err
-		}
-		log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, f))
-		defer log.Root().SetHandler(old)
-	*/
-	block, err := api.eth.APIBackend.BlockByNumber(context.Background(), hash)
-	if err != nil {
-		return nil, fmt.Errorf("BlockByNumber error: %w", err)
-	}
-
-	statedb, _, err := api.eth.APIBackend.StateAndHeaderByNumber(context.Background(), hash-1)
-	if err != nil {
-		return nil, fmt.Errorf("StateAndHeaderByNumber failed: %w", err)
-	}
-	statedb.StartPrefetcher("apidebug")
-	statedb.EnableWitnessRecording()
-
-	// Native tracers have low overhead
-	var (
-		txs      = block.Transactions()
-		is158    = api.eth.APIBackend.ChainConfig().IsEIP158(block.Number())
-		blockCtx = core.NewEVMBlockContext(block.Header(), ethapi.NewChainContext(context.Background(), api.eth.APIBackend), nil)
-		signer   = types.MakeSigner(api.eth.APIBackend.ChainConfig(), block.Number(), block.Time())
-	)
-	for i, tx := range txs {
-		// Generate the next state snapshot fast without tracing
-		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
-
-		txContext := core.NewEVMTxContext(msg)
-		vmenv := vm.NewEVM(blockCtx, txContext, statedb, api.eth.APIBackend.ChainConfig(), vm.Config{})
-		statedb.SetTxContext(tx.Hash(), i)
-		if _, err = core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
-			return nil, fmt.Errorf("tracing failed: %w", err)
-		}
-		// Finalize the state so any modifications are written to the trie
-		// Only delete empty objects if EIP158/161 (a.k.a Spurious Dragon) is in effect
-		statedb.Finalise(is158)
-	}
-
-	consensusEngine := beacon.New(ethash.NewFaker())
-
-	root, err := statedb.Commit(block.NumberU64(), is158)
-
-	consensusEngine.Finalize(nil, block.Header(), statedb, block.Transactions(), block.Uncles(), block.Withdrawals())
-	_ = root
-	/*
-		// TODO: add root-check back in
-		if root != block.Root() {
-			return "", fmt.Errorf("mismatch between computed root (%x) and expected root (%x)", root, block.Root())
-		}
-	*/
-
-	proof := statedb.GetWitness()
-	proof.Block = block
-
-	enc, _ := proof.EncodeRLP()
-	return enc, nil
+func (api *DebugAPI) BuildProof(num rpc.BlockNumber) ([]byte, error) {
+	return BuildProof(uint64(num), api.eth.blockchain)
 }

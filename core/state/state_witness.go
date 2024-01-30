@@ -108,6 +108,8 @@ func (w *Witness) EncodeRLP() ([]byte, error) {
 	return res, nil
 }
 
+// addAccessList associates a map of raw trie nodes keyed by path to an owner
+// in the witness.  the witness takes ownership of the passed map.
 func (w *Witness) addAccessList(owner common.Hash, list map[string][]byte) {
 	var stateNodes map[string][]byte
 
@@ -125,11 +127,14 @@ func (w *Witness) addAccessList(owner common.Hash, list map[string][]byte) {
 	}
 }
 
+// AddBlockHash adds a block hash/number to the witness
 func (w *Witness) AddBlockHash(hash common.Hash, num uint64) {
 	w.blockHashes[num] = hash
 }
 
-// TODO: don't include the code hash in the witness if not necessary
+// AddCode associates a hash with EVM bytecode in the witness.  It does
+// nothing if there is already a code associated with the given hash.
+// The witness takes ownership over the passed code slice.
 func (w *Witness) AddCode(hash common.Hash, code Code) {
 	if code, ok := w.codes[hash]; ok && len(code) > 0 {
 		return
@@ -137,6 +142,9 @@ func (w *Witness) AddCode(hash common.Hash, code Code) {
 	w.codes[hash] = code
 }
 
+// AddCodeHash adds a code hash to the witness
+// TODO bug:  adding a code hash before executing the same account later would result in the account's code
+// not being added to the witness.  this should be covered in state tests?
 func (w *Witness) AddCodeHash(hash common.Hash) {
 	if _, ok := w.codes[hash]; ok {
 		return
@@ -144,11 +152,8 @@ func (w *Witness) AddCodeHash(hash common.Hash) {
 	w.codes[hash] = []byte{}
 }
 
-func (w *Witness) LogSizeWithBlock(b *types.Block) {
-	enc, _ := w.EncodeRLP()
-	fmt.Printf("block %d witness+block size: %d\n", b.Number(), len(enc))
-}
-
+// Summary prints a human-readable summary containing the total size of the
+// witness and the sizes of the underlying components
 func (w *Witness) Summary() string {
 	b := new(bytes.Buffer)
 	xx, err := rlp.EncodeToBytes(w.Block)
@@ -186,9 +191,11 @@ func (w *Witness) Summary() string {
 	return b.String()
 }
 
+// Copy deep-copies the witness object.  Witness.Block isn't deep-copied as it
+// is never mutated by Witness
 func (w *Witness) Copy() *Witness {
 	var res Witness
-	res.Block = w.Block // we don't actually mutate the block in the witness so don't deep copy
+	res.Block = w.Block //
 
 	for blockNr, blockHash := range w.blockHashes {
 		res.blockHashes[blockNr] = blockHash
@@ -210,6 +217,8 @@ func (w *Witness) Copy() *Witness {
 	return &res
 }
 
+// sortedWitness encodes returns an rlpWitness where hash-map items are sorted lexicographically by key
+// in the encoder object to ensure that the encoded bytes are always the same for a given witness.
 func (w *Witness) sortedWitness() *rlpWitness {
 	var sortedCodeHashes []common.Hash
 	for key, _ := range w.codes {
@@ -231,10 +240,9 @@ func (w *Witness) sortedWitness() *rlpWitness {
 	var ownersPaths [][]string
 	var ownersNodes [][][]byte
 
-	// sort the noes of each owner by path
+	// sort the nodes of each owner by path
 	for _, owner := range owners {
 		nodes := w.lists[owner]
-		// sort each node set
 		var ownerPaths []string
 		for path, _ := range nodes {
 			ownerPaths = append(ownerPaths, path)
@@ -282,6 +290,7 @@ func (w *Witness) sortedWitness() *rlpWitness {
 	}
 }
 
+// PrettyPrint displays the contents of a witness object in a human-readable format to standard output.
 func (w *Witness) PrettyPrint() string {
 	sorted := w.sortedWitness()
 	b := new(bytes.Buffer)
@@ -313,6 +322,7 @@ func (w *Witness) PrettyPrint() string {
 	return b.String()
 }
 
+// Hash returns the sha256 hash of a witness
 func (w *Witness) Hash() common.Hash {
 	res, err := rlp.EncodeToBytes(w.sortedWitness())
 	if err != nil {
@@ -322,6 +332,7 @@ func (w *Witness) Hash() common.Hash {
 	return common.Hash(sha256.Sum256(res[:]))
 }
 
+// NewWitness returns a new witness object.
 func NewWitness(root common.Hash) *Witness {
 	return &Witness{
 		Block:       nil,
@@ -332,6 +343,8 @@ func NewWitness(root common.Hash) *Witness {
 	}
 }
 
+// DumpBlockWitnessToFile serializes a witness object and writes it and the provided chain config to files on
+// a given path.
 func DumpBlockWitnessToFile(cfg *params.ChainConfig, w *Witness, path string) error {
 	enc, _ := w.EncodeRLP()
 
@@ -356,7 +369,8 @@ func DumpBlockWitnessToFile(cfg *params.ChainConfig, w *Witness, path string) er
 	return nil
 }
 
-// This takes ownership over the trie nodes (and what else?) in this Witness object
+// PopulateDB imports trie nodes from the witness
+// into the specified backing database.
 func (w *Witness) PopulateDB(db ethdb.Database) error {
 	batch := db.NewBatch()
 	for owner, nodes := range w.lists {

@@ -125,6 +125,7 @@ func (env *environment) discard() {
 	if env.state == nil {
 		return
 	}
+	// TODO: re-enable prefetcher
 	//env.state.StopPrefetcher()
 }
 
@@ -711,6 +712,7 @@ func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase co
 	if err != nil {
 		return nil, err
 	}
+	// TODO: re-enable prefetcher
 	//state.StartPrefetcher("miner")
 
 	// Note the passed coinbase may be different with header.Coinbase.

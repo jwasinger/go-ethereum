@@ -1400,7 +1400,7 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 
 func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) bool {
 	var witness *state.Witness
-	witness = db.GetWitness()
+	witness = db.Witness()
 	witness.Block = block
 
 	err := crossValidate(bc.crossValidatorEndpoint, witness)
