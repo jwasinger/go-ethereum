@@ -1405,12 +1405,13 @@ func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) 
 
 	err := crossValidate(bc.crossValidatorEndpoint, witness)
 	if err != nil {
-		log.Error("cross validation failed", "number", block.Number(), "hash", block.Hash(), "error", err)
+		log.Error("cross-validation failed", "number", block.Number(), "hash", block.Hash(), "error", err)
 		if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
 			log.Error("failed to dump block to file", "error", err)
 		}
 		return false
 	}
+	log.Info("cross-validation successful")
 	return true
 }
 
