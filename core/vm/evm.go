@@ -404,7 +404,6 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 		if witness := evm.StateDB.Witness(); witness != nil {
 			witness.AddCode(evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
 		}
-
 		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
 		// When an error was returned by the EVM or when setting the creation code
 		// above we revert to the snapshot and consume any gas remaining. Additionally

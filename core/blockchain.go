@@ -1403,6 +1403,7 @@ func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) 
 	witness = db.Witness()
 	witness.Block = block
 
+	fmt.Println("cross validating block")
 	err := crossValidate(bc.crossValidatorEndpoint, witness)
 	if err != nil {
 		log.Error("cross-validation failed", "number", block.Number(), "hash", block.Hash(), "error", err)

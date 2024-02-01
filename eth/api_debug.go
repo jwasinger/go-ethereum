@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/consensus/beacon"
@@ -463,6 +465,16 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 	block := bc.GetBlockByNumber(number)
 	db.StartPrefetcher("apidebug")
 	db.EnableWitnessRecording()
+
+	logconfig := &logger.Config{
+		EnableMemory:     false,
+		DisableStack:     false,
+		DisableStorage:   false,
+		EnableReturnData: true,
+		Debug:            true,
+	}
+	tracer := logger.NewJSONLogger(logconfig, os.Stdout)
+	_ = tracer
 
 	var (
 		txs      = block.Transactions()

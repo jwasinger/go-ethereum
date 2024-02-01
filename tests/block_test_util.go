@@ -113,14 +113,14 @@ type btHeaderMarshaling struct {
 }
 
 func (t *BlockTest) Run(snapshotter bool, scheme string, tracer vm.EVMLogger) error {
-	return t.run(false, snapshotter, scheme, tracer)
+	return t.run(0, false, snapshotter, scheme, tracer)
 }
 
-func (t *BlockTest) RunStateless(snapshotter bool, scheme string, tracer vm.EVMLogger) error {
-	return t.run(true, snapshotter, scheme, tracer)
+func (t *BlockTest) RunStateless(crossValidatorPort int, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
+	return t.run(crossValidatorPort, true, snapshotter, scheme, tracer)
 }
 
-func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
+func (t *BlockTest) run(crossValidatorPort int, stateless bool, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
 	config, ok := Forks[t.json.Network]
 	if !ok {
 		return UnsupportedForkError{t.json.Network}
@@ -160,9 +160,19 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 		cache.SnapshotLimit = 1
 		cache.SnapshotWait = true
 	}
-	chain, err := core.NewBlockChain(db, cache, gspec, nil, engine, vm.Config{
-		Tracer: tracer,
-	}, nil, nil)
+	chain, err := core.NewBlockchainWithCrossValidator(
+		fmt.Sprintf("http://localhost:%d", crossValidatorPort),
+		"",
+		db,
+		cache,
+		gspec,
+		nil,
+		engine,
+		vm.Config{
+			Tracer: tracer,
+		},
+		nil,
+		nil)
 	if err != nil {
 		return err
 	}
