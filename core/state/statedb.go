@@ -889,13 +889,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 	s.clearJournalAndRefund()
 }
 
-func (s *StateDB) collectAccessLists() {
-	for addr, obj := range s.stateObjects {
-		if _, ok := s.stateObjectsDirty[addr]; ok {
-			// we accrue access lists for dirty accounts when they are committed
-			continue
-		}
-		tr := s.prefetcher.trie(obj.addrHash, obj.Root())
+func (s *StateDB) collectStorageReadAccessLists() {
+	for _, obj := range s.stateObjects {
+		// load read storage slots from the finished trie in the prefetcher as these continue to be prefetched
+		// until commit.
+		tr := s.prefetcher.trie(obj.addrHash, obj.data.Root)
 		if tr == nil {
 			continue
 		}
@@ -926,7 +924,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		defer func() {
 			s.prefetcher.wait()
 			if s.witness != nil {
-				s.collectAccessLists()
+				s.collectStorageReadAccessLists()
 			}
 			s.prefetcher.close()
 			s.prefetcher = nil
@@ -1222,6 +1220,7 @@ func (s *StateDB) ApplyWithdrawals(withdrawals types.Withdrawals) {
 	}
 
 	if s.witness != nil {
+		// TODO: this should produce the right post-state root.  why do we (and upstream) throw it away here?
 		_, _, al, _ := s.trie.CommitAndObtainAccessList(true)
 		s.witness.addAccessList(common.Hash{}, al)
 	}
@@ -1263,13 +1262,6 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	for addr := range s.stateObjectsDirty {
 		obj := s.stateObjects[addr]
 		if obj.deleted {
-			if s.witness != nil {
-				_, accessList, err := obj.commit()
-				if err != nil {
-					return common.Hash{}, err
-				}
-				s.witness.addAccessList(obj.addrHash, accessList)
-			}
 			continue
 		}
 		// Write any contract code associated with the state object
@@ -1277,13 +1269,17 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 			rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 			obj.dirtyCode = false
 		}
+
 		// Write any storage changes in the state object to its storage trie
 		set, accessList, err := obj.commit()
-		if s.witness != nil {
-			s.witness.addAccessList(obj.addrHash, accessList)
-		}
 		if err != nil {
 			return common.Hash{}, err
+		}
+		if s.witness != nil {
+			// storage trie nodes for writes accrue in the state object's trie instance
+			// storage trie nodes from read slots are accrued in the prefetcher and
+			// retrieved in IntermediateRoot
+			s.witness.addAccessList(obj.addrHash, accessList)
 		}
 		// Merge the dirty nodes of storage trie into global set. It is possible
 		// that the account was destructed and then resurrected in the same block.
