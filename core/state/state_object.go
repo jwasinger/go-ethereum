@@ -89,6 +89,9 @@ type stateObject struct {
 
 	// Flag whether the object was created in the current transaction
 	created bool
+
+	// Flag whether the object was created in the current block
+	createdBlock bool
 }
 
 // empty returns whether the account is considered empty.
@@ -115,6 +118,7 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		pendingStorage: make(Storage),
 		dirtyStorage:   make(Storage),
 		created:        created,
+		createdBlock:   created,
 	}
 }
 
@@ -196,9 +200,12 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	)
 
 	if s.db.witness != nil {
-		// when collecting witness data with snapshot enabled, always prefetch every read key to
-		// ensure that read storage slots will end up in the witness
-		s.db.prefetcher.prefetch(s.addrHash, s.data.Root, s.address, [][]byte{key[:]})
+		if !s.createdBlock && s.origin.Root != types.EmptyRootHash {
+			// when building a block witness, prefetch read storage keys if the following are true:
+			// * the account was not created/recreated in this block
+			// * the account's storage trie is non-empty
+			s.db.prefetcher.prefetch(s.addrHash, s.origin.Root, s.address, [][]byte{key[:]})
+		}
 	}
 
 	if s.db.snap != nil {
