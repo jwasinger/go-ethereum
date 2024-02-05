@@ -461,10 +461,9 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	block := bc.GetBlockByNumber(number)
-	db.StartPrefetcher("apidebug")
 	db.EnableWitnessRecording()
+	db.StartPrefetcher("apidebug")
+	block := bc.GetBlockByNumber(number)
 
 	logconfig := &logger.Config{
 		EnableMemory:     false,

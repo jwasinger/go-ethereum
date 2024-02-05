@@ -17,7 +17,6 @@
 package tests
 
 import (
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"math/rand"
 	"os"
 	"runtime"
@@ -126,14 +125,6 @@ func TestStatelessBlockchain(t *testing.T) {
 	// skip uncle tests for stateless
 	bt.skipLoad(`.*/UnclePopulation.json`)
 
-	closeCh, port, err := utils.RunLocalServer(0)
-	if err != nil {
-		t.Fatalf("fuck")
-	}
-	t.Cleanup(func() {
-		closeCh <- struct{}{}
-	})
-
 	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
 		if runtime.GOARCH == "386" && runtime.GOOS == "windows" && rand.Int63()%2 == 0 {
 			t.Skip("test (randomly) skipped on 32-bit windows")
@@ -145,7 +136,7 @@ func TestStatelessBlockchain(t *testing.T) {
 		}
 		isMerged := config.TerminalTotalDifficulty != nil && config.TerminalTotalDifficulty.BitLen() == 0
 		if isMerged {
-			execBlockTestStateless(t, bt, test, port)
+			execBlockTestStateless(t, bt, test)
 		} else {
 			t.Skip("skipping pre-merge test")
 		}
@@ -186,7 +177,7 @@ func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
 	}
 }
 
-func execBlockTestStateless(t *testing.T, bt *testMatcher, test *BlockTest, crossValidatorPort int) {
+func execBlockTestStateless(t *testing.T, bt *testMatcher, test *BlockTest) {
 	handler := log.NewTerminalHandlerWithLevel(os.Stdout, slog.Level(667), false)
 	log.SetDefault(log.NewLogger(handler))
 	logconfig := &logger.Config{
@@ -198,19 +189,19 @@ func execBlockTestStateless(t *testing.T, bt *testMatcher, test *BlockTest, cros
 	}
 	tracer := logger.NewJSONLogger(logconfig, os.Stdout)
 	_ = tracer
-	if err := bt.checkFailure(t, test.RunStateless(crossValidatorPort, false, rawdb.HashScheme, nil)); err != nil {
+	if err := bt.checkFailure(t, test.RunStateless(false, rawdb.HashScheme, nil)); err != nil {
 		t.Errorf("test in hash mode without snapshotter failed: %v", err)
 		return
 	}
-	if err := bt.checkFailure(t, test.RunStateless(crossValidatorPort, true, rawdb.HashScheme, nil)); err != nil {
+	if err := bt.checkFailure(t, test.RunStateless(true, rawdb.HashScheme, nil)); err != nil {
 		t.Errorf("test in hash mode with snapshotter failed: %v", err)
 		return
 	}
-	if err := bt.checkFailure(t, test.RunStateless(crossValidatorPort, false, rawdb.PathScheme, nil)); err != nil {
+	if err := bt.checkFailure(t, test.RunStateless(false, rawdb.PathScheme, nil)); err != nil {
 		t.Errorf("test in path mode without snapshotter failed: %v", err)
 		return
 	}
-	if err := bt.checkFailure(t, test.RunStateless(crossValidatorPort, true, rawdb.PathScheme, nil)); err != nil {
+	if err := bt.checkFailure(t, test.RunStateless(true, rawdb.PathScheme, nil)); err != nil {
 		t.Errorf("test in path mode with snapshotter failed: %v", err)
 		return
 	}

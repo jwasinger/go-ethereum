@@ -1398,22 +1398,22 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 	return nil
 }
 
-func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) bool {
+func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) error {
 	var witness *state.Witness
 	witness = db.Witness()
 	witness.Block = block
 
-	fmt.Println("cross validating block")
 	err := crossValidate(bc.crossValidatorEndpoint, witness)
 	if err != nil {
-		log.Error("cross-validation failed", "number", block.Number(), "hash", block.Hash(), "error", err)
-		if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
-			log.Error("failed to dump block to file", "error", err)
-		}
-		return false
+		return err
+		/*
+			// TODO: re-enable once tests are passing
+				if err = state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); err != nil {
+					log.Error("failed to dump block to file", "error", err)
+				}
+		*/
 	}
-	log.Info("cross-validation successful")
-	return true
+	return nil
 }
 
 // writeBlockWithState writes block, metadata and corresponding state data to the
@@ -1434,7 +1434,11 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		return err
 	}
 
-	if bc.crossValidatorEndpoint != "" && !bc.crossValidateBlock(block, sdb) {
+	if bc.crossValidatorEndpoint != "" {
+		err := bc.crossValidateBlock(block, sdb)
+		if err != nil {
+			return fmt.Errorf("failed to cross validate block: %v", err)
+		}
 	}
 
 	// Irrelevant of the canonical status, write the block itself to the database.

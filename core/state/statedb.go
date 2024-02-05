@@ -193,9 +193,7 @@ func (s *StateDB) StartPrefetcher(namespace string) {
 		s.prefetcher.close()
 		s.prefetcher = nil
 	}
-	if s.snap != nil {
-		s.prefetcher = newTriePrefetcher(s.db, s.originalRoot, namespace)
-	} else if namespace == "apidebug" {
+	if s.snap != nil || s.witness != nil {
 		s.prefetcher = newTriePrefetcher(s.db, s.originalRoot, namespace)
 	}
 }
@@ -973,8 +971,6 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	return s.trie.Hash()
 }
 
-// TODO: this is a hack that saves me from adding a bunch of extra boilerplate code.
-// before witness building is merged, imo witness recording should only be enabled (or not) at StateDB instance creation
 func (s *StateDB) EnableWitnessRecording() {
 	s.witness = NewWitness(s.originalRoot)
 }

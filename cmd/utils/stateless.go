@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -59,18 +60,18 @@ func StatelessVerify(logOutput io.Writer, chainCfg *params.ChainConfig, witness 
 	return true, nil
 }
 
-func RunLocalServer(port int) (closeChan chan<- struct{}, actualPort int, err error) {
+func RunLocalServer(chainConfig *params.ChainConfig, port int) (closeChan chan<- struct{}, actualPort int, err error) {
 	mux := http.NewServeMux()
-	mux.Handle("/verify_block", &verifyHandler{})
+	mux.Handle("/verify_block", &verifyHandler{chainConfig})
 	srv := http.Server{Handler: mux}
 	listener, err := net.Listen("tcp", ":"+fmt.Sprintf("%d", port))
 	if err != nil {
-		panic(err)
+		return nil, 0, err
 	}
 	actualPort = listener.Addr().(*net.TCPAddr).Port
 
 	go func() {
-		if err := srv.Serve(listener); err != nil {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
@@ -87,7 +88,9 @@ func RunLocalServer(port int) (closeChan chan<- struct{}, actualPort int, err er
 	return closeCh, actualPort, nil
 }
 
-type verifyHandler struct{}
+type verifyHandler struct {
+	chainConfig *params.ChainConfig
+}
 
 func (v *verifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respError := func(descr string, err error) {
@@ -121,7 +124,7 @@ func (v *verifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	correct, err := StatelessVerify(nil, params.MainnetChainConfig, witness)
+	correct, err := StatelessVerify(nil, v.chainConfig, witness)
 	if err != nil {
 		respError("error verifying stateless proof", err)
 		return

@@ -113,14 +113,14 @@ type btHeaderMarshaling struct {
 }
 
 func (t *BlockTest) Run(snapshotter bool, scheme string, tracer vm.EVMLogger) error {
-	return t.run(0, false, snapshotter, scheme, tracer)
+	return t.run(false, snapshotter, scheme, tracer)
 }
 
-func (t *BlockTest) RunStateless(crossValidatorPort int, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
-	return t.run(crossValidatorPort, true, snapshotter, scheme, tracer)
+func (t *BlockTest) RunStateless(snapshotter bool, scheme string, tracer vm.EVMLogger) error {
+	return t.run(true, snapshotter, scheme, tracer)
 }
 
-func (t *BlockTest) run(crossValidatorPort int, stateless bool, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
+func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer vm.EVMLogger) error {
 	config, ok := Forks[t.json.Network]
 	if !ok {
 		return UnsupportedForkError{t.json.Network}
@@ -137,6 +137,14 @@ func (t *BlockTest) run(crossValidatorPort int, stateless bool, snapshotter bool
 	} else {
 		tconf.HashDB = hashdb.Defaults
 	}
+	closeCh, port, err := utils.RunLocalServer(config, 0)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeCh <- struct{}{}
+	}()
+
 	// Commit genesis state
 	gspec := t.genesis(config)
 	triedb := trie.NewDatabase(db, tconf)
@@ -160,8 +168,9 @@ func (t *BlockTest) run(crossValidatorPort int, stateless bool, snapshotter bool
 		cache.SnapshotLimit = 1
 		cache.SnapshotWait = true
 	}
+	// TODO: create normal chain if not stateless mode
 	chain, err := core.NewBlockchainWithCrossValidator(
-		fmt.Sprintf("http://localhost:%d", crossValidatorPort),
+		fmt.Sprintf("http://localhost:%d", port),
 		"",
 		db,
 		cache,
