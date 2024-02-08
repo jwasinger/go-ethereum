@@ -89,9 +89,6 @@ type stateObject struct {
 
 	// Flag whether the object was created in the current transaction
 	created bool
-
-	// Flag whether the object was created in the current block
-	createdBlock bool
 }
 
 // empty returns whether the account is considered empty.
@@ -118,7 +115,6 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		pendingStorage: make(Storage),
 		dirtyStorage:   make(Storage),
 		created:        created,
-		createdBlock:   created,
 	}
 }
 
@@ -199,13 +195,10 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 		value common.Hash
 	)
 
-	if s.db.witness != nil {
-		if !s.createdBlock && s.origin.Root != types.EmptyRootHash {
-			// when building a block witness, prefetch read storage keys if the following are true:
-			// * the account was not created/recreated in this block
-			// * the account's storage trie is non-empty
-			s.db.prefetcher.prefetch(s.addrHash, s.origin.Root, s.address, [][]byte{key[:]})
-		}
+	if s.db.witness != nil && s.db.snap != nil && s.origin != nil {
+		// when building a witness with snapshot enabled, prefetch all read slots to be collected
+		// and included in the witness when the block root hash is committed (intermediateroot/commit?)
+		s.db.readPrefetcher.prefetch(s.addrHash, s.origin.Root, s.address, [][]byte{key[:]})
 	}
 
 	if s.db.snap != nil {
@@ -231,6 +224,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			return common.Hash{}
 		}
 		val, err := tr.GetStorage(s.address, key.Bytes())
+		//fmt.Printf("trie access list is %v\n", tr.AccessList())
 		if metrics.EnabledExpensive {
 			s.db.StorageReads += time.Since(start)
 		}

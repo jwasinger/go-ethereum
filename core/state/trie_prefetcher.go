@@ -242,6 +242,7 @@ func newSubfetcher(db Database, state common.Hash, owner common.Hash, root commo
 func (sf *subfetcher) schedule(keys [][]byte) {
 	// Append the tasks to the current queue
 	sf.lock.Lock()
+
 	sf.tasks = append(sf.tasks, keys...)
 	sf.lock.Unlock()
 	// Notify the prefetcher. The wake-chan is buffered, so this is async.
@@ -295,14 +296,15 @@ func (sf *subfetcher) loop() {
 	// Trie opened successfully, keep prefetching items
 	for {
 		keepRunning := <-sf.wake
+		if !keepRunning {
+			return
+		}
 		// Subfetcher was woken up, retrieve any tasks to avoid spinning the lock
 		sf.lock.Lock()
 		tasks := sf.tasks
 		sf.tasks = nil
 		sf.lock.Unlock()
-		if !keepRunning {
-			return
-		}
+
 		// Prefetch all tasks
 		for _, task := range tasks {
 			if _, ok := sf.seen[string(task)]; ok {

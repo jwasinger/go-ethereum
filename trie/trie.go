@@ -106,7 +106,7 @@ func NewEmpty(db *Database) *Trie {
 }
 
 // MustNodeIterator is a wrapper of NodeIterator and will omit any encountered
-// error but just print out an error message.
+// error but just printg out an error message.
 func (t *Trie) MustNodeIterator(start []byte) NodeIterator {
 	it, err := t.NodeIterator(start)
 	if err != nil {

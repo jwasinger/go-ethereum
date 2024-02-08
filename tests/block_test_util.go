@@ -178,7 +178,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 		nil,
 		engine,
 		vm.Config{
-			Tracer: tracer,
+			//Tracer: tracer,
 		},
 		nil,
 		nil)
@@ -208,6 +208,7 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			return err
 		}
 	}
+
 	if stateless {
 		for _, blk := range validBlocks {
 			// TODO: set up test chassis to do verification on block import (in BlockChain) in addition to BuildProof
