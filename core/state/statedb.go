@@ -915,7 +915,6 @@ func (s *StateDB) collectReadStorageAccessLists() {
 		}
 		accessList := tr.AccessList()
 		if len(accessList) > 0 {
-			fmt.Printf("read storage access lists %d\n", len(accessList))
 			s.witness.addAccessList(obj.addrHash, accessList)
 		}
 	}
@@ -1359,8 +1358,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 
 	if s.witness != nil {
 		var accessList map[string][]byte
-		root, set, err = s.trie.Commit(true)
-		accessList = s.trie.AccessList()
+		root, set, accessList, err = s.trie.CommitAndObtainAccessList(true)
 		s.witness.addAccessList(common.Hash{}, accessList)
 	} else {
 		root, set, err = s.trie.Commit(true)
