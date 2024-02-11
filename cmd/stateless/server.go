@@ -9,7 +9,8 @@ import (
 )
 
 func server(ctx *cli.Context) error {
-	closeCh, _, err := utils.RunLocalServer(8080)
+	chainConfig := loadChainConfig(ctx.String(ChainConfigFlag.Name))
+	closeCh, _, err := utils.RunLocalServer(chainConfig, 8080)
 	if err != nil {
 		return err
 	}

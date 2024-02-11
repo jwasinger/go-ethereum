@@ -284,7 +284,7 @@ func (s *stateObject) finalise(prefetch bool) {
 // storage change at all.
 func (s *stateObject) updateTrie() (Trie, error) {
 	// Make sure all dirty slots are finalized into the pending storage area
-	s.finalise(true)
+	s.finalise(false)
 
 	// Short circuit if nothing changed, don't bother with hashing anything
 	if len(s.pendingStorage) == 0 {

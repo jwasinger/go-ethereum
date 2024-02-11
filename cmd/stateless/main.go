@@ -45,7 +45,7 @@ var (
 		Action:    witnessCmp,
 		Name:      "cmp",
 		Usage:     "outputs whether two block witnesses are equal",
-		ArgsUsage: "<genesisPath>",
+		ArgsUsage: "cmp --witness1 /path/to/bw1.rlp --witness2 /path/to/bw2.rlp",
 		Flags: []cli.Flag{
 			BlockWitness1Flag,
 			BlockWitness2Flag,
@@ -56,17 +56,18 @@ var (
 		Action:    pp,
 		Name:      "pp",
 		Usage:     "",
-		ArgsUsage: "<genesisPath>",
+		ArgsUsage: "pp --block-witness /path/to/witness.rlp",
 		Flags: []cli.Flag{
 			BlockWitnessFlag,
 		},
 		Description: `pretty-print a block witness`,
 	}
 	ExecCommand = &cli.Command{
-		Action:    execCmd,
-		Name:      "exec",
-		Usage:     "",
-		ArgsUsage: "<genesisPath>",
+		Action: execCmd,
+		Name:   "exec",
+		Usage:  "",
+		ArgsUsage: "exec --block-witness /path/to/bw.rlp --chain-config /path/to/chainconfig.json" +
+			"--log-file /path/to/logfile.txt",
 		Flags: []cli.Flag{
 			BlockWitnessFlag,
 			ChainConfigFlag,
@@ -78,9 +79,9 @@ var (
 		Action:      server,
 		Name:        "server",
 		Usage:       "",
-		ArgsUsage:   "<genesisPath>",
-		Flags:       []cli.Flag{},
-		Description: `Runs an HTTP server which provides an API for stateless block verification`,
+		ArgsUsage:   "server --chain-config /path/to/chain-config.json",
+		Flags:       []cli.Flag{ChainConfigFlag},
+		Description: `Runs an HTTP server which provides an API endpoint for stateless block verification`,
 	}
 )
 
@@ -113,6 +114,25 @@ func init() {
 	}
 }
 
+func loadChainConfig(chainConfigPath string) *params.ChainConfig {
+	var chainConfig *params.ChainConfig
+
+	if chainConfigPath != "" {
+		configBytes, err := os.ReadFile(chainConfigPath)
+		if err != nil {
+			panic(err)
+		}
+		dec := json.NewDecoder(bytes.NewBuffer(configBytes))
+		err = dec.Decode(&chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		panic("chain config must be specified")
+	}
+	return chainConfig
+}
+
 func execCmd(ctx *cli.Context) error {
 	var logWriter *bufio.Writer
 	blockWitnessPath := ctx.String(BlockWitnessFlag.Name)
@@ -133,22 +153,6 @@ func execCmd(ctx *cli.Context) error {
 		defer logWriter.Flush()
 	}
 
-	var chainConfig *params.ChainConfig
-	chainConfigFile := ctx.String(ChainConfigFlag.Name)
-	if chainConfigFile != "" {
-		configBytes, err := os.ReadFile(chainConfigFile)
-		if err != nil {
-			panic(err)
-		}
-		dec := json.NewDecoder(bytes.NewBuffer(configBytes))
-		err = dec.Decode(&chainConfig)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		panic("chain config must be specified")
-	}
-
 	b, err := os.ReadFile(blockWitnessPath)
 	if err != nil {
 		panic(err)
@@ -158,6 +162,8 @@ func execCmd(ctx *cli.Context) error {
 	if err != nil {
 		panic(err)
 	}
+
+	chainConfig := loadChainConfig(ctx.String(ChainConfigFlag.Name))
 
 	correct, err := utils.StatelessVerify(os.Stdout, chainConfig, witness)
 	if err != nil {

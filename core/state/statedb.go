@@ -977,16 +977,29 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		}
 	}
 	usedAddrs := make([][]byte, 0, len(s.stateObjectsPending))
+
+	// perform updates before deletions.  In the case where a full node
+	// has two children, one of them selfdestructs and makes the recipient
+	// another non-existing sibling, applying deletion before update would
+	// result in the unecessary premature collapse of the full node into a short node
+	// for the untouched third sibling.
+	var deletedObjects []*stateObject
 	for addr := range s.stateObjectsPending {
-		if obj := s.stateObjects[addr]; obj.deleted {
-			s.deleteStateObject(obj)
-			s.AccountDeleted += 1
-		} else {
+		if obj := s.stateObjects[addr]; !obj.deleted {
 			s.updateStateObject(obj)
 			s.AccountUpdated += 1
+			usedAddrs = append(usedAddrs, common.CopyBytes(addr[:])) // Copy needed for closure
+		} else {
+			deletedObjects = append(deletedObjects, obj)
 		}
-		usedAddrs = append(usedAddrs, common.CopyBytes(addr[:])) // Copy needed for closure
+		usedAddrs = append(usedAddrs, common.CopyBytes(addr[:]))
 	}
+	for _, deletedObj := range deletedObjects {
+		s.deleteStateObject(deletedObj)
+		s.AccountDeleted += 1
+		usedAddrs = append(usedAddrs, common.CopyBytes(deletedObj.address[:])) // Copy needed for closure
+	}
+
 	if prefetcher != nil {
 		prefetcher.used(common.Hash{}, s.originalRoot, usedAddrs)
 	}
@@ -1327,6 +1340,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 		if err != nil {
 			return common.Hash{}, err
 		}
+
 		if s.witness != nil {
 			// storage trie nodes for writes accrue in the state object's trie instance
 			// storage trie nodes from read slots are accrued in the prefetcher and
