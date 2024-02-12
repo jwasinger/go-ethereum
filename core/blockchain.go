@@ -1435,9 +1435,9 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if bc.crossValidatorEndpoint != "" {
 		err := bc.crossValidateBlock(block, sdb)
 		if err != nil {
-			log.Error("failed to cross validate block: %v", err)
+			log.Error("failed to cross validate block", "error", err)
 			if innerErr := state.DumpBlockWitnessToFile(bc.Config(), sdb.Witness(), "block-dump"); innerErr != nil {
-				log.Error("failed to store witness to file: %v", innerErr)
+				log.Error("failed to store witness to file", "error", innerErr)
 			}
 			// TODO: return err and stop the import in the actual cross-validator logic
 		}

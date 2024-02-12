@@ -3,11 +3,12 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -39,10 +40,7 @@ func StatelessVerify(logOutput io.Writer, chainCfg *params.ChainConfig, witness 
 	if err != nil {
 		return false, err
 	}
-	engine, err := ethconfig.CreateConsensusEngine(chainCfg, rawDb)
-	if err != nil {
-		return false, err
-	}
+	engine := beacon.New(ethash.NewFaker())
 	validator := core.NewStatelessBlockValidator(chainCfg, engine)
 	chainCtx := core.NewStatelessChainContext(rawDb, engine)
 	processor := core.NewStatelessStateProcessor(chainCfg, chainCtx, engine)
