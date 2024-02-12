@@ -455,7 +455,6 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 	if number == 0 {
 		panic("cannot build genesis block proof")
 	}
-
 	parent := bc.GetBlockByNumber(number - 1)
 	db, err := bc.StateAt(parent.Header().Root)
 	if err != nil {
@@ -477,28 +476,25 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 
 	var (
 		txs      = block.Transactions()
-		is158    = bc.Config().IsEIP158(block.Number())
 		blockCtx = core.NewEVMBlockContext(block.Header(), bc, nil)
 		signer   = types.MakeSigner(bc.Config(), block.Number(), block.Time())
 	)
+	vmenv := vm.NewEVM(blockCtx, vm.TxContext{}, db, bc.Config(), vm.Config{})
+	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
+		core.ProcessBeaconBlockRoot(*beaconRoot, vmenv, db)
+	}
 	for i, tx := range txs {
-		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
-
-		txContext := core.NewEVMTxContext(msg)
-		vmenv := vm.NewEVM(blockCtx, txContext, db, bc.Config(), vm.Config{})
 		db.SetTxContext(tx.Hash(), i)
 		if _, err = core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
 			return nil, fmt.Errorf("tracing failed: %w", err)
 		}
-		// Finalize the state so any modifications are written to the trie
-		// Only delete empty objects if EIP158/161 (a.k.a Spurious Dragon) is in effect
-		db.Finalise(is158)
+		db.Finalise(true)
 	}
 	consensusEngine := beacon.New(ethash.NewFaker())
 
 	consensusEngine.Finalize(bc, block.Header(), db, block.Transactions(), block.Uncles(), block.Withdrawals())
-	root, err := db.Commit(block.NumberU64(), is158)
+	root, err := db.Commit(block.NumberU64(), true)
 
 	_ = root
 
