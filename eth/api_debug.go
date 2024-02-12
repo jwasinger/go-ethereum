@@ -24,8 +24,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum/consensus/beacon"
-	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 
@@ -474,30 +472,14 @@ func BuildProof(number uint64, bc *core.BlockChain) ([]byte, error) {
 	tracer := logger.NewJSONLogger(logconfig, os.Stdout)
 	_ = tracer
 
-	var (
-		txs      = block.Transactions()
-		blockCtx = core.NewEVMBlockContext(block.Header(), bc, nil)
-		signer   = types.MakeSigner(bc.Config(), block.Number(), block.Time())
-	)
-	vmenv := vm.NewEVM(blockCtx, vm.TxContext{}, db, bc.Config(), vm.Config{})
-	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
-		core.ProcessBeaconBlockRoot(*beaconRoot, vmenv, db)
+	stateProcessor := core.NewStateProcessor(bc.Config(), bc, bc.Engine())
+	_, _, _, err = stateProcessor.Process(block, db, vm.Config{})
+	if err != nil {
+		return nil, err
 	}
-	for i, tx := range txs {
-		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
-		db.SetTxContext(tx.Hash(), i)
-		if _, err = core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
-			return nil, fmt.Errorf("tracing failed: %w", err)
-		}
-		db.Finalise(true)
+	if _, err = db.Commit(block.NumberU64(), true); err != nil {
+		return nil, err
 	}
-	consensusEngine := beacon.New(ethash.NewFaker())
-
-	consensusEngine.Finalize(bc, block.Header(), db, block.Transactions(), block.Uncles(), block.Withdrawals())
-	root, err := db.Commit(block.NumberU64(), true)
-
-	_ = root
-
 	proof := db.Witness()
 	proof.Block = block
 	enc, err := proof.EncodeRLP()

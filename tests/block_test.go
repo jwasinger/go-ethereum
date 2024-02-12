@@ -124,6 +124,10 @@ func TestStatelessBlockchain(t *testing.T) {
 
 	// skip uncle tests for stateless
 	bt.skipLoad(`.*/UnclePopulation.json`)
+	// skip this test in stateless because it uses 5000 blocks and the
+	// historical state of older blocks is unavailable for stateless
+	// test verification after importing the test set.
+	bt.skipLoad(`.*/bcWalletTest/walletReorganizeOwners.json`)
 
 	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
 		if runtime.GOARCH == "386" && runtime.GOOS == "windows" && rand.Int63()%2 == 0 {
