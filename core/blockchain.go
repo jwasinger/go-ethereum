@@ -259,10 +259,7 @@ type BlockChain struct {
 	forker     *ForkChoice
 	vmConfig   vm.Config
 
-	// HTTP endpoint for stateless block validation
-	crossValidatorEndpoint string
-	// path to dump witnesses to disk when cross-validation fails
-	witnessRecordingPath string
+	crossValidator *crossValidator
 }
 
 // NewBlockchainWithCrossValidator returns a Blockchain configured to cross-validate imported blocks against a single
@@ -270,8 +267,7 @@ type BlockChain struct {
 // remote endpoint.  If validation fails, they are dumped to the folder specified at witnessRecordingPath
 func NewBlockchainWithCrossValidator(endpoint string, witnessRecordingPath string, db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis, overrides *ChainOverrides, engine consensus.Engine, vmConfig vm.Config, shouldPreserve func(header *types.Header) bool, txLookupLimit *uint64) (*BlockChain, error) {
 	bc, err := NewBlockChain(db, cacheConfig, genesis, overrides, engine, vmConfig, shouldPreserve, txLookupLimit)
-	bc.crossValidatorEndpoint = endpoint
-	bc.witnessRecordingPath = witnessRecordingPath
+	bc.crossValidator = &crossValidator{witnessRecordingPath, endpoint}
 	return bc, err
 }
 
@@ -1398,26 +1394,9 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 	return nil
 }
 
-func (bc *BlockChain) crossValidateBlock(block *types.Block, db *state.StateDB) error {
-	var witness *state.Witness
-	witness = db.Witness()
-	witness.Block = block
-
-	err := crossValidate(bc.crossValidatorEndpoint, witness)
-	if err != nil {
-		if errInner := state.DumpBlockWitnessToFile(bc.chainConfig, witness, bc.witnessRecordingPath); errInner != nil {
-			log.Error("failed to dump block to file", "error", errInner)
-			panic("should not happen")
-		}
-		return err
-	}
-	return nil
-}
-
 // writeBlockWithState writes block, metadata and corresponding state data to the
 // database.
-func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.Receipt, sdb *state.StateDB) error {
-	var err error
+func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.Receipt, statedb *state.StateDB) error {
 	// Calculate the total difficulty of the block
 	ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)
 	if ptd == nil {
@@ -1427,22 +1406,26 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	externTd := new(big.Int).Add(block.Difficulty(), ptd)
 
 	// Commit all cached state changes into underlying memory database.
-	root, err := sdb.Commit(block.NumberU64(), bc.chainConfig.IsEIP158(block.Number()))
+	root, err := statedb.Commit(block.NumberU64(), bc.chainConfig.IsEIP158(block.Number()))
 	if err != nil {
 		return err
 	}
 
-	if bc.crossValidatorEndpoint != "" {
-		err := bc.crossValidateBlock(block, sdb)
+	// TODO: Need to check that we want to cross-validate on all the paths this hits
+	if bc.crossValidator != nil {
+		witness := statedb.Witness()
+		witness.Block = block
+		err := bc.crossValidator.CrossValidateBlock(bc.chainConfig, witness)
 		if err != nil {
 			log.Error("failed to cross validate block", "error", err)
-			if innerErr := state.DumpBlockWitnessToFile(bc.Config(), sdb.Witness(), "block-dump"); innerErr != nil {
+			if innerErr := state.DumpBlockWitnessToFile(bc.Config(), statedb.Witness(), "block-dump"); innerErr != nil {
 				log.Error("failed to store witness to file", "error", innerErr)
 			}
-			// TODO: return err and stop the import in the actual cross-validator logic
+			// TODO: return the error and stop importing the current chain.
+			// I'm leaving it like this so I can watch validation errors as
+			// the client follows the chain.
 		}
 	}
-
 	// Irrelevant of the canonical status, write the block itself to the database.
 	//
 	// Note all the components of block(td, hash->number map, header, body, receipts)
@@ -1451,7 +1434,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	rawdb.WriteTd(blockBatch, block.Hash(), block.NumberU64(), externTd)
 	rawdb.WriteBlock(blockBatch, block)
 	rawdb.WriteReceipts(blockBatch, block.Hash(), block.NumberU64(), receipts)
-	rawdb.WritePreimages(blockBatch, sdb.Preimages())
+	rawdb.WritePreimages(blockBatch, statedb.Preimages())
 	if err := blockBatch.Write(); err != nil {
 		log.Crit("Failed to write block into disk", "err", err)
 	}
@@ -1826,7 +1809,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
-		if bc.crossValidatorEndpoint != "" {
+		if bc.crossValidator != nil {
 			statedb, err = state.NewWithWitnessRecording(parent.Root, bc.stateCache, bc.snaps)
 		} else {
 			statedb, err = state.New(parent.Root, bc.stateCache, bc.snaps)
@@ -1868,7 +1851,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		ptime := time.Since(pstart)
 
 		vstart := time.Now()
-		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
+		if _, err := bc.validator.ValidateState(block, statedb, receipts, usedGas, true); err != nil {
 			bc.reportBlock(block, receipts, err)
 			followupInterrupt.Store(true)
 			return it.index, err

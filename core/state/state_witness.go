@@ -35,7 +35,7 @@ func (w *Witness) Root() common.Hash {
 }
 
 type rlpWitness struct {
-	Block       *types.Block
+	EncBlock    []byte
 	Root        common.Hash
 	Owners      []common.Hash
 	AllPaths    [][]string
@@ -46,9 +46,11 @@ type rlpWitness struct {
 	CodeHashes  []common.Hash
 }
 
-func (e *rlpWitness) ToWitness() *Witness {
+func (e *rlpWitness) ToWitness() (*Witness, error) {
 	res := NewWitness(e.Root)
-	res.Block = e.Block
+	if err := rlp.DecodeBytes(e.EncBlock, &res.Block); err != nil {
+		return nil, err
+	}
 	for i := 0; i < len(e.Codes); i++ {
 		res.codes[e.CodeHashes[i]] = e.Codes[i]
 	}
@@ -62,7 +64,7 @@ func (e *rlpWitness) ToWitness() *Witness {
 	for i, blockNum := range e.BlockNums {
 		res.blockHashes[blockNum] = e.BlockHashes[i]
 	}
-	return res
+	return res, nil
 }
 
 func DecodeWitnessRLP(b []byte) (*Witness, error) {
@@ -70,13 +72,20 @@ func DecodeWitnessRLP(b []byte) (*Witness, error) {
 	if err := rlp.DecodeBytes(b, &res); err != nil {
 		return nil, err
 	}
-	return res.ToWitness(), nil
+	if wit, err := res.ToWitness(); err != nil {
+		return nil, err
+	} else {
+		return wit, nil
+	}
 }
 
 func (w *Witness) EncodeRLP() ([]byte, error) {
 	var encWit rlpWitness
-	encWit.Block = w.Block
-	encWit.Root = w.root
+	var encBlock bytes.Buffer
+	if err := w.Block.EncodeRLPWithZeroRoot(&encBlock); err != nil {
+		return nil, err
+	}
+	encWit.EncBlock = encBlock.Bytes()
 
 	for owner, nodeMap := range w.lists {
 		encWit.Owners = append(encWit.Owners, owner)
@@ -277,8 +286,9 @@ func (w *Witness) sortedWitness() *rlpWitness {
 		codes = append(codes, w.codes[codeHash])
 	}
 
+	encBlock, _ := rlp.EncodeToBytes(w.Block)
 	return &rlpWitness{
-		Block:       w.Block,
+		EncBlock:    encBlock,
 		Root:        common.Hash{},
 		Owners:      owners,
 		AllPaths:    ownersPaths,
@@ -294,7 +304,7 @@ func (w *Witness) sortedWitness() *rlpWitness {
 func (w *Witness) PrettyPrint() string {
 	sorted := w.sortedWitness()
 	b := new(bytes.Buffer)
-	fmt.Fprintf(b, "block: %+v\n", sorted.Block)
+	fmt.Fprintf(b, "block: %+v\n", w.Block)
 	fmt.Fprintf(b, "root: %x\n", sorted.Root)
 	fmt.Fprint(b, "owners:\n")
 	for i, owner := range sorted.Owners {

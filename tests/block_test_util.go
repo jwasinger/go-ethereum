@@ -219,14 +219,14 @@ func (t *BlockTest) run(stateless bool, snapshotter bool, scheme string, tracer 
 			}
 			witness, err := state.DecodeWitnessRLP(enc)
 			if err != nil {
-				return fmt.Errorf("error decoding witness: ${err}")
+				return fmt.Errorf("error decoding witness: %v", err)
 			}
-			success, err := utils.StatelessVerify(os.Stdout, config, witness)
+			root, err := utils.StatelessExecute(os.Stdout, config, witness)
 			if err != nil {
 				return fmt.Errorf("verification execution error: %v", err)
 			}
-			if !success {
-				return fmt.Errorf("verification return false")
+			if root != blk.BlockHeader.StateRoot {
+				return fmt.Errorf("state root mismatch (wanted: %x, got: %x)", blk.BlockHeader.StateRoot, root)
 			}
 		}
 	}

@@ -165,12 +165,12 @@ func execCmd(ctx *cli.Context) error {
 
 	chainConfig := loadChainConfig(ctx.String(ChainConfigFlag.Name))
 
-	correct, err := utils.StatelessVerify(os.Stdout, chainConfig, witness)
+	localRoot, err := utils.StatelessExecute(os.Stdout, chainConfig, witness)
 	if err != nil {
 		panic(err)
 	}
-	if !correct {
-		panic("not correct")
+	if localRoot != witness.Block.Root() {
+		return fmt.Errorf("state root mismatch (local: %x, remote: %x)", localRoot, witness.Block.Root())
 	}
 	return nil
 }

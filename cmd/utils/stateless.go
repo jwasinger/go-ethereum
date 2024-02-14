@@ -3,61 +3,55 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"io"
 	"net"
 	"net/http"
-	"os"
 )
 
-func StatelessVerify(logOutput io.Writer, chainCfg *params.ChainConfig, witness *state.Witness) (success bool, err error) {
-	var vmConfig vm.Config
-	logconfig := &logger.Config{
-		EnableMemory:     false,
-		DisableStack:     false,
-		DisableStorage:   false,
-		EnableReturnData: true,
-		Debug:            true,
-	}
-	tracer := logger.NewJSONLogger(logconfig, os.Stdout)
-	_ = tracer
-	//vmConfig.Tracer = tracer
-
+func StatelessExecute(logOutput io.Writer, chainCfg *params.ChainConfig, witness *state.Witness) (root common.Hash, err error) {
 	rawDb := rawdb.NewMemoryDatabase()
 	if err := witness.PopulateDB(rawDb); err != nil {
-		return false, err
+		return common.Hash{}, err
 	}
-	db, err := state.New(witness.Root(), state.NewDatabaseWithConfig(rawDb, trie.PathDefaults), nil)
+	_, prestateRoot := rawdb.ReadAccountTrieNode(rawDb, nil)
+
+	db, err := state.New(prestateRoot, state.NewDatabaseWithConfig(rawDb, trie.PathDefaults), nil)
 	if err != nil {
-		return false, err
+		return common.Hash{}, err
 	}
 	engine := beacon.New(ethash.NewFaker())
 	validator := core.NewStatelessBlockValidator(chainCfg, engine)
 	chainCtx := core.NewStatelessChainContext(rawDb, engine)
 	processor := core.NewStatelessStateProcessor(chainCfg, chainCtx, engine)
 
-	receipts, _, usedGas, err := processor.ProcessStateless(witness, witness.Block, db, vmConfig)
+	receipts, _, usedGas, err := processor.ProcessStateless(witness, witness.Block, db, vm.Config{})
 	if err != nil {
-		return false, err
+		return common.Hash{}, err
 	}
-	//fmt.Printf("stateless used gas is %d\n", usedGas)
-	if err := validator.ValidateState(witness.Block, db, receipts, usedGas); err != nil {
-		return false, err
+	// compute the state root.  skip validation of computed root against
+	// the one provided in the block because this value is omitted from
+	// the witness.
+	if root, err = validator.ValidateState(witness.Block, db, receipts, usedGas, false); err != nil {
+		return common.Hash{}, err
 	}
-	// TODO: differentiate between state-root mismatch (possible consensus failure) and other errors stemming from
-	// invalid/malformed witness
-	return true, nil
+	// TODO: how to differentiate between errors that are definitely not consensus-failure caused, and ones
+	// that could be?
+	return root, nil
 }
 
+// RunLocalServer runs an http server at the specified port (or 0 to use a random port).
+// The server provides a POST endpoint /verify_block which takes input as an RLP-encoded
+// block witness proof in the body, executes the block proof and returns the computed state root.
 func RunLocalServer(chainConfig *params.ChainConfig, port int) (closeChan chan<- struct{}, actualPort int, err error) {
 	mux := http.NewServeMux()
 	mux.Handle("/verify_block", &verifyHandler{chainConfig})
@@ -122,20 +116,14 @@ func (v *verifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	correct, err := StatelessVerify(nil, v.chainConfig, witness)
+	root, err := StatelessExecute(nil, v.chainConfig, witness)
 	if err != nil {
 		respError("error verifying stateless proof", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	if correct {
-		if _, err := w.Write([]byte("ok")); err != nil {
-			log.Error("error writing response", "error", err)
-		}
-	} else {
-		if _, err := w.Write([]byte("bad")); err != nil {
-			log.Error("error writing response", "error", err)
-		}
+	if _, err := w.Write(root[:]); err != nil {
+		log.Error("error writing response", "error", err)
 	}
 }
