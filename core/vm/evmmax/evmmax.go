@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/big"
+	"math/bits"
 )
 
 type arithFunc func(m *ModState, out, x, y []byte)
@@ -80,17 +81,8 @@ func NewModState(modulus []byte, valsUsed uint) (*ModState, error) {
 		e.RSquared[len(e.Mod)-i-1], e.RSquared[i] = e.RSquared[i], e.RSquared[len(e.Mod)-i-1]
 	}
 
-	// TODO: this choice is specific to 64bit systems (1 << 64)
-	littleRVal, _ := new(big.Int).SetString("10000000000000000", 16)
-
-	mod_uint64 := binary.BigEndian.Uint64(mod[len(mod)-8:])
-	negModInt := new(big.Int)
-	negModInt.SetUint64(mod_uint64)
-	negModInt.Sub(littleRVal, negModInt)
-	modInv := new(big.Int)
-	modInv.ModInverse(negModInt, littleRVal)
-
-	e.modInv = modInv.Uint64()
+	mod_uint64 := uint(binary.BigEndian.Uint64(mod[len(mod)-8:]))
+	e.modInv = uint64(negModInverse(mod_uint64))
 
     // TODO: configure asm or fallback choice with build tags
     e.AddMod = AddMod384Fallback
@@ -100,6 +92,17 @@ func NewModState(modulus []byte, valsUsed uint) (*ModState, error) {
 	e.Memory = make([]byte, mod_len_padded*int(valsUsed))
 
 	return &e, nil
+}
+
+func negModInverse(mod uint) uint {
+	k0 := 2 - mod
+	t := mod - 1
+	for i := 1; i < bits.UintSize; i <<= 1 {
+		t *= t
+		k0 *= (t + 1)
+	}
+	k0 = -k0
+	return k0
 }
 
 func (m *ModState) LoadValues(dst []byte, startIdx uint) {
