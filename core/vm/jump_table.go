@@ -26,7 +26,7 @@ type (
 	executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
 	gasFunc       func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
 	// memorySizeFunc returns the required size, and whether the operation overflowed a uint64
-	memorySizeFunc func(*Stack) (size uint64, overflow bool)
+	memorySizeFunc func(*ScopeContext, *Stack) (fieldAllocSize uint64, memSize uint64, overflow bool)
 )
 
 type operation struct {
@@ -1022,6 +1022,23 @@ func newFrontierInstructionSet() JumpTable {
 			maxStack:   maxStack(6, 0),
 			memorySize: memoryLog,
 		},
+		SETUPX: {
+			execute:     opSetupx,
+			constantGas: params.SetupxGas,
+			minStack:    minStack(4, 0),
+			maxStack:    maxStack(4, 0),
+			memorySize:  memorySetupx,
+		},
+		LOADX: {
+			execute:     opLoadx,
+			constantGas: params.LoadxGas,
+			minStack:    minStack(3, 0),
+			maxStack:    maxStack(3, 0),
+		},
+		STOREX:  {},
+		ADDMODX: {},
+		SUBMODX: {},
+		MULMODX: {},
 		CREATE: {
 			execute:     opCreate,
 			constantGas: params.CreateGas,
