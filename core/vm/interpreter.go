@@ -86,11 +86,9 @@ func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
 	if id.ToBig().Cmp(big.NewInt(256)) > 0 {
 		return 0, fmt.Errorf("id cannot be greater than 256")
 	}
-
 	if modSize.ToBig().Cmp(big.NewInt(96)) > 0 {
 		return 0, fmt.Errorf("modulus cannot exceed 768 bits in width")
 	}
-
 	if elemCount.ToBig().Cmp(big.NewInt(256)) > 0 {
 		return 0, fmt.Errorf("field element count cannot be over 256")
 	}
