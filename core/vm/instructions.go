@@ -882,7 +882,7 @@ func makeLog(size int) executionFunc {
 	}
 }
 
-func opSetmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opSetupx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	id, modOffset, modSize, allocSize := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
 	modulus := scope.Memory.GetCopy(int64(modOffset.Uint64()), int64(modSize.Uint64()))
 

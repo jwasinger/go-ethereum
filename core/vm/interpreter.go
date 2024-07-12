@@ -18,6 +18,7 @@ package vm
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/params"
 	evmmax_arith "github.com/jwasinger/evmmax-arith"
 	"math/big"
 
@@ -60,8 +61,12 @@ func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) 
 	}
 	f.alloced[id] = fieldContext
 	f.active = fieldContext
-	f.allocedSize += fieldContext.AllocedSize()
+	f.allocedSize += uint64(fieldContext.AllocedSize())
 	return nil
+}
+
+func (f *fieldAllocs) AllocSize() uint64 {
+	return f.allocedSize
 }
 
 func (f *fieldAllocs) SetActive(id uint) error {
@@ -76,18 +81,18 @@ func (f *fieldAllocs) SetActive(id uint) error {
 func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
 	id := stack.Back(0)
 	modSize := stack.Back(2)
-	allocSize := stack.Back(3)
+	elemCount := stack.Back(3)
 
 	if id.ToBig().Cmp(big.NewInt(256)) > 0 {
-		// invalid...
+		return 0, fmt.Errorf("id cannot be greater than 256")
 	}
 
 	if modSize.ToBig().Cmp(big.NewInt(96)) > 0 {
-		// invalid
+		return 0, fmt.Errorf("modulus cannot exceed 768 bits in width")
 	}
 
-	if allocSize.ToBig().Cmp(big.NewInt(256)) > 0 {
-		// invalid
+	if elemCount.ToBig().Cmp(big.NewInt(256)) > 0 {
+		return 0, fmt.Errorf("field element count cannot be over 256")
 	}
 
 	_, ok := f.alloced[uint(id.Uint64())]
@@ -95,8 +100,8 @@ func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
 		return 0, nil
 	}
 
-	allocSize := f.allocedSize + allocSize.Uint64()*modSize.Uint64()
-	if allocSize >= params.maxModExtAllocSize {
+	allocSize := f.allocedSize + elemCount.Uint64()*uint64(f.active.ElemSize())
+	if allocSize >= uint64(params.MaxModExtAllocSize) {
 		return 0, fmt.Errorf("alloc size greater than max allowed per call")
 	}
 	return allocSize, nil
@@ -312,7 +317,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// Memory check needs to be done prior to evaluating the dynamic gas portion,
 			// to detect calculation overflows
 			if operation.memorySize != nil {
-				fieldAllocSize, memSize, overflow, err := operation.memorySize(callContext, stack)
+				memSize, overflow, err := operation.memorySize(callContext, stack)
 				if err != nil {
 					return nil, err
 				}
