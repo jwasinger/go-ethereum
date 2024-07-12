@@ -65,9 +65,9 @@ func memoryGasCost(scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64,
 // EXTCODECOPY (stack position 3)
 // RETURNDATACOPY (stack position 2)
 func memoryCopierGas(stackpos int) gasFunc {
-	return func(evm *EVM, scope *CallContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		// Gas for expanding the memory
-		gas, err := memoryGasCost(mem, memorySize)
+		gas, err := memoryGasCost(scope, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
@@ -181,22 +181,22 @@ func gasSStore(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 //			(2.2.2.) If original value equals new value (this storage slot is reset):
 //				(2.2.2.1.) If original value is 0, add SSTORE_SET_GAS - SLOAD_GAS to refund counter.
 //				(2.2.2.2.) Otherwise, add SSTORE_RESET_GAS - SLOAD_GAS gas to refund counter.
-func gasSStoreEIP2200(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSStoreEIP2200(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// If we fail the minimum gas availability invariant, fail (0)
-	if contract.Gas <= params.SstoreSentryGasEIP2200 {
+	if scope.Contract.Gas <= params.SstoreSentryGasEIP2200 {
 		return 0, errors.New("not enough gas for reentrancy sentry")
 	}
 	// Gas sentry honoured, do the actual gas calculation based on the stored value
 	var (
 		y, x    = stack.Back(1), stack.Back(0)
-		current = evm.StateDB.GetState(contract.Address(), x.Bytes32())
+		current = evm.StateDB.GetState(scope.Contract.Address(), x.Bytes32())
 	)
 	value := common.Hash(y.Bytes32())
 
 	if current == value { // noop (1)
 		return params.SloadGasEIP2200, nil
 	}
-	original := evm.StateDB.GetCommittedState(contract.Address(), x.Bytes32())
+	original := evm.StateDB.GetCommittedState(scope.Contract.Address(), x.Bytes32())
 	if original == current {
 		if original == (common.Hash{}) { // create slot (2.1.1)
 			return params.SstoreSetGasEIP2200, nil
@@ -508,13 +508,50 @@ func gasSetupx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 	precompCost := uint64(params.SetupxPrecompCost[scope.modExtState.active.ElemSize()/8])
 	// overflow error unchecked because memorySize is already validated
 	memCost, _ := memoryGasCost(scope, mem, memorySize)
+	// TODO (check elswhere perhaps): alloc size cannot be 0
 	return precompCost + memCost, nil
 }
 
 func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	// storex_base + numElements * cost_mulmodx(limb size)
+	if scope.modExtState.active == nil {
+		return 0, errors.New("no active mod state")
+	}
+	src := stack.pop()
+	dst := stack.pop()
+	count := stack.pop()
+
+	if !src.IsUint64() || int(src.Uint64()) >= mem.Len() {
+		return 0, errors.New("source of copy must be uint64")
+	}
+	if !dst.IsUint64() || dst.Uint64() >= 256 {
+		return 0, errors.New("destination of copy is greater than 255")
+	}
+	if !count.IsUint64() || uint(count.Uint64()+src.Uint64()) >= scope.modExtState.active.NumElems() {
+		return 0, errors.New("out-of-bounds copy destination")
+	}
+	if int(src.Uint64()+count.Uint64()*uint64(scope.modExtState.active.ElemSize())) >= mem.Len() {
+		return 0, errors.New("out of bounds source copy")
+	}
+
+	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.NumElems())-1]), nil
 }
 
 func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	// loadx_base + numElements * cost_mulmodx(limb size)
+	if scope.modExtState.active == nil {
+		return 0, errors.New("no active mod state")
+	}
+	src := stack.pop()
+	dst := stack.pop()
+	count := stack.pop()
+
+	if !src.IsUint64() || uint(src.Uint64()) >= scope.modExtState.active.NumElems() {
+		return 0, errors.New("out of bounds source")
+	}
+	if !count.IsUint64() || uint(count.Uint64()) >= scope.modExtState.active.NumElems() || uint64(count.Uint64())+src.Uint64() >= uint64(scope.modExtState.active.NumElems()) {
+		return 0, errors.New("fk")
+	}
+	if !dst.IsUint64() || dst.Uint64()+uint64(scope.modExtState.active.ElemSize())*count.Uint64() >= uint64(mem.Len()) {
+		return 0, errors.New("out of bounds destination copy")
+	}
+	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.NumElems())-1]), nil
 }

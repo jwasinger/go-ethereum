@@ -197,8 +197,11 @@ var (
 
 // EVM Modular Arithmetic Extensions
 var (
-	SetupxPrecompCost  = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	MontMulCost        = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	AddOrSubCost       = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	MaxModExtAllocSize = 1234
+	SetupxPrecompCost   = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	MontMulCost         = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	AddOrSubCost        = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	MaxModExtAllocSize  = 1234
+	ExtModArithBaseCost = 1
+	StorexBaseCost      = 3
+	LoadxBaseCost       = 3
 )
