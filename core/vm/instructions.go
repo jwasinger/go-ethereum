@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -879,6 +880,66 @@ func makeLog(size int) executionFunc {
 
 		return nil, nil
 	}
+}
+
+func opSetmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	id, modOffset, modSize, allocSize := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	modulus := scope.Memory.GetCopy(int64(modOffset.Uint64()), int64(modSize.Uint64()))
+
+	if err := scope.modExtState.AllocAndSetActive(uint(id.Uint64()), modulus, int(allocSize.Uint64())); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func opLoadx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	source, dest, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active field context")
+	}
+	destBuf := scope.Memory.GetPtr(int64(dest.Uint64()), int64(uint(count.Uint64())*scope.modExtState.active.ElemSize()))
+	scope.modExtState.active.Load(destBuf, int(source.Uint64()), int(count.Uint64()))
+	return nil, nil
+}
+
+func opStorex(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	return nil, nil
+}
+
+func opAddmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active field context")
+	}
+	out := uint(scope.Contract.Code[*pc+1])
+	x := uint(scope.Contract.Code[*pc+2])
+	y := uint(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	return nil, scope.modExtState.active.AddMod(out, x, y)
+}
+
+func opSubmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active field context")
+	}
+	out := uint(scope.Contract.Code[*pc+1])
+	x := uint(scope.Contract.Code[*pc+2])
+	y := uint(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	return nil, scope.modExtState.active.SubMod(out, x, y)
+}
+
+func opMulmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active field context")
+	}
+	out := uint(scope.Contract.Code[*pc+1])
+	x := uint(scope.Contract.Code[*pc+2])
+	y := uint(scope.Contract.Code[*pc+3])
+	*pc += 3
+
+	return nil, scope.modExtState.active.MulMod(out, x, y)
 }
 
 // opPush1 is a specialized version of pushN

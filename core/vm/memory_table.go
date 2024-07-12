@@ -16,120 +16,125 @@
 
 package vm
 
-func memoryKeccak256(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryKeccak256(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryCallDataCopy(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryCallDataCopy(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(2))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryReturnDataCopy(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryReturnDataCopy(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(2))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryCodeCopy(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryCodeCopy(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(2))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryExtCodeCopy(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryExtCodeCopy(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(1), stack.Back(3))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryMLoad(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryMLoad(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64WithUint(stack.Back(0), 32)
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryMStore8(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryMStore8(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64WithUint(stack.Back(0), 1)
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryMStore(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryMStore(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64WithUint(stack.Back(0), 32)
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryMcopy(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryMcopy(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	mStart := stack.Back(0) // stack[0]: dest
 	if stack.Back(1).Gt(mStart) {
 		mStart = stack.Back(1) // stack[1]: source
 	}
 	evmMemUsed, overflow := calcMemSize64(mStart, stack.Back(2)) // stack[2]: length
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryCreate(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryCreate(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryCreate2(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryCreate2(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryCall(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryCall(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	x, overflow := calcMemSize64(stack.Back(5), stack.Back(6))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	y, overflow := calcMemSize64(stack.Back(3), stack.Back(4))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	if x > y {
-		return 0, x, false
+		return x, false, nil
 	}
-	return 0, y, false
+	return y, false, nil
 }
-func memoryDelegateCall(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryDelegateCall(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	x, overflow := calcMemSize64(stack.Back(4), stack.Back(5))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	y, overflow := calcMemSize64(stack.Back(2), stack.Back(3))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	if x > y {
-		return 0, x, false
+		return x, false, nil
 	}
-	return 0, y, false
+	return y, false, nil
 }
 
-func memoryStaticCall(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryStaticCall(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	x, overflow := calcMemSize64(stack.Back(4), stack.Back(5))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	y, overflow := calcMemSize64(stack.Back(2), stack.Back(3))
 	if overflow {
-		return 0, 0, true
+		return 0, true, nil
 	}
 	if x > y {
-		return 0, x, false
+		return x, false, nil
 	}
-	return 0, y, false
+	return y, false, nil
 }
 
-func memoryReturn(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryReturn(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryRevert(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryRevert(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
 }
 
-func memoryLog(_ *ScopeContext, stack *Stack) (uint64, uint64, bool) {
+func memoryLog(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
-	return 0, evmMemUsed, overflow
+	return evmMemUsed, overflow, nil
+}
+
+func memorySetupx(scope *ScopeContext, stack *Stack) (uint64, bool, error) {
+	memUsed, err := scope.modExtState.CalcMemAlloc(stack)
+	return memUsed, false, err
 }

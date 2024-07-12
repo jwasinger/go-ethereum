@@ -18,6 +18,8 @@ package vm
 
 import (
 	"fmt"
+	evmmax_arith "github.com/jwasinger/evmmax-arith"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -39,9 +41,65 @@ type Config struct {
 // ScopeContext contains the things that are per-call, such as stack and memory,
 // but not transients like pc and gas
 type ScopeContext struct {
-	Memory   *Memory
-	Stack    *Stack
-	Contract *Contract
+	Memory      *Memory
+	Stack       *Stack
+	Contract    *Contract
+	modExtState fieldAllocs
+}
+
+type fieldAllocs struct {
+	alloced     map[uint]*evmmax_arith.FieldContext
+	active      *evmmax_arith.FieldContext
+	allocedSize uint64
+}
+
+func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) error {
+	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize)
+	if err != nil {
+		return err
+	}
+	f.alloced[id] = fieldContext
+	f.active = fieldContext
+	f.allocedSize += fieldContext.AllocedSize()
+	return nil
+}
+
+func (f *fieldAllocs) SetActive(id uint) error {
+	fieldContext, ok := f.alloced[id]
+	if !ok {
+		return fmt.Errorf("no field context corresponds to given id")
+	}
+	f.active = fieldContext
+	return nil
+}
+
+func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
+	id := stack.Back(0)
+	modSize := stack.Back(2)
+	allocSize := stack.Back(3)
+
+	if id.ToBig().Cmp(big.NewInt(256)) > 0 {
+		// invalid...
+	}
+
+	if modSize.ToBig().Cmp(big.NewInt(96)) > 0 {
+		// invalid
+	}
+
+	if allocSize.ToBig().Cmp(big.NewInt(256)) > 0 {
+		// invalid
+	}
+
+	_, ok := f.alloced[uint(id.Uint64())]
+	if ok {
+		return 0, nil
+	}
+
+	allocSize := f.allocedSize + allocSize.Uint64()*modSize.Uint64()
+	if allocSize >= params.maxModExtAllocSize {
+		return 0, fmt.Errorf("alloc size greater than max allowed per call")
+	}
+	return allocSize, nil
 }
 
 // MemoryData returns the underlying memory slice. Callers must not modify the contents
@@ -254,13 +312,17 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// Memory check needs to be done prior to evaluating the dynamic gas portion,
 			// to detect calculation overflows
 			if operation.memorySize != nil {
-				memSize, overflow := operation.memorySize(stack)
+				fieldAllocSize, memSize, overflow, err := operation.memorySize(callContext, stack)
+				if err != nil {
+					return nil, err
+				}
 				if overflow {
 					return nil, ErrGasUintOverflow
 				}
 				// memory is expanded in words of 32 bytes. Gas
 				// is also calculated in words.
-				if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+				memorySize, overflow = math.SafeMul(toWordSize(memSize), 32)
+				if overflow {
 					return nil, ErrGasUintOverflow
 				}
 			}

@@ -24,9 +24,9 @@ import (
 
 type (
 	executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
-	gasFunc       func(*EVM, *Contract, *Stack, *Memory, uint64) (uint64, error) // last parameter is the requested memory size as a uint64
+	gasFunc       func(evm *EVM, contract *Contract, stack *Stack, memory *Memory, evmMemorySize uint64) (uint64, error) // last parameters are the requested memory sizes as uint64
 	// memorySizeFunc returns the required size, and whether the operation overflowed a uint64
-	memorySizeFunc func(*ScopeContext, *Stack) (fieldAllocSize uint64, memSize uint64, overflow bool)
+	memorySizeFunc func(*ScopeContext, *Stack) (memSize uint64, overflow bool, err error)
 )
 
 type operation struct {
@@ -1025,6 +1025,7 @@ func newFrontierInstructionSet() JumpTable {
 		SETUPX: {
 			execute:     opSetupx,
 			constantGas: params.SetupxGas,
+			dynamicGas:  gasSetupx,
 			minStack:    minStack(4, 0),
 			maxStack:    maxStack(4, 0),
 			memorySize:  memorySetupx,
@@ -1032,13 +1033,35 @@ func newFrontierInstructionSet() JumpTable {
 		LOADX: {
 			execute:     opLoadx,
 			constantGas: params.LoadxGas,
+			dynamicGas:  gasLoadx,
 			minStack:    minStack(3, 0),
 			maxStack:    maxStack(3, 0),
 		},
-		STOREX:  {},
-		ADDMODX: {},
-		SUBMODX: {},
-		MULMODX: {},
+		STOREX: {
+			execute:     opStorex,
+			constantGas: params.StorexGas,
+			dynamicGas:  gasStorex,
+			minStack:    minStack(3, 0),
+			maxStack:    maxStack(3, 0),
+		},
+		ADDMODX: {
+			execute:     opAddmodx,
+			constantGas: 1,
+			minStack:    minStack(0, 0),
+			maxStack:    maxStack(0, 0),
+		},
+		SUBMODX: {
+			execute:     opSubmodx,
+			constantGas: 1,
+			minStack:    minStack(0, 0),
+			maxStack:    maxStack(0, 0),
+		},
+		MULMODX: {
+			execute:     opMulmodx,
+			constantGas: 1,
+			minStack:    minStack(0, 0),
+			maxStack:    maxStack(0, 0),
+		},
 		CREATE: {
 			execute:     opCreate,
 			constantGas: params.CreateGas,
