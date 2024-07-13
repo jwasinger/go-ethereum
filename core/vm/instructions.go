@@ -893,7 +893,7 @@ func opSetupx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 }
 
 func opLoadx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	source, dest, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	dest, source, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
 	if scope.modExtState.active == nil {
 		return nil, fmt.Errorf("no active field context")
 	}
@@ -903,7 +903,12 @@ func opLoadx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 }
 
 func opStorex(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	return nil, nil
+	dest, source, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active field context")
+	}
+	srcBuf := scope.Memory.GetPtr(int64(source.Uint64()), int64(uint(count.Uint64())*scope.modExtState.active.ElemSize()))
+	return nil, scope.modExtState.active.Store(uint(dest.Uint64()), uint(count.Uint64()), srcBuf)
 }
 
 func opAddmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {

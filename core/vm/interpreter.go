@@ -98,7 +98,8 @@ func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
 		return 0, nil
 	}
 
-	allocSize := f.allocedSize + elemCount.Uint64()*uint64(f.active.ElemSize())
+	paddedModSize := (modSize.Uint64() + 7) / 8
+	allocSize := f.allocedSize + elemCount.Uint64()*paddedModSize
 	if allocSize >= uint64(params.MaxModExtAllocSize) {
 		return 0, fmt.Errorf("alloc size greater than max allowed per call")
 	}
@@ -238,9 +239,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		mem         = NewMemory() // bound memory
 		stack       = newstack()  // local stack
 		callContext = &ScopeContext{
-			Memory:   mem,
-			Stack:    stack,
-			Contract: contract,
+			Memory:      mem,
+			Stack:       stack,
+			Contract:    contract,
+			modExtState: fieldAllocs{alloced: make(map[uint]*evmmax_arith.FieldContext)},
 		}
 		// For optimisation reason we're using uint64 as the program counter.
 		// It's theoretically possible to go above 2^64. The YP defines the PC

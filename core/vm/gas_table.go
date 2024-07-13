@@ -505,7 +505,9 @@ func gasSelfdestruct(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, m
 
 func gasSetupx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// cost = setmodx_precompute(elemSize) + evm_mem_alloc_cost(memorySize)
-	precompCost := uint64(params.SetupxPrecompCost[scope.modExtState.active.ElemSize()/8])
+	modSize := stack.Back(2)
+	paddedModSize := (modSize.Uint64() + 7) / 8
+	precompCost := uint64(params.SetupxPrecompCost[paddedModSize])
 	// overflow error unchecked because memorySize is already validated
 	memCost, _ := memoryGasCost(scope, mem, memorySize)
 	// TODO (check elswhere perhaps): alloc size cannot be 0
@@ -516,9 +518,9 @@ func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 	if scope.modExtState.active == nil {
 		return 0, errors.New("no active mod state")
 	}
-	src := stack.pop()
-	dst := stack.pop()
-	count := stack.pop()
+	dst := stack.Back(0)
+	src := stack.Back(1)
+	count := stack.Back(2)
 
 	if !src.IsUint64() || int(src.Uint64()) >= mem.Len() {
 		return 0, errors.New("source of copy must be uint64")
@@ -540,9 +542,9 @@ func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySi
 	if scope.modExtState.active == nil {
 		return 0, errors.New("no active mod state")
 	}
-	src := stack.pop()
-	dst := stack.pop()
-	count := stack.pop()
+	dst := stack.Back(0)
+	src := stack.Back(1)
+	count := stack.Back(2)
 
 	if !src.IsUint64() || uint(src.Uint64()) >= scope.modExtState.active.NumElems() {
 		return 0, errors.New("out of bounds source")
