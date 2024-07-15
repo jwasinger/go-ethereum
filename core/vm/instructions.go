@@ -920,6 +920,9 @@ func opAddmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	y := uint(scope.Contract.Code[*pc+3])
 	*pc += 3
 
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active modstate")
+	}
 	return nil, scope.modExtState.active.AddMod(out, x, y)
 }
 
@@ -932,6 +935,9 @@ func opSubmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	y := uint(scope.Contract.Code[*pc+3])
 	*pc += 3
 
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active modstate")
+	}
 	return nil, scope.modExtState.active.SubMod(out, x, y)
 }
 
@@ -943,7 +949,10 @@ func opMulmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	x := uint(scope.Contract.Code[*pc+2])
 	y := uint(scope.Contract.Code[*pc+3])
 	*pc += 3
-
+	
+	if scope.modExtState.active == nil {
+		return nil, fmt.Errorf("no active modstate")
+	}
 	return nil, scope.modExtState.active.MulMod(out, x, y)
 }
 
