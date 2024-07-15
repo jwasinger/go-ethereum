@@ -40,7 +40,8 @@ func memoryGasCost(scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64,
 		return 0, ErrGasUintOverflow
 	}
 	newMemSizeWords := toWordSize(newMemSize)
-	newMemSize = newMemSizeWords*32 + scope.modExtState.AllocSize()
+
+	newMemSize = newMemSizeWords * 32 //+ scope.modExtState.AllocSize() // TODO: fix new memory pricing
 
 	if newMemSize > uint64(mem.Len()) {
 		square := newMemSizeWords * newMemSizeWords
@@ -528,10 +529,10 @@ func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 	if !dst.IsUint64() || dst.Uint64() >= 256 {
 		return 0, errors.New("destination of copy is greater than 255")
 	}
-	if !count.IsUint64() || uint(count.Uint64()+src.Uint64()) >= scope.modExtState.active.NumElems() {
+	if !count.IsUint64() || uint(count.Uint64()+src.Uint64()) > scope.modExtState.active.NumElems() {
 		return 0, errors.New("out-of-bounds copy destination")
 	}
-	if int(src.Uint64()+count.Uint64()*uint64(scope.modExtState.active.ElemSize())) >= mem.Len() {
+	if int(src.Uint64()+count.Uint64()*uint64(scope.modExtState.active.ElemSize())) > mem.Len() {
 		return 0, errors.New("out of bounds source copy")
 	}
 
