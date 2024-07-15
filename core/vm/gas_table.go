@@ -535,7 +535,7 @@ func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 		return 0, errors.New("out of bounds source copy")
 	}
 
-	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.NumElems())-1]), nil
+	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
 }
 
 func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -555,5 +555,5 @@ func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySi
 	if !dst.IsUint64() || dst.Uint64()+uint64(scope.modExtState.active.ElemSize())*count.Uint64() >= uint64(mem.Len()) {
 		return 0, errors.New("out of bounds destination copy")
 	}
-	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.NumElems())-1]), nil
+	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
 }
