@@ -18,7 +18,6 @@ package vm
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/params"
 	evmmax_arith "github.com/jwasinger/evmmax-arith"
 	"math/big"
 
@@ -100,9 +99,12 @@ func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
 
 	paddedModSize := (modSize.Uint64() + 7) / 8
 	allocSize := f.allocedSize + elemCount.Uint64()*paddedModSize
-	if allocSize >= uint64(params.MaxModExtAllocSize) {
-		return 0, fmt.Errorf("alloc size greater than max allowed per call")
-	}
+	/*
+		// TODO: define this constant properly and then re-add in this logic
+		if allocSize >= uint64(params.MaxModExtAllocSize) {
+			return 0, fmt.Errorf("alloc size greater than max allowed per call")
+		}
+	*/
 	return allocSize, nil
 }
 

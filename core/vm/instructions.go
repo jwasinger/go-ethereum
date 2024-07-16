@@ -894,6 +894,7 @@ func opSetupx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 
 func opLoadx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	dest, source, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	// TODO: move below check into the dynamic gas handler
 	if scope.modExtState.active == nil {
 		return nil, fmt.Errorf("no active field context")
 	}
@@ -904,6 +905,7 @@ func opLoadx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 
 func opStorex(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	dest, source, count := scope.Stack.pop(), scope.Stack.pop(), scope.Stack.pop()
+	// TODO: move below check into the dynamic gas handler
 	if scope.modExtState.active == nil {
 		return nil, fmt.Errorf("no active field context")
 	}
@@ -949,7 +951,7 @@ func opMulmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	x := uint(scope.Contract.Code[*pc+2])
 	y := uint(scope.Contract.Code[*pc+3])
 	*pc += 3
-	
+
 	if scope.modExtState.active == nil {
 		return nil, fmt.Errorf("no active modstate")
 	}
