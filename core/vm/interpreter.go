@@ -54,7 +54,7 @@ type fieldAllocs struct {
 }
 
 func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) error {
-	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize)
+	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize, evmmax_arith.FallBackOnly)
 	if err != nil {
 		return err
 	}
