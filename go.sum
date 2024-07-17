@@ -357,6 +357,8 @@ github.com/jwasinger/evmmax-arith v0.0.0-20240715200700-dc000e3ee8ea h1:Gxe/DBWj
 github.com/jwasinger/evmmax-arith v0.0.0-20240715200700-dc000e3ee8ea/go.mod h1:nz1RE8DNCfQycJI4AqfOYbEC1+Uugxvv1ywAvJr5sOs=
 github.com/jwasinger/evmmax-arith v0.0.0-20240716202839-59145c020c50 h1:BjRkDwue5q2xU070V7v3pxj5otiTfpxT3FmMz6JVySE=
 github.com/jwasinger/evmmax-arith v0.0.0-20240716202839-59145c020c50/go.mod h1:nz1RE8DNCfQycJI4AqfOYbEC1+Uugxvv1ywAvJr5sOs=
+github.com/jwasinger/evmmax-arith v0.0.0-20240717010454-1c02d6bae621 h1:R3hQWdBJnt16igpB5NuiJWYm6k4NgpZ7YJqJSBKvhOA=
+github.com/jwasinger/evmmax-arith v0.0.0-20240717010454-1c02d6bae621/go.mod h1:nz1RE8DNCfQycJI4AqfOYbEC1+Uugxvv1ywAvJr5sOs=
 github.com/karalabe/hid v1.0.1-0.20240306101548-573246063e52 h1:msKODTL1m0wigztaqILOtla9HeW1ciscYG4xjLtvk5I=
 github.com/karalabe/hid v1.0.1-0.20240306101548-573246063e52/go.mod h1:qk1sX/IBgppQNcGCRoj90u6EGC056EBoIc1oEjCWla8=
 github.com/kilic/bls12-381 v0.1.0 h1:encrdjqKMEvabVQ7qYOKu1OvhqpK4s47wDYtNiPtlp4=
