@@ -17,9 +17,10 @@
 package vm
 
 import (
-	"testing"
-
+	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
+	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
 	"github.com/ethereum/go-ethereum/common"
+	"testing"
 )
 
 func FuzzPrecompiledContracts(f *testing.F) {
@@ -40,5 +41,13 @@ func FuzzPrecompiledContracts(f *testing.F) {
 		if inHave := string(input); inWant != inHave {
 			t.Errorf("Precompiled %v modified input data", a)
 		}
+	})
+}
+
+func FuzzBls12381MapG1(f *testing.F) {
+	f.Add([]byte{0})
+	f.Fuzz(func(t *testing.T, input []byte) {
+		elem := new(fp.Element).SetBytes(input)
+		bls12381.MapToG1(*elem)
 	})
 }
