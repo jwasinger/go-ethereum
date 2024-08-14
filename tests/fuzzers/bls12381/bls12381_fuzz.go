@@ -203,12 +203,10 @@ func fuzzCrossG1MultiExp(data []byte) int {
 	cp := new(bls12381.G1Affine)
 	cp.MultiExp(gnarkPoints, gnarkScalars, ecc.MultiExpConfig{})
 
-	/* TODO: add back but compare against reference impl
-	// compare result
-	if !(bytes.Equal(cp.Marshal(), g1.ToBytes(&kp))) {
-		panic("G1 multi exponentiation mismatch gnark / geth ")
+	expected := multiExpG1(gnarkPoints, gnarkScalars)
+	if !bytes.Equal(cp.Marshal(), expected.Marshal()) {
+		panic("g1 multi exponentiation mismatch")
 	}
-	*/
 	return 1
 }
 
@@ -266,4 +264,17 @@ func randomScalar(r io.Reader, max *big.Int) (k *big.Int, err error) {
 			return
 		}
 	}
+}
+
+// multiExpG1 is a naive implementation of G1 multi-exponentiation
+func multiExpG1(gs []bls12381.G1Affine, scalars []fr.Element) bls12381.G1Affine {
+	_, _, res, _ := bls12381.Generators()
+	for i := 0; i < len(gs); i++ {
+		tmp := new(bls12381.G1Affine)
+		sb := scalars[i].Bytes()
+		scalarBytes := new(big.Int).SetBytes(sb[:])
+		tmp.ScalarMultiplication(&gs[i], scalarBytes)
+		res.Add(&res, tmp)
+	}
+	return res
 }
