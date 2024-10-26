@@ -574,7 +574,7 @@ func gasEVMMAXArithOp(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, me
 
 	maxOffset := max(x+x_stride*count, y+y_stride*count, out+out_stride*count)
 	// TODO: might not need to assert count == 0 ?
-	if count == 0 || out_stride == 0 || maxOffset >= scope.modExtState.active.NumElems() {
+	if count == 0 || out_stride == 0 || maxOffset > scope.modExtState.active.NumElems() {
 		return 0, errors.New("bad parameters")
 	}
 	// TODO: fill in gas calculation
