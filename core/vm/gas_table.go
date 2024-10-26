@@ -27,7 +27,7 @@ import (
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
 // only for the memory region that is expanded, not the total memory.
-func memoryGasCost(scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64, error) {
+func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64, error) {
 	if newMemSize == 0 {
 		return 0, nil
 	}
@@ -66,9 +66,9 @@ func memoryGasCost(scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64,
 // EXTCODECOPY (stack position 3)
 // RETURNDATACOPY (stack position 2)
 func memoryCopierGas(stackpos int) gasFunc {
-	return func(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		// Gas for expanding the memory
-		gas, err := memoryGasCost(scope, mem, memorySize)
+		gas, err := memoryGasCost(pc, scope, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
@@ -97,7 +97,7 @@ var (
 	gasReturnDataCopy = memoryCopierGas(2)
 )
 
-func gasSStore(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSStore(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var (
 		y, x    = stack.Back(1), stack.Back(0)
 		current = evm.StateDB.GetState(scope.Contract.Address(), x.Bytes32())
@@ -182,7 +182,7 @@ func gasSStore(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 //			(2.2.2.) If original value equals new value (this storage slot is reset):
 //				(2.2.2.1.) If original value is 0, add SSTORE_SET_GAS - SLOAD_GAS to refund counter.
 //				(2.2.2.2.) Otherwise, add SSTORE_RESET_GAS - SLOAD_GAS gas to refund counter.
-func gasSStoreEIP2200(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSStoreEIP2200(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// If we fail the minimum gas availability invariant, fail (0)
 	if scope.Contract.Gas <= params.SstoreSentryGasEIP2200 {
 		return 0, errors.New("not enough gas for reentrancy sentry")
@@ -225,13 +225,13 @@ func gasSStoreEIP2200(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, 
 }
 
 func makeGasLog(n uint64) gasFunc {
-	return func(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return func(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		requestedSize, overflow := stack.Back(1).Uint64WithOverflow()
 		if overflow {
 			return 0, ErrGasUintOverflow
 		}
 
-		gas, err := memoryGasCost(scope, mem, memorySize)
+		gas, err := memoryGasCost(pc, scope, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
@@ -254,8 +254,8 @@ func makeGasLog(n uint64) gasFunc {
 	}
 }
 
-func gasKeccak256(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasKeccak256(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -275,8 +275,8 @@ func gasKeccak256(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memo
 // pureMemoryGascost is used by several operations, which aside from their
 // static cost have a dynamic cost which is solely based on the memory
 // expansion
-func pureMemoryGascost(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return memoryGasCost(scope, mem, memorySize)
+func pureMemoryGascost(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return memoryGasCost(pc, scope, mem, memorySize)
 }
 
 var (
@@ -288,8 +288,8 @@ var (
 	gasCreate  = pureMemoryGascost
 )
 
-func gasCreate2(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasCreate2(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -306,8 +306,8 @@ func gasCreate2(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memory
 	return gas, nil
 }
 
-func gasCreateEip3860(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasCreateEip3860(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -325,8 +325,8 @@ func gasCreateEip3860(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, 
 	}
 	return gas, nil
 }
-func gasCreate2Eip3860(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasCreate2Eip3860(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -345,7 +345,7 @@ func gasCreate2Eip3860(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory,
 	return gas, nil
 }
 
-func gasExpFrontier(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasExpFrontier(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	expByteLen := uint64((stack.data[stack.len()-2].BitLen() + 7) / 8)
 
 	var (
@@ -358,7 +358,7 @@ func gasExpFrontier(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, me
 	return gas, nil
 }
 
-func gasExpEIP158(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasExpEIP158(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	expByteLen := uint64((stack.data[stack.len()-2].BitLen() + 7) / 8)
 
 	var (
@@ -371,7 +371,7 @@ func gasExpEIP158(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memo
 	return gas, nil
 }
 
-func gasCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasCall(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var (
 		gas            uint64
 		transfersValue = !stack.Back(2).IsZero()
@@ -387,7 +387,7 @@ func gasCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySiz
 	if transfersValue && !evm.chainRules.IsEIP4762 {
 		gas += params.CallValueTransferGas
 	}
-	memoryGas, err := memoryGasCost(scope, mem, memorySize)
+	memoryGas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -414,8 +414,8 @@ func gasCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySiz
 	return gas, nil
 }
 
-func gasCallCode(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	memoryGas, err := memoryGasCost(scope, mem, memorySize)
+func gasCallCode(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	memoryGas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -449,8 +449,8 @@ func gasCallCode(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memor
 	return gas, nil
 }
 
-func gasDelegateCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasDelegateCall(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -465,8 +465,8 @@ func gasDelegateCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, m
 	return gas, nil
 }
 
-func gasStaticCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := memoryGasCost(scope, mem, memorySize)
+func gasStaticCall(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(pc, scope, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -481,7 +481,7 @@ func gasStaticCall(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, mem
 	return gas, nil
 }
 
-func gasSelfdestruct(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSelfdestruct(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var gas uint64
 	// EIP150 homestead gas reprice fork:
 	if evm.chainRules.IsEIP150 {
@@ -504,18 +504,18 @@ func gasSelfdestruct(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, m
 	return gas, nil
 }
 
-func gasSetupx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSetupx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// cost = setmodx_precompute(elemSize) + evm_mem_alloc_cost(memorySize)
 	modSize := stack.Back(2)
 	paddedModSize := (modSize.Uint64() + 7) / 8
 	precompCost := uint64(params.SetupxPrecompCost[paddedModSize])
 	// overflow error unchecked because memorySize is already validated
-	memCost, _ := memoryGasCost(scope, mem, memorySize)
+	memCost, _ := memoryGasCost(pc, scope, mem, memorySize)
 	// TODO (check elswhere perhaps): alloc size cannot be 0
 	return precompCost + memCost, nil
 }
 
-func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasStorex(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	if scope.modExtState.active == nil {
 		return 0, errors.New("no active mod state")
 	}
@@ -539,7 +539,7 @@ func gasStorex(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memoryS
 	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
 }
 
-func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasLoadx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	if scope.modExtState.active == nil {
 		return 0, errors.New("no active mod state")
 	}
@@ -557,4 +557,26 @@ func gasLoadx(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySi
 		return 0, errors.New("out of bounds destination copy")
 	}
 	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
+}
+
+func gasEVMMAXArithOp(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	if scope.modExtState.active == nil {
+		return 0, errors.New("no active mod state")
+	}
+	_ = scope.Contract.Code[pc+7]
+	out := uint(scope.Contract.Code[pc+1])
+	out_stride := uint(scope.Contract.Code[pc+2])
+	x := uint(scope.Contract.Code[pc+3])
+	x_stride := uint(scope.Contract.Code[pc+4])
+	y := uint(scope.Contract.Code[pc+5])
+	y_stride := uint(scope.Contract.Code[pc+6])
+	count := uint(scope.Contract.Code[pc+7])
+
+	maxOffset := max(x+x_stride*count, y+y_stride*count, out+out_stride*count)
+	// TODO: might not need to assert count == 0 ?
+	if count == 0 || out_stride == 0 || maxOffset >= scope.modExtState.active.NumElems() {
+		return 0, errors.New("bad parameters")
+	}
+	// TODO: fill in gas calculation
+	return 1, nil
 }

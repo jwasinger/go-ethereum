@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func gasSStore4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSStore4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	gas := evm.AccessEvents.SlotGas(scope.Contract.Address(), stack.peek().Bytes32(), true)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
@@ -30,7 +30,7 @@ func gasSStore4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, mem
 	return gas, nil
 }
 
-func gasSLoad4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSLoad4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	gas := evm.AccessEvents.SlotGas(scope.Contract.Address(), stack.peek().Bytes32(), false)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
@@ -38,7 +38,7 @@ func gasSLoad4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memo
 	return gas, nil
 }
 
-func gasBalance4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasBalance4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	gas := evm.AccessEvents.BalanceGas(address, false)
 	if gas == 0 {
@@ -47,7 +47,7 @@ func gasBalance4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, me
 	return gas, nil
 }
 
-func gasExtCodeSize4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasExtCodeSize4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
@@ -60,7 +60,7 @@ func gasExtCodeSize4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory
 	return gas, nil
 }
 
-func gasExtCodeHash4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasExtCodeHash4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
@@ -73,8 +73,8 @@ func gasExtCodeHash4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
-	return func(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-		gas, err := oldCalculator(evm, scope, stack, mem, memorySize)
+	return func(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+		gas, err := oldCalculator(pc, evm, scope, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
@@ -96,7 +96,7 @@ var (
 	gasDelegateCallEIP4762 = makeCallVariantGasEIP4762(gasDelegateCall)
 )
 
-func gasSelfdestructEIP4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasSelfdestructEIP4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	beneficiaryAddr := common.Address(stack.peek().Bytes20())
 	if _, isPrecompile := evm.precompile(beneficiaryAddr); isPrecompile {
 		return 0, nil
@@ -118,8 +118,8 @@ func gasSelfdestructEIP4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Me
 	return statelessGas, nil
 }
 
-func gasCodeCopyEip4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := gasCodeCopy(evm, scope, stack, mem, memorySize)
+func gasCodeCopyEip4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := gasCodeCopy(pc, evm, scope, stack, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
@@ -138,9 +138,9 @@ func gasCodeCopyEip4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory
 	return gas, nil
 }
 
-func gasExtCodeCopyEIP4762(evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+func gasExtCodeCopyEIP4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// memory expansion first (dynamic part of pre-2929 implementation)
-	gas, err := gasExtCodeCopy(evm, scope, stack, mem, memorySize)
+	gas, err := gasExtCodeCopy(pc, gevm, scope, stack, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}

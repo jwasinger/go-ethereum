@@ -914,48 +914,54 @@ func opStorex(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 }
 
 func opAddmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active field context")
-	}
+	_ = scope.Contract.Code[*pc+7]
 	out := uint(scope.Contract.Code[*pc+1])
-	x := uint(scope.Contract.Code[*pc+2])
-	y := uint(scope.Contract.Code[*pc+3])
-	*pc += 3
+	out_stride := uint(scope.Contract.Code[*pc+2])
+	x := uint(scope.Contract.Code[*pc+3])
+	x_stride := uint(scope.Contract.Code[*pc+4])
+	y := uint(scope.Contract.Code[*pc+5])
+	y_stride := uint(scope.Contract.Code[*pc+6])
+	count := uint(scope.Contract.Code[*pc+7])
 
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active modstate")
-	}
-	return nil, scope.modExtState.active.AddMod(out, x, y)
+	*pc += 7
+
+	scope.modExtState.active.AddMod(out, out_stride, x, x_stride, y, y_stride, count)
+
+	return nil, nil
 }
 
 func opSubmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active field context")
-	}
+	_ = scope.Contract.Code[*pc+7]
 	out := uint(scope.Contract.Code[*pc+1])
-	x := uint(scope.Contract.Code[*pc+2])
-	y := uint(scope.Contract.Code[*pc+3])
-	*pc += 3
+	out_stride := uint(scope.Contract.Code[*pc+2])
+	x := uint(scope.Contract.Code[*pc+3])
+	x_stride := uint(scope.Contract.Code[*pc+4])
+	y := uint(scope.Contract.Code[*pc+5])
+	y_stride := uint(scope.Contract.Code[*pc+6])
+	count := uint(scope.Contract.Code[*pc+7])
 
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active modstate")
-	}
-	return nil, scope.modExtState.active.SubMod(out, x, y)
+	*pc += 7
+
+	scope.modExtState.active.SubMod(out, out_stride, x, x_stride, y, y_stride, count)
+
+	return nil, nil
 }
 
 func opMulmodx(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active field context")
-	}
+	_ = scope.Contract.Code[*pc+7]
 	out := uint(scope.Contract.Code[*pc+1])
-	x := uint(scope.Contract.Code[*pc+2])
-	y := uint(scope.Contract.Code[*pc+3])
-	*pc += 3
+	out_stride := uint(scope.Contract.Code[*pc+2])
+	x := uint(scope.Contract.Code[*pc+3])
+	x_stride := uint(scope.Contract.Code[*pc+4])
+	y := uint(scope.Contract.Code[*pc+5])
+	y_stride := uint(scope.Contract.Code[*pc+6])
+	count := uint(scope.Contract.Code[*pc+7])
 
-	if scope.modExtState.active == nil {
-		return nil, fmt.Errorf("no active modstate")
-	}
-	return nil, scope.modExtState.active.MulMod(out, x, y)
+	*pc += 7
+
+	scope.modExtState.active.MulMod(out, out_stride, x, x_stride, y, y_stride, count)
+
+	return nil, nil
 }
 
 // opPush1 is a specialized version of pushN

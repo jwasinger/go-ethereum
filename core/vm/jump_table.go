@@ -24,7 +24,7 @@ import (
 
 type (
 	executionFunc func(pc *uint64, interpreter *EVMInterpreter, callContext *ScopeContext) ([]byte, error)
-	gasFunc       func(evm *EVM, scope *ScopeContext, stack *Stack, memory *Memory, evmMemorySize uint64) (uint64, error) // last parameters are the requested memory sizes as uint64
+	gasFunc       func(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, memory *Memory, evmMemorySize uint64) (uint64, error) // last parameters are the requested memory sizes as uint64
 	// memorySizeFunc returns the required size, and whether the operation overflowed a uint64
 	memorySizeFunc func(*ScopeContext, *Stack) (memSize uint64, overflow bool, err error)
 )
@@ -1044,19 +1044,22 @@ func newFrontierInstructionSet() JumpTable {
 			maxStack:    maxStack(3, 0),
 		},
 		ADDMODX: {
-			execute:  opAddmodx,
-			minStack: minStack(0, 0),
-			maxStack: maxStack(0, 0),
+			execute:    opAddmodx,
+			dynamicGas: gasEVMMAXArithOp,
+			minStack:   minStack(0, 0),
+			maxStack:   maxStack(0, 0),
 		},
 		SUBMODX: {
-			execute:  opSubmodx,
-			minStack: minStack(0, 0),
-			maxStack: maxStack(0, 0),
+			execute:    opSubmodx,
+			dynamicGas: gasEVMMAXArithOp,
+			minStack:   minStack(0, 0),
+			maxStack:   maxStack(0, 0),
 		},
 		MULMODX: {
-			execute:  opMulmodx,
-			minStack: minStack(0, 0),
-			maxStack: maxStack(0, 0),
+			execute:    opMulmodx,
+			dynamicGas: gasEVMMAXArithOp,
+			minStack:   minStack(0, 0),
+			maxStack:   maxStack(0, 0),
 		},
 		CREATE: {
 			execute:     opCreate,
