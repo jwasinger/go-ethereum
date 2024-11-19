@@ -133,8 +133,3 @@ func memoryLog(_ *ScopeContext, stack *Stack) (uint64, bool, error) {
 	evmMemUsed, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
 	return evmMemUsed, overflow, nil
 }
-
-func memorySetupx(scope *ScopeContext, stack *Stack) (uint64, bool, error) {
-	memUsed, err := scope.modExtState.CalcMemAlloc(stack)
-	return memUsed, false, err
-}

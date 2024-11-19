@@ -1027,7 +1027,6 @@ func newFrontierInstructionSet() JumpTable {
 			dynamicGas: gasSetupx,
 			minStack:   minStack(4, 0),
 			maxStack:   maxStack(4, 0),
-			memorySize: memorySetupx,
 		},
 		LOADX: {
 			execute:     opLoadx,

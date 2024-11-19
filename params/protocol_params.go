@@ -195,13 +195,16 @@ var (
 	SystemAddress = common.HexToAddress("0xfffffffffffffffffffffffffffffffffffffffe")
 )
 
-// EVM Modular Arithmetic Extensions
+// EVMMAX constants
 var (
-	SetupxPrecompCost   = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	MontMulCost         = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	AddOrSubCost        = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
-	MaxModExtAllocSize  = 1234
-	ExtModArithBaseCost = 1
-	StorexBaseCost      = 3
-	LoadxBaseCost       = 3
+	SetupxPrecompCost = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	// mulmodx cost lookup table
+	MulmodxCost = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	// addmodx/submodx cost lookup table
+	AddOrSubCost = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	// the maximum size (in bytes) that can be allocated by all field contexts
+	// per EVM call frame
+	MaxFEAllocSize = 96 * 256
+	StorexBaseCost = 1
+	LoadxBaseCost  = 1
 )

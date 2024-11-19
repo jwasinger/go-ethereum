@@ -140,7 +140,7 @@ func gasCodeCopyEip4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, 
 
 func gasExtCodeCopyEIP4762(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// memory expansion first (dynamic part of pre-2929 implementation)
-	gas, err := gasExtCodeCopy(pc, gevm, scope, stack, mem, memorySize)
+	gas, err := gasExtCodeCopy(pc, evm, scope, stack, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}

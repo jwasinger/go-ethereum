@@ -41,7 +41,7 @@ func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint6
 	}
 	newMemSizeWords := toWordSize(newMemSize)
 
-	newMemSize = newMemSizeWords * 32 //+ scope.modExtState.AllocSize() // TODO: fix new memory pricing
+	newMemSize = newMemSizeWords*32 + scope.modExtState.AllocSize()
 
 	if newMemSize > uint64(mem.Len()) {
 		square := newMemSizeWords * newMemSizeWords
@@ -506,12 +506,39 @@ func gasSelfdestruct(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem
 
 func gasSetupx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	// cost = setmodx_precompute(elemSize) + evm_mem_alloc_cost(memorySize)
-	modSize := stack.Back(2)
-	paddedModSize := (modSize.Uint64() + 7) / 8
+
+	modId := uint(stack.Back(0).Uint64())
+	if scope.modExtState.alloced[modId] != nil {
+		return 0, nil
+	}
+
+	modSize := stack.Back(2).Uint64()
+	if modSize > 96 {
+		// TODO: ensure returning error here consumes all evm call context gas
+		return 0, fmt.Errorf("modulus cannot exceed 768 bits in width")
+	}
+
+	feAllocCount := stack.Back(3).Uint64()
+	if feAllocCount > 256 {
+		return 0, fmt.Errorf("cannot allocate more than 256 field elements per modulus id")
+	}
+	paddedModSize := (modSize + 7) / 8
 	precompCost := uint64(params.SetupxPrecompCost[paddedModSize])
+
+	// the size in bytes of the field element heap that this call to SETUPX is
+	// allocating.
+	allocSize := paddedModSize * feAllocCount
+
+	// the new effective memory size for the purpose of memory expansion fee calculation
+	newEffectiveMemSize := memorySize + allocSize // assumes this cannot possibly overflow
+
+	// if the new evmmax memory alloc would exceed the maximum allowed, return an error
+	if scope.modExtState.AllocSize()+allocSize > uint64(params.MaxFEAllocSize) {
+		return 0, fmt.Errorf("call context evmmax allocation threshold exceeded")
+	}
+
 	// overflow error unchecked because memorySize is already validated
-	memCost, _ := memoryGasCost(pc, scope, mem, memorySize)
-	// TODO (check elswhere perhaps): alloc size cannot be 0
+	memCost, _ := memoryGasCost(pc, scope, mem, newEffectiveMemSize)
 	return precompCost + memCost, nil
 }
 
@@ -536,7 +563,8 @@ func gasStorex(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memo
 		return 0, errors.New("out of bounds source copy")
 	}
 
-	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
+	// TODO: account for binary modulus
+	return count.Uint64() * uint64(params.MulmodxCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
 }
 
 func gasLoadx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -556,7 +584,9 @@ func gasLoadx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memor
 	if !dst.IsUint64() || dst.Uint64()+uint64(scope.modExtState.active.ElemSize())*count.Uint64() >= uint64(mem.Len()) {
 		return 0, errors.New("out of bounds destination copy")
 	}
-	return count.Uint64() * uint64(params.MontMulCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
+
+	// TODO: account for binary modulus
+	return count.Uint64() * uint64(params.MulmodxCost[int(scope.modExtState.active.ElemSize()/8)-1]), nil
 }
 
 func gasEVMMAXArithOp(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {

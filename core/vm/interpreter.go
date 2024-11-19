@@ -18,15 +18,13 @@ package vm
 
 import (
 	"fmt"
-	evmmax_arith "github.com/jwasinger/evmmax-arith"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
+	evmmax_arith "github.com/jwasinger/evmmax-arith"
 )
 
 // Config are the configuration options for the Interpreter
@@ -47,14 +45,22 @@ type ScopeContext struct {
 	modExtState fieldAllocs
 }
 
+// fieldAllocs represents the current set of field contexts that have been
+// allocated in the current EVM call frame.  It keeps track of an active
+// context and the total allocated size in bytes of all field elements
+// in all contexts in the current EVM call frame.
 type fieldAllocs struct {
 	alloced     map[uint]*evmmax_arith.FieldContext
 	active      *evmmax_arith.FieldContext
 	allocedSize uint64
 }
 
+// AllocAndSetActive takes an id (number between 0 and 255 inclusive), a
+// big-endian modulus, and the number of field elements to allocate.  Each
+// field element occupies memory equivalent to the size of the modulus padded
+// to the nearest multiple of 8 bytes.
 func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) error {
-	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize, evmmax_arith.FallBackOnly)
+	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize)
 	if err != nil {
 		return err
 	}
@@ -64,48 +70,18 @@ func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) 
 	return nil
 }
 
+// AllocSize returns the amount of EVMMAX-allocated memory (in bytes) in the current EVM call context
 func (f *fieldAllocs) AllocSize() uint64 {
-	return f.allocedSize
+	return f.allocedSize * 8
 }
 
+// SetActive sets a modulus as active in the current EVM call context.  The
+// modulus associated with id is assumed to have already been instantiated by
+// a previous call to AllocAndSetActive
 func (f *fieldAllocs) SetActive(id uint) error {
-	fieldContext, ok := f.alloced[id]
-	if !ok {
-		return fmt.Errorf("no field context corresponds to given id")
-	}
+	fieldContext := f.alloced[id]
 	f.active = fieldContext
 	return nil
-}
-
-func (f *fieldAllocs) CalcMemAlloc(stack *Stack) (uint64, error) {
-	id := stack.Back(0)
-	modSize := stack.Back(2)
-	elemCount := stack.Back(3)
-
-	if id.ToBig().Cmp(big.NewInt(256)) > 0 {
-		return 0, fmt.Errorf("id cannot be greater than 256")
-	}
-	if modSize.ToBig().Cmp(big.NewInt(96)) > 0 {
-		return 0, fmt.Errorf("modulus cannot exceed 768 bits in width")
-	}
-	if elemCount.ToBig().Cmp(big.NewInt(256)) > 0 {
-		return 0, fmt.Errorf("field element count cannot be over 256")
-	}
-
-	_, ok := f.alloced[uint(id.Uint64())]
-	if ok {
-		return 0, nil
-	}
-
-	paddedModSize := (modSize.Uint64() + 7) / 8
-	allocSize := f.allocedSize + elemCount.Uint64()*paddedModSize
-	/*
-		// TODO: define this constant properly and then re-add in this logic
-		if allocSize >= uint64(params.MaxModExtAllocSize) {
-			return 0, fmt.Errorf("alloc size greater than max allowed per call")
-		}
-	*/
-	return allocSize, nil
 }
 
 // MemoryData returns the underlying memory slice. Callers must not modify the contents
