@@ -41,7 +41,7 @@ func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint6
 	}
 	newMemSizeWords := toWordSize(newMemSize)
 
-	newMemSize = newMemSizeWords*32 + scope.modExtState.AllocSize()
+	newMemSize = newMemSizeWords*32 + toWordSize(scope.modExtState.AllocSize())
 
 	if newMemSize > uint64(mem.Len()) {
 		square := newMemSizeWords * newMemSizeWords
