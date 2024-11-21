@@ -60,8 +60,6 @@ type fieldAllocs struct {
 // field element occupies memory equivalent to the size of the modulus padded
 // to the nearest multiple of 8 bytes.
 func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocCount int) error {
-	fmt.Printf("alloc count is %d\n", allocCount)
-	fmt.Printf("modulus width is %d\n", len(modulus))
 	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocCount)
 	if err != nil {
 		return err
@@ -74,7 +72,6 @@ func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocCount int)
 
 // AllocSize returns the amount of EVMMAX-allocated memory (in bytes) in the current EVM call context
 func (f *fieldAllocs) AllocSize() uint64 {
-	fmt.Printf("alloc size is %d\n", f.allocedSize)
 	return f.allocedSize
 }
 
@@ -146,6 +143,8 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	case evm.chainRules.IsVerkle:
 		// TODO replace with proper instruction set when fork is specified
 		table = &verkleInstructionSet
+	case evm.chainRules.IsEVMMAX:
+		table = &evmmaxInstructionSet
 	case evm.chainRules.IsCancun:
 		table = &cancunInstructionSet
 	case evm.chainRules.IsShanghai:

@@ -56,6 +56,7 @@ var (
 	londonInstructionSet           = newLondonInstructionSet()
 	mergeInstructionSet            = newMergeInstructionSet()
 	shanghaiInstructionSet         = newShanghaiInstructionSet()
+	evmmaxInstructionSet           = newEVMMAXInstructionSet()
 	cancunInstructionSet           = newCancunInstructionSet()
 	verkleInstructionSet           = newVerkleInstructionSet()
 )
@@ -85,6 +86,49 @@ func newVerkleInstructionSet() JumpTable {
 	instructionSet := newCancunInstructionSet()
 	enable4762(&instructionSet)
 	return validate(instructionSet)
+}
+
+func newEVMMAXInstructionSet() JumpTable {
+	instructionSet := newCancunInstructionSet()
+	instructionSet[SETUPX] = &operation{
+		execute:    opSetupx,
+		dynamicGas: gasSetupx,
+		minStack:   minStack(4, 0),
+		maxStack:   maxStack(4, 0),
+	}
+	instructionSet[LOADX] = &operation{
+		execute:     opLoadx,
+		constantGas: GasQuickStep,
+		dynamicGas:  gasLoadx,
+		minStack:    minStack(3, 0),
+		maxStack:    maxStack(3, 0),
+	}
+	instructionSet[STOREX] = &operation{
+		execute:     opStorex,
+		constantGas: GasQuickStep,
+		dynamicGas:  gasStorex,
+		minStack:    minStack(3, 0),
+		maxStack:    maxStack(3, 0),
+	}
+	instructionSet[ADDMODX] = &operation{
+		execute:    opAddmodx,
+		dynamicGas: gasEVMMAXArithOp,
+		minStack:   minStack(0, 0),
+		maxStack:   maxStack(0, 0),
+	}
+	instructionSet[SUBMODX] = &operation{
+		execute:    opSubmodx,
+		dynamicGas: gasEVMMAXArithOp,
+		minStack:   minStack(0, 0),
+		maxStack:   maxStack(0, 0),
+	}
+	instructionSet[MULMODX] = &operation{
+		execute:    opMulmodx,
+		dynamicGas: gasEVMMAXArithOp,
+		minStack:   minStack(0, 0),
+		maxStack:   maxStack(0, 0),
+	}
+	return instructionSet
 }
 
 func newCancunInstructionSet() JumpTable {
@@ -1021,44 +1065,6 @@ func newFrontierInstructionSet() JumpTable {
 			minStack:   minStack(6, 0),
 			maxStack:   maxStack(6, 0),
 			memorySize: memoryLog,
-		},
-		SETUPX: {
-			execute:    opSetupx,
-			dynamicGas: gasSetupx,
-			minStack:   minStack(4, 0),
-			maxStack:   maxStack(4, 0),
-		},
-		LOADX: {
-			execute:     opLoadx,
-			constantGas: GasQuickStep,
-			dynamicGas:  gasLoadx,
-			minStack:    minStack(3, 0),
-			maxStack:    maxStack(3, 0),
-		},
-		STOREX: {
-			execute:     opStorex,
-			constantGas: GasQuickStep,
-			dynamicGas:  gasStorex,
-			minStack:    minStack(3, 0),
-			maxStack:    maxStack(3, 0),
-		},
-		ADDMODX: {
-			execute:    opAddmodx,
-			dynamicGas: gasEVMMAXArithOp,
-			minStack:   minStack(0, 0),
-			maxStack:   maxStack(0, 0),
-		},
-		SUBMODX: {
-			execute:    opSubmodx,
-			dynamicGas: gasEVMMAXArithOp,
-			minStack:   minStack(0, 0),
-			maxStack:   maxStack(0, 0),
-		},
-		MULMODX: {
-			execute:    opMulmodx,
-			dynamicGas: gasEVMMAXArithOp,
-			minStack:   minStack(0, 0),
-			maxStack:   maxStack(0, 0),
 		},
 		CREATE: {
 			execute:     opCreate,
