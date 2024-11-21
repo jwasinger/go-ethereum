@@ -25,9 +25,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64, error) {
+	return evmmaxMemoryGasCost(pc, scope, mem, newMemSize, scope.modExtState.AllocSize())
+}
+
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
 // only for the memory region that is expanded, not the total memory.
-func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint64) (uint64, error) {
+func evmmaxMemoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint64, newEVMMAXMemSize uint64) (uint64, error) {
 	if newMemSize == 0 {
 		return 0, nil
 	}
@@ -39,11 +43,10 @@ func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint6
 	if newMemSize > 0x1FFFFFFFE0 {
 		return 0, ErrGasUintOverflow
 	}
-	newMemSizeWords := toWordSize(newMemSize)
+	newMemSizeWords := toWordSize(newMemSize + newEVMMAXMemSize)
+	newMemSize = newMemSizeWords * 32
 
-	newMemSize = newMemSizeWords*32 + toWordSize(scope.modExtState.AllocSize())
-
-	if newMemSize > uint64(mem.Len()) {
+	if newMemSize > uint64(mem.Len()) || newEVMMAXMemSize > scope.modExtState.AllocSize() {
 		square := newMemSizeWords * newMemSizeWords
 		linCoef := newMemSizeWords * params.MemoryGas
 		quadCoef := square / params.QuadCoeffDiv
@@ -529,16 +532,13 @@ func gasSetupx(pc uint64, evm *EVM, scope *ScopeContext, stack *Stack, mem *Memo
 	// allocating.
 	allocSize := paddedModSize * feAllocCount
 
-	// the new effective memory size for the purpose of memory expansion fee calculation
-	newEffectiveMemSize := memorySize + allocSize // assumes this cannot possibly overflow
-
 	// if the new evmmax memory alloc would exceed the maximum allowed, return an error
 	if scope.modExtState.AllocSize()+allocSize > uint64(params.MaxFEAllocSize) {
 		return 0, fmt.Errorf("call context evmmax allocation threshold exceeded")
 	}
 
 	// overflow error unchecked because memorySize is already validated
-	memCost, _ := memoryGasCost(pc, scope, mem, newEffectiveMemSize)
+	memCost, _ := evmmaxMemoryGasCost(pc, scope, mem, memorySize, allocSize)
 	return precompCost + memCost, nil
 }
 
