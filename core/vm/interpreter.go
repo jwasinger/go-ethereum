@@ -59,8 +59,10 @@ type fieldAllocs struct {
 // big-endian modulus, and the number of field elements to allocate.  Each
 // field element occupies memory equivalent to the size of the modulus padded
 // to the nearest multiple of 8 bytes.
-func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) error {
-	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocSize)
+func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocCount int) error {
+	fmt.Printf("alloc count is %d\n", allocCount)
+	fmt.Printf("modulus width is %d\n", len(modulus))
+	fieldContext, err := evmmax_arith.NewFieldContext(modulus, allocCount)
 	if err != nil {
 		return err
 	}
@@ -72,7 +74,8 @@ func (f *fieldAllocs) AllocAndSetActive(id uint, modulus []byte, allocSize int) 
 
 // AllocSize returns the amount of EVMMAX-allocated memory (in bytes) in the current EVM call context
 func (f *fieldAllocs) AllocSize() uint64 {
-	return f.allocedSize * 8
+	fmt.Printf("alloc size is %d\n", f.allocedSize)
+	return f.allocedSize
 }
 
 // SetActive sets a modulus as active in the current EVM call context.  The

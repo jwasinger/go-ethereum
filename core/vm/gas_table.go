@@ -29,12 +29,15 @@ func memoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint6
 	return evmmaxMemoryGasCost(pc, scope, mem, newMemSize, scope.modExtState.AllocSize())
 }
 
-// memoryGasCost calculates the quadratic gas for memory expansion. It does so
-// only for the memory region that is expanded, not the total memory.
+// evmmaxMemory calculates the quadratic gas for memory expansion. It does so
+// only for the memory region that is expanded, not the total memory.  It uses
+// the modified EVMMAX memory expansion rule: consider the size of memory to
+// include EVM memory and the memory allocated by all active field contexts.
 func evmmaxMemoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize uint64, newEVMMAXMemSize uint64) (uint64, error) {
-	if newMemSize == 0 {
+	if newMemSize == 0 && newEVMMAXMemSize == 0 {
 		return 0, nil
 	}
+
 	// The maximum that will fit in a uint64 is max_word_count - 1. Anything above
 	// that will result in an overflow. Additionally, a newMemSize which results in
 	// a newMemSizeWords larger than 0xFFFFFFFF will cause the square operation to
@@ -43,12 +46,25 @@ func evmmaxMemoryGasCost(pc uint64, scope *ScopeContext, mem *Memory, newMemSize
 	if newMemSize > 0x1FFFFFFFE0 {
 		return 0, ErrGasUintOverflow
 	}
-	newMemSizeWords := toWordSize(newMemSize + newEVMMAXMemSize)
-	newMemSize = newMemSizeWords * 32
+	newMemSizeWords := toWordSize(newMemSize)
+	newMemSizePadded := newMemSizeWords * 32
 
-	if newMemSize > uint64(mem.Len()) || newEVMMAXMemSize > scope.modExtState.AllocSize() {
-		square := newMemSizeWords * newMemSizeWords
-		linCoef := newMemSizeWords * params.MemoryGas
+	curEVMMAXMemSize := scope.modExtState.AllocSize()
+	curEVMMAXMemSizePadded := toWordSize(curEVMMAXMemSize) * 32
+	newEVMMAXMemSizePadded := toWordSize(newEVMMAXMemSize) * 32
+
+	// if newEVMMAXMemSize + newEVMMemSize > curEVMMAXMemSize + curEVMMemSize
+	if newMemSizePadded > uint64(mem.Len()) || newEVMMAXMemSizePadded > curEVMMAXMemSizePadded {
+		// if this is called by the invocation of SETUPX, the new evm memory is
+		// 0, but we still need it to compute the fee
+		if newMemSize <= uint64(mem.Len()) {
+			newMemSize = uint64(mem.Len())
+		}
+		// new effective mem size for the purpose of gas charging is the sum of
+		// evmmax memory and evm memory padded to a multiple of 32 bytes.
+		newEffectiveMemSizeWords := toWordSize(newEVMMAXMemSize + newMemSize)
+		square := newEffectiveMemSizeWords * newEffectiveMemSizeWords
+		linCoef := newEffectiveMemSizeWords * params.MemoryGas
 		quadCoef := square / params.QuadCoeffDiv
 		newTotalFee := linCoef + quadCoef
 
