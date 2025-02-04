@@ -1,8 +1,10 @@
 package bind
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"maps"
 	"strings"
 
@@ -138,4 +140,31 @@ func LinkAndDeploy(deployParams *DeploymentParams, deploy DeployFn) (res *Deploy
 		}
 	}
 	return deployer.result(), nil
+}
+
+// DefaultDeployer returns a DeployFn that signs and submits creation transactions using the given signer.
+func DefaultDeployer(ctx context.Context, signer types.Signer, from common.Address, backend ContractBackend) DeployFn {
+	opts := &TransactOpts{
+		From:  from,
+		Nonce: nil,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			signature, err := crypto.Sign(signer.Hash(tx).Bytes(), testKey)
+			if err != nil {
+				return nil, err
+			}
+			signedTx, err := tx.WithSignature(signer, signature)
+			if err != nil {
+				return nil, err
+			}
+			return signedTx, nil
+		},
+		Context: ctx,
+	}
+	return func(input []byte, deployer []byte) (common.Address, *types.Transaction, error) {
+		addr, tx, err := DeployContract(opts, deployer, backend, input)
+		if err != nil {
+			return common.Address{}, nil, err
+		}
+		return addr, tx, nil
+	}
 }
