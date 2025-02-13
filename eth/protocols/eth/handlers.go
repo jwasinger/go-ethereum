@@ -448,6 +448,11 @@ func handlePooledTransactions(backend Backend, msg Decoder, peer *Peer) error {
 		if tx == nil {
 			return fmt.Errorf("%w: transaction %d is nil", errDecode, i)
 		}
+
+		if tx.Type() == types.BlobTxType && tx.BlobTxSidecar() == nil {
+			return fmt.Errorf("blob transaction propagated without sidecar")
+		}
+
 		peer.markTransaction(tx.Hash())
 	}
 	requestTracker.Fulfil(peer.id, peer.version, PooledTransactionsMsg, txs.RequestId)
