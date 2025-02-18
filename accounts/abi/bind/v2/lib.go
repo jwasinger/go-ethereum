@@ -208,3 +208,24 @@ func DefaultDeployer(opts *TransactOpts, backend ContractBackend) DeployFn {
 		return addr, tx, nil
 	}
 }
+
+var receiveSig = crypto.Keccak256([]byte("receive"))[:4]
+
+func PackReceive() []byte {
+	/*
+		res := make([]byte, 4)
+		copy(res, receiveSig)
+		return res
+	*/
+	return []byte{}
+}
+
+func PackFallback(input []byte) []byte {
+	res := make([]byte, len(input))
+	copy(res, input)
+	return res
+}
+
+func UnpackFallback(input []byte) ([]byte, error) {
+	return input, nil
+}
