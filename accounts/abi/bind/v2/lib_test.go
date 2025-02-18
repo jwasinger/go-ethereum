@@ -372,6 +372,8 @@ func TestErrors(t *testing.T) {
 }
 
 func TestFallback(t *testing.T) {
+	// test that a function with fallback defined with parameters and results
+	// can be invoked via the pack/unpack functions this lib provides.
 	backend, err := testSetup()
 	if err != nil {
 		t.Fatalf("error setting up testing env: %v", err)
@@ -420,7 +422,7 @@ func TestFallback(t *testing.T) {
 }
 
 func TestReceive(t *testing.T) {
-	// test watch/filter logs method on a contract that emits various kinds of events (struct-containing, etc.)
+	// test that a contract can receive ether via the pack function provided in the API
 	backend, err := testSetup()
 	if err != nil {
 		t.Fatalf("error setting up testing env: %v", err)
