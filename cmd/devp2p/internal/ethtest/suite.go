@@ -18,8 +18,6 @@ package ethtest
 
 import (
 	"crypto/rand"
-	"reflect"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,6 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/holiman/uint256"
+	"reflect"
+	"sync"
+	"sync/atomic"
 )
 
 // Suite represents a structure used to test a node's conformance
@@ -62,23 +63,26 @@ func NewSuite(dest *enode.Node, chainDir, engineURL, jwt string) (*Suite, error)
 
 func (s *Suite) EthTests() []utesting.Test {
 	return []utesting.Test{
-		// status
-		{Name: "Status", Fn: s.TestStatus},
-		// get block headers
-		{Name: "GetBlockHeaders", Fn: s.TestGetBlockHeaders},
-		{Name: "SimultaneousRequests", Fn: s.TestSimultaneousRequests},
-		{Name: "SameRequestID", Fn: s.TestSameRequestID},
-		{Name: "ZeroRequestID", Fn: s.TestZeroRequestID},
-		// get block bodies
-		{Name: "GetBlockBodies", Fn: s.TestGetBlockBodies},
-		// // malicious handshakes + status
-		{Name: "MaliciousHandshake", Fn: s.TestMaliciousHandshake},
-		// test transactions
-		{Name: "LargeTxRequest", Fn: s.TestLargeTxRequest, Slow: true},
-		{Name: "Transaction", Fn: s.TestTransaction},
-		{Name: "InvalidTxs", Fn: s.TestInvalidTxs},
-		{Name: "NewPooledTxs", Fn: s.TestNewPooledTxs},
-		{Name: "BlobViolations", Fn: s.TestBlobViolations},
+		/*
+			// status
+			{Name: "Status", Fn: s.TestStatus},
+			// get block headers
+			{Name: "GetBlockHeaders", Fn: s.TestGetBlockHeaders},
+			{Name: "SimultaneousRequests", Fn: s.TestSimultaneousRequests},
+			{Name: "SameRequestID", Fn: s.TestSameRequestID},
+			{Name: "ZeroRequestID", Fn: s.TestZeroRequestID},
+			// get block bodies
+			{Name: "GetBlockBodies", Fn: s.TestGetBlockBodies},
+			// // malicious handshakes + status
+			{Name: "MaliciousHandshake", Fn: s.TestMaliciousHandshake},
+			// test transactions
+			{Name: "LargeTxRequest", Fn: s.TestLargeTxRequest, Slow: true},
+			{Name: "Transaction", Fn: s.TestTransaction},
+			{Name: "InvalidTxs", Fn: s.TestInvalidTxs},
+			{Name: "NewPooledTxs", Fn: s.TestNewPooledTxs},
+			{Name: "BlobViolations", Fn: s.TestBlobViolations},
+		*/
+		{Name: "BlobSidecarIntegrity3", Fn: s.TestSidecarIntegrity3},
 	}
 }
 
@@ -824,4 +828,135 @@ func (s *Suite) TestBlobViolations(t *utesting.T) {
 		}
 		conn.Close()
 	}
+}
+
+func mangleSidecar(tx *types.Transaction) *types.Transaction {
+	sidecar := tx.BlobTxSidecar()
+	var copy types.BlobTxSidecar
+	for _, b := range sidecar.Blobs {
+		copy.Blobs = append(copy.Blobs, b)
+	}
+	for _, c := range sidecar.Commitments {
+		copy.Commitments = append(copy.Commitments, c)
+	}
+	for _, p := range sidecar.Proofs {
+		copy.Proofs = append(copy.Proofs, p)
+	}
+	// zero the first commitment to create an invalid sidecar
+	copy.Commitments[0] = kzg4844.Commitment{}
+	return tx.WithBlobTxSidecar(&copy)
+}
+
+func (s *Suite) TestSidecarIntegrity3(t *utesting.T) {
+	var (
+		stage2 atomic.Bool
+		tx     = s.makeBlobTxs(1, 2, 0x1)[0]
+		badTx  = mangleSidecar(tx)
+		ann    = eth.NewPooledTransactionHashesPacket{
+			Types:  []byte{types.BlobTxType},
+			Sizes:  []uint32{uint32(tx.Size())},
+			Hashes: []common.Hash{tx.Hash()},
+		}
+		wg sync.WaitGroup
+	)
+
+	//log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true)))
+	if err := s.engine.sendForkchoiceUpdated(); err != nil {
+		t.Fatalf("send fcu failed: %v", err)
+	}
+
+	peer := func(wg *sync.WaitGroup) {
+		conn, err := s.dial()
+		if err != nil {
+			t.Fatalf("dial fail: %v", err)
+		}
+		if err := conn.peer(s.chain, nil); err != nil {
+			t.Fatalf("peering failed: %v", err)
+		}
+		if err := conn.Write(ethProto, eth.NewPooledTransactionHashesMsg, ann); err != nil {
+			t.Fatalf("sending announcement failed: %v", err)
+		}
+
+		req := new(eth.GetPooledTransactionsPacket)
+		if err := conn.ReadMsg(ethProto, eth.GetPooledTransactionsMsg, req); err != nil {
+			t.Fatalf("reading pooled tx request failed: %v", err)
+		}
+
+		if stage2.Swap(true) == false {
+			// this is the bad peer, transmit the correct hash but whose sidecar doesn't
+			// correspond to the commitments in the tx header.
+			//
+			// ensure that this peer gets dropped
+			if req.GetPooledTransactionsRequest[0] != tx.Hash() {
+				t.Fatalf("requested unknown tx hash")
+			}
+
+			resp := eth.PooledTransactionsPacket{RequestId: req.RequestId, PooledTransactionsResponse: eth.PooledTransactionsResponse(types.Transactions{badTx})}
+			if err := conn.Write(ethProto, eth.PooledTransactionsMsg, resp); err != nil {
+				t.Fatalf("writing pooled tx response failed: %v", err)
+			}
+
+			if code, _, err := conn.Read(); err != nil {
+				t.Fatalf("expected disconnect on blob violation, got err: %v", err)
+			} else if code != discMsg {
+				t.Fatalf("expected disconnect.  got other message")
+			}
+		} else {
+			// this is a good peer, transmit the correct hash and sidecar, ensure that it
+			// gets pooled on the client.
+			//
+			// signal that the test completed successfully
+			if req.GetPooledTransactionsRequest[0] != tx.Hash() {
+				t.Fatalf("requested unknown tx hash")
+			}
+
+			resp := eth.PooledTransactionsPacket{RequestId: req.RequestId, PooledTransactionsResponse: eth.PooledTransactionsResponse(types.Transactions{tx})}
+			if err := conn.Write(ethProto, eth.PooledTransactionsMsg, resp); err != nil {
+				t.Fatalf("writing pooled tx response failed: %v", err)
+			}
+			if code, _, err := conn.Read(); err != nil {
+				t.Fatalf("got unexpected err: %v", err)
+			} else if code == discMsg {
+				t.Fatalf("unexpected disconnect.")
+			}
+		}
+		// advertise the hash to the conn
+		// if we are in first retrieval stage:
+		// * when the peer requests the hash, respond with an invalid sidecar commitment.
+		// if we are in the second retrieval stage:
+		// * when the peer requests the hash, respond with the valid sidecar commitment.
+		wg.Done()
+	}
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go peer(&wg)
+	}
+	wg.Wait()
+}
+
+func (s *Suite) TestSidecarIntegrity(t *utesting.T) {
+
+	// this test will consist of rounds of announcements and transmissions of blob txs.
+	// because the peer that is selected for direct request of blob tx is not determined,
+	// we will have to repeat these rounds until the test conditions are satisfied.
+
+	/*
+		scenario 1:
+			* some peers advertise correct hash + bad size, some correct hash + correct size
+			* the test should proceed if the client requests the bad size + correct hash
+			* the client should disconnect from the offending peer.
+			* the client should request the hash from another peer, and the other peer will submit the correct blob tx.
+			* the client includes the blob tx.
+		scenario 2:
+			* same as scenario 1 except the hash does not match the sidecar (the size is also bad).
+			* the client will disconnect from a peer that transmits the bad hash, but keep the hash in the trackers.
+		scenario 3:
+			* peers advertise a correct hash + correct size
+			* the test requests the hash from a peer, receives a response where it cannot validate the integrity of the
+			  tx hash.
+			* the client disconnects from the offending peer.
+			* the client re-requests the hash from another peer.
+			* the other peer sends the fully validatable transaction back and it gets included by the client.
+	*/
 }
