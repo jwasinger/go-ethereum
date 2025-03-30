@@ -119,11 +119,10 @@ func TestEth2AssembleBlock(t *testing.T) {
 		t.Fatalf("error signing transaction, err=%v", err)
 	}
 	ethservice.TxPool().Add([]*types.Transaction{tx}, true)
+	//ethservice.TxPool().Sync()
 	blockParams := engine.PayloadAttributes{
 		Timestamp: blocks[9].Time() + 5,
 	}
-	// The miner needs to pick up on the txs in the pool, so a few retries might be
-	// needed.
 	if _, testErr := assembleWithTransactions(api, blocks[9].Hash(), &blockParams, 1); testErr != nil {
 		t.Fatal(testErr)
 	}
@@ -132,18 +131,16 @@ func TestEth2AssembleBlock(t *testing.T) {
 // assembleWithTransactions tries to assemble a block, retrying until it has 'want',
 // number of transactions in it, or it has retried three times.
 func assembleWithTransactions(api *ConsensusAPI, parentHash common.Hash, params *engine.PayloadAttributes, want int) (execData *engine.ExecutableData, err error) {
-	for retries := 3; retries > 0; retries-- {
-		execData, err = assembleBlock(api, parentHash, params)
-		if err != nil {
-			return nil, err
-		}
-		if have, want := len(execData.Transactions), want; have != want {
-			err = fmt.Errorf("invalid number of transactions, have %d want %d", have, want)
-			continue
-		}
-		return execData, nil
+	fmt.Println("before assembleBlock")
+	execData, err = assembleBlock(api, parentHash, params)
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	fmt.Println("after assembleBlock")
+	if have, want := len(execData.Transactions), want; have != want {
+		return nil, fmt.Errorf("invalid number of transactions, have %d want %d", have, want)
+	}
+	return execData, nil
 }
 
 func TestEth2AssembleBlockWithAnotherBlocksTxs(t *testing.T) {

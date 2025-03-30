@@ -19,9 +19,11 @@ package legacypool
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"math"
 	"math/big"
+	"os"
 	"slices"
 	"sort"
 	"sync"
@@ -967,6 +969,7 @@ func (pool *LegacyPool) Add(txs []*types.Transaction, sync bool) []error {
 	done := pool.requestPromoteExecutables(dirtyAddrs)
 	if sync {
 		<-done
+		fmt.Println("read done")
 	}
 	return errs
 }
@@ -1130,6 +1133,7 @@ func (pool *LegacyPool) requestReset(oldHead *types.Header, newHead *types.Heade
 // requestPromoteExecutables requests transaction promotion checks for the given addresses.
 // The returned channel is closed when the promotion checks have occurred.
 func (pool *LegacyPool) requestPromoteExecutables(set *accountSet) chan struct{} {
+	fmt.Printf("request promote with set %v\n", set.accounts)
 	select {
 	case pool.reqPromoteCh <- set:
 		return <-pool.reorgDoneCh
@@ -1183,6 +1187,7 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 				reset.newHead = req.newHead
 			}
 			launchNextRun = true
+			fmt.Println("write 1")
 			pool.reorgDoneCh <- nextDone
 
 		case req := <-pool.reqPromoteCh:
@@ -1193,6 +1198,7 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 				dirtyAccounts.merge(req)
 			}
 			launchNextRun = true
+			fmt.Printf("write 2: %v\n", req.accounts)
 			pool.reorgDoneCh <- nextDone
 
 		case tx := <-pool.queueTxEventCh:
@@ -1220,6 +1226,9 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 
 // runReorg runs reset and promoteExecutables on behalf of scheduleReorgLoop.
 func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*SortedMap) {
+	if dirtyAccounts != nil {
+		fmt.Printf("dirty accounts: %v\n", dirtyAccounts.accounts)
+	}
 	defer func(t0 time.Time) {
 		reorgDurationTimer.Update(time.Since(t0))
 	}(time.Now())
@@ -1227,6 +1236,7 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 
 	var promoteAddrs []common.Address
 	if dirtyAccounts != nil && reset == nil {
+		fmt.Println("condition 2")
 		// Only dirty accounts need to be promoted, unless we're resetting.
 		// For resets, all addresses in the tx queue will be promoted and
 		// the flatten operation can be avoided.
@@ -1251,7 +1261,10 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 		}
 	}
 	// Check for pending transactions for every account that sent new ones
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelTrace, true)))
 	promoted := pool.promoteExecutables(promoteAddrs)
+	fmt.Printf("of %d candidates, promoted %d\n", promoteAddrs, promoted)
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, log.LevelError, true)))
 
 	// If a new block appeared, validate the pool of pending transactions. This will
 	// remove any transaction that has been included in the block or was invalidated
@@ -1284,6 +1297,7 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 
 	// Notify subsystems for newly added transactions
 	for _, tx := range promoted {
+		fmt.Println("promoted")
 		addr, _ := types.Sender(pool.signer, tx)
 		if _, ok := events[addr]; !ok {
 			events[addr] = NewSortedMap()
@@ -1297,6 +1311,7 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 		}
 		pool.txFeed.Send(core.NewTxsEvent{Txs: txs})
 	}
+	fmt.Println("done")
 }
 
 // reset retrieves the current state of the blockchain and ensures the content
@@ -1430,6 +1445,7 @@ func (pool *LegacyPool) promoteExecutables(accounts []common.Address) []*types.T
 		readies := list.Ready(pool.pendingNonces.get(addr))
 		for _, tx := range readies {
 			hash := tx.Hash()
+			fmt.Printf("attempt to promote tx %x\n", tx.Hash())
 			if pool.promoteTx(addr, hash, tx) {
 				promoted = append(promoted, tx)
 			}

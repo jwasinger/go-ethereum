@@ -19,6 +19,7 @@ package miner
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -255,7 +256,9 @@ func (miner *Miner) buildPayload(args *BuildPayloadArgs, witness bool) (*Payload
 			select {
 			case <-timer.C:
 				start := time.Now()
+				fmt.Println("before miner generateWork")
 				r := miner.generateWork(fullParams, witness)
+				fmt.Println("after miner generateWork")
 				if r.err == nil {
 					payload.update(r, time.Since(start))
 				} else {

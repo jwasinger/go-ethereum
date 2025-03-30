@@ -450,6 +450,7 @@ func (miner *Miner) fillTransactions(interrupt *atomic.Int32, env *environment) 
 	prioPlainTxs, normalPlainTxs := make(map[common.Address][]*txpool.LazyTransaction), pendingPlainTxs
 	prioBlobTxs, normalBlobTxs := make(map[common.Address][]*txpool.LazyTransaction), pendingBlobTxs
 
+	fmt.Printf("pending plain txs: %v\n", prioPlainTxs)
 	for _, account := range prio {
 		if txs := normalPlainTxs[account]; len(txs) > 0 {
 			delete(normalPlainTxs, account)

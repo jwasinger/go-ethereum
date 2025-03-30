@@ -18,6 +18,7 @@ package legacypool
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"math/big"
 	"slices"
@@ -210,8 +211,10 @@ func (m *SortedMap) Remove(nonce uint64) bool {
 // prevent getting into an invalid state. This is not something that should ever
 // happen but better to be self correcting than failing!
 func (m *SortedMap) Ready(start uint64) types.Transactions {
+	fmt.Printf("have %d items\n", len(m.items))
 	// Short circuit if no transactions are available
 	if m.index.Len() == 0 || (*m.index)[0] > start {
+		fmt.Printf("shite.  %d, %d\n", (*m.index)[0], start)
 		return nil
 	}
 	// Otherwise start accumulating incremental transactions
