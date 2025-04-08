@@ -956,9 +956,6 @@ func (pool *LegacyPool) Add(txs []*types.Transaction, sync bool) []error {
 	pool.mu.Lock()
 	newErrs, dirtyAddrs := pool.addTxsLocked(news)
 	pool.mu.Unlock()
-	for _, new := range news {
-		fmt.Printf("prepare tx for queue %x\n", new.Hash())
-	}
 
 	var nilSlot = 0
 	for _, err := range newErrs {
@@ -973,7 +970,6 @@ func (pool *LegacyPool) Add(txs []*types.Transaction, sync bool) []error {
 	pool.requestPromoteExecutables(req)
 	if sync {
 		<-req.done
-		fmt.Printf("done adding txs %v\n", txs[0])
 	}
 	return errs
 }
@@ -1186,9 +1182,6 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 	for {
 		// Launch next background reorg if needed
 		if curDone == nil && launchNextRun {
-			fmt.Printf("initiating reorg with dones %v\n", nextDones)
-			fmt.Printf("initiating reorg with dirty accounts: %v\n", dirtyAccounts)
-
 			// Run the background reorg and announcements
 			go pool.runReorg(nextDone, reset, dirtyAccounts, queuedEvents)
 
@@ -1209,7 +1202,6 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 			} else {
 				reset.newHead = req.newHead
 			}
-			fmt.Printf("reset: appending to next dones %v\n", req.done)
 			nextDones = append(nextDones, req.done)
 			launchNextRun = true
 			//pool.reorgDoneCh <- nextDone
@@ -1217,7 +1209,6 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 		case req := <-pool.reqPromoteCh:
 			select {
 			case tx := <-pool.queueTxEventCh:
-				fmt.Printf("queue tx %x\n", tx.Hash())
 				// Queue up the event, but don't schedule a reorg. It's up to the caller to
 				// request one later if they want the events sent.
 				addr, _ := types.Sender(pool.signer, tx)
@@ -1233,13 +1224,11 @@ func (pool *LegacyPool) scheduleReorgLoop() {
 			} else {
 				dirtyAccounts.merge(req.set)
 			}
-			fmt.Printf("promote executables: appending to next dones %v\n", req.done)
 			nextDones = append(nextDones, req.done)
 			launchNextRun = true
 			//pool.reorgDoneCh <- nextDone
 
 		case tx := <-pool.queueTxEventCh:
-			fmt.Printf("queue tx %x\n", tx.Hash())
 			// Queue up the event, but don't schedule a reorg. It's up to the caller to
 			// request one later if they want the events sent.
 			addr, _ := types.Sender(pool.signer, tx)
@@ -1344,7 +1333,6 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 		if _, ok := events[addr]; !ok {
 			events[addr] = NewSortedMap()
 		}
-		fmt.Printf("promoted tx %v\n", tx.Hash())
 		events[addr].Put(tx)
 	}
 	if len(events) > 0 {
@@ -1465,7 +1453,6 @@ func (pool *LegacyPool) promoteExecutables(accounts []common.Address) []*types.T
 	// Iterate over all accounts and promote any executable transactions
 	gasLimit := pool.currentHead.Load().GasLimit
 	for _, addr := range accounts {
-		fmt.Printf("promoteExecutables %x\n", addr)
 		list := pool.queue[addr]
 		if list == nil {
 			continue // Just in case someone calls with a non existing account
