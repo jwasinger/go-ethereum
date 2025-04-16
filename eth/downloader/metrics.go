@@ -33,6 +33,8 @@ var (
 	bodyDropMeter    = metrics.NewRegisteredMeter("eth/downloader/bodies/drop", nil)
 	bodyTimeoutMeter = metrics.NewRegisteredMeter("eth/downloader/bodies/timeout", nil)
 
+	blockSizeMeter = metrics.NewRegisteredMeter("eth/downloader/blocks/size", nil)
+
 	receiptInMeter      = metrics.NewRegisteredMeter("eth/downloader/receipts/in", nil)
 	receiptReqTimer     = metrics.NewRegisteredTimer("eth/downloader/receipts/req", nil)
 	receiptDropMeter    = metrics.NewRegisteredMeter("eth/downloader/receipts/drop", nil)

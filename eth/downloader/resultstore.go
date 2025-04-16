@@ -214,6 +214,7 @@ func (r *resultStore) GetCompleted(limit int) []*fetchResult {
 
 	for _, result := range results {
 		r.itemsGasUsed -= result.Header.GasUsed
+		blockSizeMeter.Mark(int64(result.Size()))
 	}
 	r.itemsCount -= len(results)
 

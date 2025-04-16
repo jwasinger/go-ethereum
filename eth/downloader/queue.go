@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/prque"
@@ -84,6 +85,18 @@ func newFetchResult(header *types.Header, fastSync bool) *fetchResult {
 		item.pending.Store(item.pending.Load() | (1 << receiptType))
 	}
 	return item
+}
+
+func (f *fetchResult) Size() int {
+	receiptsSize := 0
+	for _, r := range f.Receipts {
+		receiptsSize += int(r.Size())
+	}
+	txsSize := 0
+	for _, t := range f.Transactions {
+		txsSize += int(t.Size())
+	}
+	return common.HashLength*len(f.Uncles) + int(unsafe.Sizeof(types.Withdrawal{})) + int(f.Header.Size()) + receiptsSize + txsSize
 }
 
 // body returns a representation of the fetch result as a types.Body object.
