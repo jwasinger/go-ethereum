@@ -179,7 +179,7 @@ func (r *resultStore) GetCompleted(limit int) []*fetchResult {
 	}
 	if limit > 0 {
 		blockSizeGauge.Update(int64(totalSize / completed))
-		r.pendingCount--
+		r.pendingCount -= limit
 	}
 
 	pendingBodyGauge.Update(int64(r.pendingCount))
