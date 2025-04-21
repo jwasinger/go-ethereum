@@ -178,8 +178,8 @@ func (r *resultStore) GetCompleted(limit int) []*fetchResult {
 		totalSize += r.items[i].Size()
 	}
 	if limit > 0 {
-		blockSizeGauge.Update(int64(totalSize / completed))
-		r.pendingCount -= completed
+		blockSizeGauge.Update(int64(totalSize / limit))
+		r.pendingCount -= limit
 	}
 
 	pendingBodyGauge.Update(int64(r.pendingCount))
