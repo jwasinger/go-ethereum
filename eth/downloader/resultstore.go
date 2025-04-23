@@ -18,6 +18,7 @@ package downloader
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"sync"
 	"sync/atomic"
 
@@ -46,28 +47,41 @@ type resultStore struct {
 	// contained in items.
 	pendingCount int
 
+	// pendingGasUsed tracks the current total gas used of all in-flight bodies
+	pendingGasUsed uint64
+
+	targetGasScheduled uint64
+
 	lock sync.RWMutex
 }
 
-func newResultStore(size int) *resultStore {
+func newResultStore(size, throttleThreshold int) *resultStore {
 	return &resultStore{
 		resultOffset:      0,
 		items:             make([]*fetchResult, size),
-		throttleThreshold: uint64(size),
+		throttleThreshold: uint64(throttleThreshold),
 	}
 }
 
-// SetThrottleThreshold updates the throttling threshold based on the requested
+// SetThrottleTarget updates the throttling threshold based on the requested
 // limit and the total queue capacity. It returns the (possibly capped) threshold
-func (r *resultStore) SetThrottleThreshold(threshold uint64) uint64 {
+func (r *resultStore) SetThrottleTarget(targetRatio common.StorageSize) uint64 {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	limit := uint64(len(r.items))
-	if threshold >= limit {
-		threshold = limit
+	if r.pendingCount == 0 {
+		return r.throttleThreshold
 	}
-	r.throttleThreshold = threshold
+	// use the target ratio to determine
+	// (pendingGasUsed / target) <- estimated total size of collective in-flight retrievals
+	estBlockSize := common.StorageSize(r.pendingGasUsed/uint64(r.pendingCount)) * targetRatio
+	targetRetrievalCount := blockCacheMemory / uint64(estBlockSize)
+
+	limit := uint64(len(r.items))
+	if targetRetrievalCount >= limit {
+		targetRetrievalCount = limit
+	}
+	r.throttleThreshold = targetRetrievalCount
 	return r.throttleThreshold
 }
 
@@ -90,9 +104,13 @@ func (r *resultStore) AddFetch(header *types.Header, snapSync bool) (stale, thro
 		return stale, throttled, item, err
 	}
 	if item == nil {
+		if header.GasUsed+r.pendingGasUsed > r.targetGasScheduled {
+			return false, true, nil, nil
+		}
 		item = newFetchResult(header, snapSync)
 		r.items[index] = item
 		r.pendingCount++
+		r.pendingGasUsed += header.GasUsed
 	}
 	return stale, throttled, item, err
 }
@@ -176,6 +194,9 @@ func (r *resultStore) GetCompleted(limit int) []*fetchResult {
 	}
 
 	r.pendingCount -= limit
+	for i := 0; i < limit; i++ {
+		r.pendingGasUsed -= r.items[i].Header.GasUsed
+	}
 	pendingBodyGauge.Update(int64(r.pendingCount))
 
 	results := make([]*fetchResult, limit)
