@@ -822,6 +822,99 @@ func TestUnpackEvent(t *testing.T) {
 	}
 }
 
+func TestUnpackEventNonStructTypes(t *testing.T) {
+	//args := `[{"indexed":false,"name":"sender","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"memo","type":"bytes"}]`
+	abiDefinition := `
+[
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "address"
+      }
+    ],
+    "name": "addressParam",
+    "outputs": [],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "bytes"
+      }
+    ],
+    "name": "bytesParam",
+    "outputs": [],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "param",
+        "type": "uint256"
+      }
+    ],
+    "name": "uintParam",
+    "outputs": [],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "bool"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "type": "bool"
+      }
+    ],
+    "name": "boolParam",
+    "outputs": [],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  }
+]
+`
+	abi, err := JSON(strings.NewReader(abiDefinition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type structWithBool struct {
+		val   bool
+		other struct{}
+	}
+
+	packed, err := abi.Pack("boolParam", true)
+	fmt.Println(err)
+	fmt.Println(packed)
+
+	var instance structWithBool
+	err = abi.UnpackIntoInterface(&instance, "boolParam", packed[4:])
+	fmt.Println(err)
+	fmt.Println(instance)
+}
+
 func TestUnpackEventIntoMap(t *testing.T) {
 	t.Parallel()
 	const abiJSON = `[{"constant":false,"inputs":[{"name":"memo","type":"bytes"}],"name":"receive","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"name":"sender","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"memo","type":"bytes"}],"name":"received","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"sender","type":"address"}],"name":"receivedAddr","type":"event"}]`
