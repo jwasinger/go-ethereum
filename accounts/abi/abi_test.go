@@ -835,7 +835,12 @@ func TestUnpackEventNonStructTypes(t *testing.T) {
       }
     ],
     "name": "addressParam",
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "param",
+        "type": "address"
+      }
+    ],
     "payable": true,
     "stateMutability": "payable",
     "type": "function"
@@ -869,7 +874,6 @@ func TestUnpackEventNonStructTypes(t *testing.T) {
       }
     ],
     "name": "uintParam",
-    "outputs": [],
     "payable": true,
     "stateMutability": "payable",
     "type": "function"
@@ -889,7 +893,6 @@ func TestUnpackEventNonStructTypes(t *testing.T) {
       }
     ],
     "name": "boolParam",
-    "outputs": [],
     "payable": true,
     "stateMutability": "payable",
     "type": "function"
@@ -900,19 +903,59 @@ func TestUnpackEventNonStructTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	type structWithBool struct {
-		val   bool
+		Val   bool
+		other struct{}
+	}
+	type structWithAddress struct {
+		Val   common.Address
+		other struct{}
+	}
+	type structWithUint struct {
+		Val   *big.Int
 		other struct{}
 	}
 
-	packed, err := abi.Pack("boolParam", true)
-	fmt.Println(err)
-	fmt.Println(packed)
+	{
+		packed, err := abi.Pack("boolParam", true)
+		if err != nil {
+			panic(err)
+		}
 
-	var instance structWithBool
-	err = abi.UnpackIntoInterface(&instance, "boolParam", packed[4:])
-	fmt.Println(err)
-	fmt.Println(instance)
+		var instance structWithBool
+		err = abi.UnpackIntoInterface(&instance, "boolParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed")
+		}
+	}
+	{
+		packed, err := abi.Pack("addressParam", common.Address{0x01})
+		if err != nil {
+			panic(err)
+		}
+		var instance structWithAddress
+		err = abi.UnpackIntoInterface(&instance, "addressParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed")
+		}
+		fmt.Printf("unpacked addr %v\n", instance)
+	}
+	{
+		testVal := big.NewInt(42)
+		packed, err := abi.Pack("uintParam", testVal)
+		if err != nil {
+			panic(err)
+		}
+		var instance structWithUint
+		err = abi.UnpackIntoInterface(&instance, "uintParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed")
+		}
+		if instance.Val.Cmp(testVal) != 0 {
+			t.Fatalf("got wrong result.  expected %s.  got %s.", testVal.String(), instance.Val.String())
+		}
+	}
 }
 
 func TestUnpackEventIntoMap(t *testing.T) {
