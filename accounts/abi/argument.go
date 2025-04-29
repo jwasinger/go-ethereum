@@ -121,6 +121,9 @@ func (arguments Arguments) Copy(v any, values []any) error {
 		}
 		return nil // Nothing to copy, return
 	}
+	if arguments.isTuple() {
+		return arguments.copyTuple(v, values)
+	}
 	return arguments.copyAtomic(v, values[0])
 }
 
