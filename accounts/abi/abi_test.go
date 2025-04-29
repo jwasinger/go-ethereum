@@ -1072,22 +1072,92 @@ func TestUnpackBasicTypesTuple(t *testing.T) {
   },
   {
     "constant": false,
+    "name": "boolParam",
     "inputs": [
       {
-        "name": "param",
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "Val1",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "Val2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct structWithBool",
+        "name": "",
         "type": "tuple"
       }
     ],
     "outputs": [
       {
-        "name": "output",
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "Val1",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "Val2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct structWithBool",
+        "name": "",
         "type": "tuple"
       }
     ],
-    "name": "boolParam",
     "payable": true,
     "stateMutability": "payable",
     "type": "function"
+  },
+  {
+    "constant": false,
+    "name": "uintParam",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "Val1",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "Val2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct structWithUint",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "Val1",
+            "type": "uint256"
+         },
+          {
+            "internalType": "bool",
+            "name": "Val2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct structWithUint",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "payable": true,
+    "stateMutability": "payable"
   }
 ]
 `

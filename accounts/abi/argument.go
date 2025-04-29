@@ -128,10 +128,6 @@ func (arguments Arguments) Copy(v any, values []any) error {
 func (arguments Arguments) copyAtomic(v any, marshalledValues any) error {
 	dst := reflect.ValueOf(v).Elem()
 	src := reflect.ValueOf(marshalledValues)
-
-	if dst.Kind() == reflect.Struct {
-		return set(dst.Field(0), src)
-	}
 	return set(dst, src)
 }
 
