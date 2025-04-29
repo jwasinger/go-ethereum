@@ -939,7 +939,6 @@ func TestUnpackBasicTypes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed")
 		}
-		fmt.Printf("unpacked addr %v\n", instance)
 	}
 	{
 		testVal := big.NewInt(42)
@@ -1053,25 +1052,6 @@ func TestUnpackBasicTypesTuple(t *testing.T) {
   },
   {
     "constant": false,
-    "inputs": [
-      {
-        "name": "param",
-        "type": "tuple"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "param",
-        "type": "tuple"
-      }
-    ],
-    "name": "uintParam",
-    "payable": true,
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "constant": false,
     "name": "boolParam",
     "inputs": [
       {
@@ -1157,7 +1137,8 @@ func TestUnpackBasicTypesTuple(t *testing.T) {
       }
     ],
     "payable": true,
-    "stateMutability": "payable"
+    "stateMutability": "payable",
+    "type": "function"
   }
 ]
 `
@@ -1189,7 +1170,6 @@ func TestUnpackBasicTypesTuple(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed")
 		}
-		fmt.Printf("unpacked addr %v\n", instance)
 	}
 	{
 		packed, err := abi.Pack("boolParam", structWithBool{true, true})
