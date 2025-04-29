@@ -822,7 +822,7 @@ func TestUnpackEvent(t *testing.T) {
 	}
 }
 
-func TestUnpackEventNonStructTypes(t *testing.T) {
+func TestUnpackBasicTypes(t *testing.T) {
 	//args := `[{"indexed":false,"name":"sender","type":"address"},{"indexed":false,"name":"amount","type":"uint256"},{"indexed":false,"name":"memo","type":"bytes"}]`
 	abiDefinition := `
 [
@@ -954,6 +954,198 @@ func TestUnpackEventNonStructTypes(t *testing.T) {
 		}
 		if instance.Val.Cmp(testVal) != 0 {
 			t.Fatalf("got wrong result.  expected %s.  got %s.", testVal.String(), instance.Val.String())
+		}
+	}
+}
+
+func TestUnpackBasicTypesTuple(t *testing.T) {
+	abiDefinition := `
+[
+  {
+    "constant": false,
+    "name": "addressParam",
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "Val1",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "Val2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct structWithAddress",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "value1",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "value2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct addressParam.Result",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "name": "bytesParam",
+    "constant": false,
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "value1",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bool",
+            "name": "value2",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct addressParam.Input",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "value1",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes",
+            "name": "value2",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct bytesParam.Result",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "tuple"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "param",
+        "type": "tuple"
+      }
+    ],
+    "name": "uintParam",
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "param",
+        "type": "tuple"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "type": "tuple"
+      }
+    ],
+    "name": "boolParam",
+    "payable": true,
+    "stateMutability": "payable",
+    "type": "function"
+  }
+]
+`
+	abi, err := JSON(strings.NewReader(abiDefinition))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type structWithBool struct {
+		Val1 bool
+		Val2 bool
+	}
+	type structWithAddress struct {
+		Val1 common.Address
+		Val2 bool
+	}
+	type structWithUint struct {
+		Val1 *big.Int
+		Val2 bool
+	}
+
+	{
+		packed, err := abi.Pack("addressParam", structWithAddress{common.Address{0x01}, true})
+		if err != nil {
+			panic(err)
+		}
+		var instance structWithAddress
+		err = abi.UnpackIntoInterface(&instance, "addressParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed")
+		}
+		fmt.Printf("unpacked addr %v\n", instance)
+	}
+	{
+		packed, err := abi.Pack("boolParam", structWithBool{true, true})
+		if err != nil {
+			panic(err)
+		}
+
+		var instance structWithBool
+		err = abi.UnpackIntoInterface(&instance, "boolParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+	}
+	{
+		testVal := big.NewInt(42)
+		packed, err := abi.Pack("uintParam", structWithUint{testVal, true})
+		if err != nil {
+			panic(err)
+		}
+		var instance structWithUint
+		err = abi.UnpackIntoInterface(&instance, "uintParam", packed[4:])
+		if err != nil {
+			t.Fatalf("failed")
+		}
+		if instance.Val1.Cmp(testVal) != 0 {
+			t.Fatalf("got wrong result.  expected %s.  got %s.", testVal.String(), instance.Val1.String())
 		}
 	}
 }
