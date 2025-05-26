@@ -229,3 +229,21 @@ func testKZGCells(t *testing.T, ckzg bool) {
 		t.Fatalf("failed to verify KZG proof at point: %v", err)
 	}
 }
+
+func BenchmarkComputeCellProofs(b *testing.B) {
+	ckzg := true
+	if ckzg && !ckzgAvailable {
+		b.Skip("CKZG unavailable in this test build")
+	}
+	defer func(old bool) { useCKZG.Store(old) }(useCKZG.Load())
+	useCKZG.Store(ckzg)
+
+	blob := randBlob()
+
+	for _ = range b.N {
+		_, err := ComputeCellProofs(blob)
+		if err != nil {
+			b.Fatalf("failed to create KZG proof at point: %v", err)
+		}
+	}
+}
