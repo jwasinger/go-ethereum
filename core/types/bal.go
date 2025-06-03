@@ -1,56 +1,55 @@
 package types
 
-import "github.com/ethereum/go-ethereum/common"
-
-//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs PerTxAccess,SlotAccess,AccountAccess,BlockAccessList,BalanceDelta,BalanceChange,AccountBalanceDiff,BalanceDiffs,CodeChange,AccountCodeDiff,CodeDiffs,AccountNonce,NonceDiffs --output bal_encoding.go
+//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs PerTxAccess,SlotAccess,AccountAccess,BlockAccessList,BalanceDelta,BalanceChange,AccountBalanceDiff,CodeChange,AccountCodeDiff,AccountNonce,NonceDiffs --output bal_encoding.go
 
 type PerTxAccess struct {
-	txIdx      uint `ssz-size:"2"`
-	valueAfter common.Hash
+	TxIdx      uint64 `ssz-size:"2"`
+	ValueAfter [32]byte
 }
 
 type SlotAccess struct {
-	slot     common.Hash
-	accesses []PerTxAccess
+	Slot     [32]byte      `ssz-size:"32"`
+	Accesses []PerTxAccess `ssz-max:"30000"`
 }
 
 type AccountAccess struct {
-	address  common.Address
-	accesses []SlotAccess
-	code     []byte // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
+	Address  [20]byte     `ssz-size:"32"`
+	Accesses []SlotAccess `ssz-max:"300000"`
+	code     []byte       `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
 }
-
-type BlockAccessList []AccountAccess
 
 type BalanceDelta [12]byte // {}-endian signed integer
 
 type BalanceChange struct {
-	txIdx uint64 `ssz-size:"2"`
-	delta BalanceDelta
+	TxIdx uint64 `ssz-size:"2"`
+	Delta BalanceDelta
 }
 
 type AccountBalanceDiff struct {
-	address common.Address
-	changes []BalanceChange
+	Address [40]byte
+	Changes []BalanceChange `ssz-max:"30000"`
 }
 
+// TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
 type BalanceDiffs = []AccountBalanceDiff
 
 type CodeChange struct {
-	txIdx   uint64 `ssz-size:"2"`
-	newCode []byte
+	TxIdx   uint64 `ssz-size:"2"`
+	NewCode []byte `ssz-max:"24576"`
 }
 
 type AccountCodeDiff struct {
-	address common.Address
-	changes []CodeChange
+	Address [40]byte
+	Changes []CodeChange `ssz-max:"30000"`
 }
 
+// TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
 type CodeDiffs []AccountCodeDiff
 
 type AccountNonce struct {
-	address    common.Address
-	nonceAfter uint64
+	Address    [40]byte
+	NonceAfter uint64
 }
 
+// TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
 type NonceDiffs []AccountNonce
