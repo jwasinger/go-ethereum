@@ -18,6 +18,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -198,22 +199,29 @@ func (a *accountAccess) MarkWrite(txIdx uint64, key, value common.Hash) {
 }
 
 // map of transaction idx to the new code
-type delegationChange map[uint64][]byte
+type codeDiff map[uint64][]byte
 
 type balanceDiff map[uint64]*uint256.Int
 
+// map of tx-idx to pre-state nonce
+type nonceDiff map[uint64]uint64
+
 type bal struct {
-	accountAccesses   map[common.Address]*accountAccess
-	delegationChanges map[common.Address]delegationChange
-	prestateNonces    map[common.Address]uint64 // TODO: the nonce for every tx index is recorded.
-	balanceChanges    map[common.Address]balanceDiff
+	accountAccesses map[common.Address]*accountAccess
+	codeChanges     map[common.Address]codeDiff
+	prestateNonces  map[common.Address]nonceDiff
+	balanceChanges  map[common.Address]balanceDiff
 }
 
-// called each time an account nonce changes (whether by being the sender of a tx or calling CREATE)
-func (b *bal) NonceDiff(account *stateObject) {
-	b.prestateNonces[account.address] = account.Nonce()
+// called during tx finalisation for each dirty account with changed nonce (whether by being the sender of a tx or calling CREATE)
+func (b *bal) NonceDiff(account *stateObject, txIdx uint64) {
+	if _, ok := b.prestateNonces[account.address]; !ok {
+		b.prestateNonces[account.address] = make(nonceDiff)
+	}
+	b.prestateNonces[account.address][txIdx] = account.origin.Nonce
 }
 
+// called during tx finalisation for each
 func (b *bal) BalanceChange(txIdx uint64, account *stateObject) {
 	if _, ok := b.balanceChanges[account.address]; !ok {
 		b.balanceChanges[account.address] = make(balanceDiff)
@@ -226,34 +234,39 @@ func (b *bal) BalanceChange(txIdx uint64, account *stateObject) {
 
 // TODO for eip:  specify that storage slots of newly-created accounts which are only read are not included in the BAL (?)
 
-// called every time a storage slot is read during transaction execution
+// called during tx execution every time a storage slot is read
 func (b *bal) StorageRead(account *stateObject, key common.Hash) {
 	if _, ok := b.accountAccesses[account.address]; !ok {
 		b.accountAccesses[account.address] = &accountAccess{
 			account.address,
 			make(map[common.Hash]slotAccess),
-			account.code, // TODO: deep-copy this ?
+			bytes.Clone(account.code),
 		}
 	}
 	b.accountAccesses[account.address].MarkRead(key)
 }
 
-// called every time a storage value is committed upon transaction finalization
-func (b *bal) StorageFinalise(account *stateObject, txIdx uint64, key, value common.Hash) {
+// called every time a mutated storage value is committed upon transaction finalization
+func (b *bal) StorageWrite(account *stateObject, txIdx uint64, key, value common.Hash) {
 	if _, ok := b.accountAccesses[account.address]; !ok {
 		b.accountAccesses[account.address] = &accountAccess{
 			account.address,
 			make(map[common.Hash]slotAccess),
-			account.code, // TODO: deep-copy this ?
+			bytes.Clone(account.code),
 		}
 	}
-
 	b.accountAccesses[account.address].MarkWrite(txIdx, key, value)
 }
 
-// called upon statedb commit for each delegation that has been accepted
-func (b *bal) DelegationCommit() {
-	panic("not implemented")
+// TODO: eip doesn't explicitly mention delegation changes being included in code changes, but they should be imo
+// will assume that this was implicit for the implementation here.
+
+// called during tx finalisation for each dirty account with mutated code
+func (b *bal) CodeChange(txIdx uint64, account *stateObject) {
+	if _, ok := b.codeChanges[account.address]; !ok {
+		b.codeChanges[account.address] = make(codeDiff)
+	}
+	b.codeChanges[account.address][txIdx] = bytes.Clone(account.Code())
 }
 
 // NewWithReader creates a new state for the specified state root. Unlike New,
@@ -468,7 +481,9 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
-		s.b.StorageRead(stateObject, hash)
+		if s.b != nil {
+			s.b.StorageRead(stateObject, hash)
+		}
 		return stateObject.GetState(hash)
 	}
 	return common.Hash{}
@@ -851,11 +866,16 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		} else {
 			if s.b != nil {
 				for key, val := range obj.dirtyStorage {
-					s.b.StorageFinalise(obj, uint64(s.txIndex), key, val)
+					s.b.StorageWrite(obj, uint64(s.txIndex), key, val)
 				}
-
 				if obj.origin.Balance.Cmp(obj.Balance()) != 0 {
-					// TODO: update the balance in the BAL
+					s.b.BalanceChange(uint64(s.txIndex), obj)
+				}
+				if obj.origin.Nonce != obj.Nonce() {
+					s.b.NonceDiff(obj, uint64(s.txIndex))
+				}
+				if bytes.Compare(obj.origin.CodeHash, obj.CodeHash()) != 0 {
+					s.b.CodeChange(uint64(s.txIndex), obj)
 				}
 			}
 
