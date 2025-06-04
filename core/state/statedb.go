@@ -138,6 +138,9 @@ type StateDB struct {
 	// State witness if cross validation is needed
 	witness *stateless.Witness
 
+	// block access list, if bal construction is specified
+	b *bal
+
 	// Measurements gathered during execution for debugging purposes
 	AccountReads    time.Duration
 	AccountHashes   time.Duration
@@ -164,6 +167,93 @@ func New(root common.Hash, db Database) (*StateDB, error) {
 		return nil, err
 	}
 	return NewWithReader(root, db, reader)
+}
+
+type slotAccess struct {
+	writes map[uint64]common.Hash // map of tx index to post-tx slot value
+}
+
+type accountAccess struct {
+	address  common.Address
+	accesses map[common.Hash]slotAccess // map of slot key to all post-tx values where that slot was read/written
+	code     []byte
+}
+
+func (a *accountAccess) MarkRead(key common.Hash) {
+	if _, ok := a.accesses[key]; !ok {
+		a.accesses[key] = slotAccess{
+			make(map[uint64]common.Hash),
+		}
+	}
+}
+
+func (a *accountAccess) MarkWrite(txIdx uint64, key, value common.Hash) {
+	if _, ok := a.accesses[key]; !ok {
+		a.accesses[key] = slotAccess{
+			make(map[uint64]common.Hash),
+		}
+	}
+
+	a.accesses[key].writes[txIdx] = value
+}
+
+// map of transaction idx to the new code
+type delegationChange map[uint64][]byte
+
+type balanceDiff map[uint64]*uint256.Int
+
+type bal struct {
+	accountAccesses   map[common.Address]*accountAccess
+	delegationChanges map[common.Address]delegationChange
+	prestateNonces    map[common.Address]uint64 // TODO: the nonce for every tx index is recorded.
+	balanceChanges    map[common.Address]balanceDiff
+}
+
+// called each time an account nonce changes (whether by being the sender of a tx or calling CREATE)
+func (b *bal) NonceDiff(account *stateObject) {
+	b.prestateNonces[account.address] = account.Nonce()
+}
+
+func (b *bal) BalanceChange(txIdx uint64, account *stateObject) {
+	if _, ok := b.balanceChanges[account.address]; !ok {
+		b.balanceChanges[account.address] = make(balanceDiff)
+	}
+	b.balanceChanges[account.address][txIdx] = account.Balance().Clone()
+}
+
+// TODO for eip:  specify that storage slots which are read/modified for accounts that are created/selfdestructed
+// in same transaction aren't included in teh BAL (?)
+
+// TODO for eip:  specify that storage slots of newly-created accounts which are only read are not included in the BAL (?)
+
+// called every time a storage slot is read during transaction execution
+func (b *bal) StorageRead(account *stateObject, key common.Hash) {
+	if _, ok := b.accountAccesses[account.address]; !ok {
+		b.accountAccesses[account.address] = &accountAccess{
+			account.address,
+			make(map[common.Hash]slotAccess),
+			account.code, // TODO: deep-copy this ?
+		}
+	}
+	b.accountAccesses[account.address].MarkRead(key)
+}
+
+// called every time a storage value is committed upon transaction finalization
+func (b *bal) StorageFinalise(account *stateObject, txIdx uint64, key, value common.Hash) {
+	if _, ok := b.accountAccesses[account.address]; !ok {
+		b.accountAccesses[account.address] = &accountAccess{
+			account.address,
+			make(map[common.Hash]slotAccess),
+			account.code, // TODO: deep-copy this ?
+		}
+	}
+
+	b.accountAccesses[account.address].MarkWrite(txIdx, key, value)
+}
+
+// called upon statedb commit for each delegation that has been accepted
+func (b *bal) DelegationCommit() {
+	panic("not implemented")
 }
 
 // NewWithReader creates a new state for the specified state root. Unlike New,
@@ -378,6 +468,7 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
+		s.b.StorageRead(stateObject, hash)
 		return stateObject.GetState(hash)
 	}
 	return common.Hash{}
@@ -758,6 +849,16 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 				s.stateObjectsDestruct[obj.address] = obj
 			}
 		} else {
+			if s.b != nil {
+				for key, val := range obj.dirtyStorage {
+					s.b.StorageFinalise(obj, uint64(s.txIndex), key, val)
+				}
+
+				if obj.origin.Balance.Cmp(obj.Balance()) != 0 {
+					// TODO: update the balance in the BAL
+				}
+			}
+
 			obj.finalise()
 			s.markUpdate(addr)
 		}
