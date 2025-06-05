@@ -218,7 +218,11 @@ func (b *bal) NonceDiff(account *stateObject, txIdx uint64) {
 	if _, ok := b.prestateNonces[account.address]; !ok {
 		b.prestateNonces[account.address] = make(nonceDiff)
 	}
-	b.prestateNonces[account.address][txIdx] = account.origin.Nonce
+	var prestateNonce uint64
+	if account.origin != nil {
+		prestateNonce = account.origin.Nonce
+	}
+	b.prestateNonces[account.address][txIdx] = prestateNonce
 }
 
 // called during tx finalisation for each
@@ -292,6 +296,12 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 	}
 	if db.TrieDB().IsVerkle() {
 		sdb.accessEvents = NewAccessEvents(db.PointCache())
+	}
+	sdb.b = &bal{
+		make(map[common.Address]*accountAccess),
+		make(map[common.Address]codeDiff),
+		make(map[common.Address]nonceDiff),
+		make(map[common.Address]balanceDiff),
 	}
 	return sdb, nil
 }
@@ -868,13 +878,13 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 				for key, val := range obj.dirtyStorage {
 					s.b.StorageWrite(obj, uint64(s.txIndex), key, val)
 				}
-				if obj.origin.Balance.Cmp(obj.Balance()) != 0 {
+				if obj.origin == nil || obj.origin.Balance.Cmp(obj.Balance()) != 0 {
 					s.b.BalanceChange(uint64(s.txIndex), obj)
 				}
-				if obj.origin.Nonce != obj.Nonce() {
+				if obj.origin == nil || obj.origin.Nonce != obj.Nonce() {
 					s.b.NonceDiff(obj, uint64(s.txIndex))
 				}
-				if bytes.Compare(obj.origin.CodeHash, obj.CodeHash()) != 0 {
+				if obj.origin == nil || bytes.Compare(obj.origin.CodeHash, obj.CodeHash()) != 0 {
 					s.b.CodeChange(uint64(s.txIndex), obj)
 				}
 			}
