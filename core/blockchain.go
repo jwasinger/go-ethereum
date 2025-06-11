@@ -1950,7 +1950,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}(time.Now(), throwaway, block)
 	}
 
-	if makeBAL && bc.vmConfig.BALConstruction {
+	if block.Body().AccessList != nil || (makeBAL && bc.vmConfig.BALConstruction) {
 		statedb.EnableBALConstruction()
 	}
 
@@ -2000,6 +2000,16 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		return nil, err
 	}
 	vtime := time.Since(vstart)
+
+	// TODO: also assert BAL fork here
+	if block.Body().AccessList != nil {
+		// if the block al is set, the statedb will build its own bal and we will verify
+		// by asserting that the block header bal and the one we just computed are the same
+		// at the end.
+		if !block.Body().AccessList.Eq(statedb.BlockAccessList()) {
+			panic("FUUUUUCK")
+		}
+	}
 
 	// If witnesses was generated and stateless self-validation requested, do
 	// that now. Self validation should *never* run in production, it's more of
