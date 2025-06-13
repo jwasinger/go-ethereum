@@ -780,8 +780,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 				if obj.origin == nil || obj.origin.Balance.Cmp(obj.Balance()) != 0 {
 					s.b.BalanceChange(uint64(s.txIndex), obj.address, obj.Balance())
 				}
-				if obj.origin == nil || obj.origin.Nonce != obj.Nonce() {
-					s.b.NonceDiff(uint64(s.txIndex), obj.address, obj.Nonce())
+				// add any prestate nonces for contracts that created others
+				if obj.origin == nil && obj.Nonce() != 0 {
+					s.b.NonceDiff(obj.Address(), 0)
+				} else if obj.origin != nil && obj.Nonce() != obj.origin.Nonce {
+					s.b.NonceDiff(obj.Address(), obj.origin.Nonce)
 				}
 				if obj.origin == nil || bytes.Compare(obj.origin.CodeHash, obj.CodeHash()) != 0 {
 					s.b.CodeChange(uint64(s.txIndex), obj.address, obj.code)
