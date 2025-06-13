@@ -11,72 +11,74 @@ import (
 
 // encoder types
 
-type PerTxAccess struct {
+type encodingPerTxAccess struct {
 	TxIdx      uint64 `ssz-size:"2"`
 	ValueAfter [32]byte
 }
 
-type SlotAccess struct {
-	Slot     [32]byte      `ssz-size:"32"`
-	Accesses []PerTxAccess `ssz-max:"30000"`
+type encodingSlotAccess struct {
+	Slot     [32]byte              `ssz-size:"32"`
+	Accesses []encodingPerTxAccess `ssz-max:"30000"`
 }
 
-type AccountAccess struct {
-	Address  [20]byte     `ssz-size:"32"`
-	Accesses []SlotAccess `ssz-max:"300000"`
-	code     []byte       `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
+type encodingAccountAccess struct {
+	Address  [20]byte             `ssz-size:"32"`
+	Accesses []encodingSlotAccess `ssz-max:"300000"`
+	code     []byte               `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
 }
 
-type accountAccessList []AccountAccess
+type encodingAccountAccessList []encodingAccountAccess
 
-type BalanceDelta [12]byte // {}-endian signed integer
+type encodingBalanceDelta [12]byte // {}-endian signed integer
 
-type BalanceChange struct {
+type encodingBalanceChange struct {
 	TxIdx uint64 `ssz-size:"2"`
-	Delta BalanceDelta
+	Delta encodingBalanceDelta
 }
 
-type AccountBalanceDiff struct {
+type encodingAccountBalanceDiff struct {
 	Address [20]byte
-	Changes []BalanceChange `ssz-max:"30000"`
+	Changes []encodingBalanceChange `ssz-max:"30000"`
 }
 
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
-type balanceDiffs = []AccountBalanceDiff
+type encodingBalanceDiffs = []encodingAccountBalanceDiff
 
-type CodeChange struct {
+type encodingCodeChange struct {
 	TxIdx   uint64 `ssz-size:"2"`
 	NewCode []byte `ssz-max:"24576"`
 }
 
-type AccountCodeDiff struct {
-	Address [40]byte
-	Changes []CodeChange `ssz-max:"30000"`
+type encodingAccountCodeDiff struct {
+	Address [20]byte
+	Changes []encodingCodeChange `ssz-max:"30000"`
 }
 
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
-type codeDiffs []AccountCodeDiff
+type encodingCodeDiffs []encodingAccountCodeDiff
 
-type AccountNonce struct {
-	Address    [40]byte
+type encodingAccountNonce struct {
+	Address    [20]byte
 	NonceAfter uint64
 }
 
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
-type nonceDiffs []AccountNonce
+type encodingNonceDiffs []encodingAccountNonce
 
-type encoderBAL struct {
-	AccountAccesses accountAccessList
-	BalanceDiffs    balanceDiffs
-	CodeDiffs       codeDiffs
-	NonceDiffs      nonceDiffs
+type encoderBlockAccessList struct {
+	AccountAccesses encodingAccountAccessList
+	BalanceDiffs    encodingBalanceDiffs
+	CodeDiffs       encodingCodeDiffs
+	NonceDiffs      encodingNonceDiffs
 }
+
+// non-encoder objects
 
 type slotAccess struct {
 	writes map[uint64]common.Hash // map of tx index to post-tx slot value
 }
 
-func (s slotAccess) toEncoderObj(key common.Hash) (res SlotAccess) {
+func (s slotAccess) toEncoderObj(key common.Hash) (res encodingSlotAccess) {
 	var (
 		slotIdxs []uint64
 	)
@@ -88,7 +90,7 @@ func (s slotAccess) toEncoderObj(key common.Hash) (res SlotAccess) {
 		return slotIdxs[i] < slotIdxs[j]
 	})
 	for _, slotIdx := range slotIdxs {
-		res.Accesses = append(res.Accesses, PerTxAccess{
+		res.Accesses = append(res.Accesses, encodingPerTxAccess{
 			slotIdx,
 			s.writes[slotIdx],
 		})
@@ -121,12 +123,27 @@ func (a *accountAccess) MarkWrite(txIdx uint64, key, value common.Hash) {
 }
 
 // map of transaction idx to the new code
-type codeDiff struct {
-	txIdx uint64
-	code  []byte
+type codeDiff map[uint64][]byte
+
+func (c codeDiff) toEncoderObj(addr common.Address) (res encodingAccountCodeDiff) {
+	res.Address = addr
+	var diffIdxs []uint64
+	for idx, _ := range c {
+		diffIdxs = append(diffIdxs, idx)
+	}
+	sort.Slice(diffIdxs, func(i, j int) bool {
+		return diffIdxs[i] < diffIdxs[j]
+	})
+	for _, idx := range diffIdxs {
+		res.Changes = append(res.Changes, encodingCodeChange{
+			TxIdx:   idx,
+			NewCode: bytes.Clone(c[idx]),
+		})
+	}
+	return
 }
 
-func (b *BalanceDelta) Set(val *uint256.Int) *BalanceDelta {
+func (b *encodingBalanceDelta) Set(val *uint256.Int) *encodingBalanceDelta {
 	valBytes := val.Bytes()
 	if len(valBytes) > 12 {
 		panic("can't encode value that is greater than 12 bytes in size")
@@ -137,7 +154,7 @@ func (b *BalanceDelta) Set(val *uint256.Int) *BalanceDelta {
 
 type balanceDiff map[uint64]*uint256.Int
 
-func (b balanceDiff) toEncoderObj(addr common.Address) (res AccountBalanceDiff) {
+func (b balanceDiff) toEncoderObj(addr common.Address) (res encodingAccountBalanceDiff) {
 	res.Address = addr
 	var diffIdxs []uint64
 	for txIdx, _ := range b {
@@ -148,9 +165,9 @@ func (b balanceDiff) toEncoderObj(addr common.Address) (res AccountBalanceDiff) 
 	})
 
 	for _, idx := range diffIdxs {
-		res.Changes = append(res.Changes, BalanceChange{
+		res.Changes = append(res.Changes, encodingBalanceChange{
 			TxIdx: idx,
-			Delta: *new(BalanceDelta).Set(b[idx]),
+			Delta: *new(encodingBalanceDelta).Set(b[idx]),
 		})
 	}
 	return res
@@ -164,6 +181,22 @@ type BlockAccessList struct {
 	balanceChanges  map[common.Address]balanceDiff
 	codeChanges     map[common.Address]codeDiff
 	prestateNonces  map[common.Address]nonceDiff
+}
+
+func codeDiffsToEncoderObj(codeChanges map[common.Address]codeDiff) (res encodingCodeDiffs) {
+	var codeChangeAddrs []common.Address
+
+	for addr, _ := range codeChanges {
+		codeChangeAddrs = append(codeChangeAddrs, addr)
+	}
+	sort.Slice(codeChangeAddrs, func(i, j int) bool {
+		return bytes.Compare(codeChangeAddrs[i][:], codeChangeAddrs[j][:]) < 0
+	})
+
+	for _, addr := range codeChangeAddrs {
+		res = append(res, codeChanges[addr].toEncoderObj(addr))
+	}
+	return
 }
 
 func NewBlockAccessList() *BlockAccessList {
@@ -340,10 +373,10 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 func (b *BlockAccessList) EncodeSSZ(result []byte) {
 	var (
 		accountAccessesAddrs   []common.Address
-		encoderAccountAccesses accountAccessList
+		encoderAccountAccesses encodingAccountAccessList
 
 		balanceDiffsAddrs   []common.Address
-		encoderBalanceDiffs balanceDiffs
+		encoderBalanceDiffs encodingBalanceDiffs
 	)
 
 	for addr, _ := range b.accountAccesses {
@@ -353,7 +386,7 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		return bytes.Compare(accountAccessesAddrs[i][:], accountAccessesAddrs[j][:]) < 0
 	})
 	for _, addr := range accountAccessesAddrs {
-		encoderAccountAccesses = append(encoderAccountAccesses, AccountAccess{
+		encoderAccountAccesses = append(encoderAccountAccesses, encodingAccountAccess{
 			Address:  addr,
 			Accesses: nil,
 			code:     b.accountAccesses[addr].code,
@@ -367,11 +400,11 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		sort.Slice(storageAccessKeys, func(i, j int) bool {
 			return bytes.Compare(storageAccessKeys[i][:], storageAccessKeys[j][:]) < 0
 		})
-		var accesses []SlotAccess
+		var accesses []encodingSlotAccess
 		for _, accessSlot := range storageAccessKeys {
 			accesses = append(accesses, b.accountAccesses[addr].accesses[accessSlot].toEncoderObj(accessSlot))
 		}
-		encoderAccountAccesses = append(encoderAccountAccesses, AccountAccess{
+		encoderAccountAccesses = append(encoderAccountAccesses, encodingAccountAccess{
 			Address:  addr,
 			Accesses: accesses,
 			code:     b.accountAccesses[addr].code,
@@ -392,7 +425,7 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 
 	// encode code diffs
 
-	encoderObj := encoderBAL{
+	encoderObj := encoderBlockAccessList{
 		AccountAccesses: encoderAccountAccesses,
 		BalanceDiffs:    encoderBalanceDiffs,
 		CodeDiffs:       nil,

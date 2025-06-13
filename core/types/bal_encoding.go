@@ -7,13 +7,13 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 )
 
-// MarshalSSZ ssz marshals the PerTxAccess object
-func (p *PerTxAccess) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingPerTxAccess object
+func (p *encodingPerTxAccess) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(p)
 }
 
-// MarshalSSZTo ssz marshals the PerTxAccess object to a target array
-func (p *PerTxAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingPerTxAccess object to a target array
+func (p *encodingPerTxAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
 	// Field (0) 'TxIdx'
@@ -25,8 +25,8 @@ func (p *PerTxAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the PerTxAccess object
-func (p *PerTxAccess) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingPerTxAccess object
+func (p *encodingPerTxAccess) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size != 40 {
@@ -42,19 +42,19 @@ func (p *PerTxAccess) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the PerTxAccess object
-func (p *PerTxAccess) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingPerTxAccess object
+func (p *encodingPerTxAccess) SizeSSZ() (size int) {
 	size = 40
 	return
 }
 
-// HashTreeRoot ssz hashes the PerTxAccess object
-func (p *PerTxAccess) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingPerTxAccess object
+func (p *encodingPerTxAccess) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(p)
 }
 
-// HashTreeRootWith ssz hashes the PerTxAccess object with a hasher
-func (p *PerTxAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingPerTxAccess object with a hasher
+func (p *encodingPerTxAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'TxIdx'
@@ -67,18 +67,18 @@ func (p *PerTxAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the PerTxAccess object
-func (p *PerTxAccess) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingPerTxAccess object
+func (p *encodingPerTxAccess) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(p)
 }
 
-// MarshalSSZ ssz marshals the SlotAccess object
-func (s *SlotAccess) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingSlotAccess object
+func (s *encodingSlotAccess) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(s)
 }
 
-// MarshalSSZTo ssz marshals the SlotAccess object to a target array
-func (s *SlotAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingSlotAccess object to a target array
+func (s *encodingSlotAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(36)
 
@@ -90,7 +90,7 @@ func (s *SlotAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Field (1) 'Accesses'
 	if size := len(s.Accesses); size > 30000 {
-		err = ssz.ErrListTooBigFn("SlotAccess.Accesses", size, 30000)
+		err = ssz.ErrListTooBigFn("encodingSlotAccess.Accesses", size, 30000)
 		return
 	}
 	for ii := 0; ii < len(s.Accesses); ii++ {
@@ -102,8 +102,8 @@ func (s *SlotAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the SlotAccess object
-func (s *SlotAccess) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingSlotAccess object
+func (s *encodingSlotAccess) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 36 {
@@ -132,7 +132,7 @@ func (s *SlotAccess) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		s.Accesses = make([]PerTxAccess, num)
+		s.Accesses = make([]encodingPerTxAccess, num)
 		for ii := 0; ii < num; ii++ {
 			if err = s.Accesses[ii].UnmarshalSSZ(buf[ii*40 : (ii+1)*40]); err != nil {
 				return err
@@ -142,8 +142,8 @@ func (s *SlotAccess) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the SlotAccess object
-func (s *SlotAccess) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingSlotAccess object
+func (s *encodingSlotAccess) SizeSSZ() (size int) {
 	size = 36
 
 	// Field (1) 'Accesses'
@@ -152,13 +152,13 @@ func (s *SlotAccess) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the SlotAccess object
-func (s *SlotAccess) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingSlotAccess object
+func (s *encodingSlotAccess) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(s)
 }
 
-// HashTreeRootWith ssz hashes the SlotAccess object with a hasher
-func (s *SlotAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingSlotAccess object with a hasher
+func (s *encodingSlotAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Slot'
@@ -184,18 +184,18 @@ func (s *SlotAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the SlotAccess object
-func (s *SlotAccess) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingSlotAccess object
+func (s *encodingSlotAccess) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(s)
 }
 
-// MarshalSSZ ssz marshals the AccountAccess object
-func (a *AccountAccess) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingAccountAccess object
+func (a *encodingAccountAccess) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AccountAccess object to a target array
-func (a *AccountAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingAccountAccess object to a target array
+func (a *encodingAccountAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(36)
 
@@ -207,7 +207,7 @@ func (a *AccountAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Field (1) 'Accesses'
 	if size := len(a.Accesses); size > 300000 {
-		err = ssz.ErrListTooBigFn("AccountAccess.Accesses", size, 300000)
+		err = ssz.ErrListTooBigFn("encodingAccountAccess.Accesses", size, 300000)
 		return
 	}
 	{
@@ -226,8 +226,8 @@ func (a *AccountAccess) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AccountAccess object
-func (a *AccountAccess) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingAccountAccess object
+func (a *encodingAccountAccess) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 36 {
@@ -256,7 +256,7 @@ func (a *AccountAccess) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		a.Accesses = make([]SlotAccess, num)
+		a.Accesses = make([]encodingSlotAccess, num)
 		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
 			if err = a.Accesses[indx].UnmarshalSSZ(buf); err != nil {
 				return err
@@ -270,8 +270,8 @@ func (a *AccountAccess) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AccountAccess object
-func (a *AccountAccess) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingAccountAccess object
+func (a *encodingAccountAccess) SizeSSZ() (size int) {
 	size = 36
 
 	// Field (1) 'Accesses'
@@ -283,13 +283,13 @@ func (a *AccountAccess) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the AccountAccess object
-func (a *AccountAccess) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingAccountAccess object
+func (a *encodingAccountAccess) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AccountAccess object with a hasher
-func (a *AccountAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingAccountAccess object with a hasher
+func (a *encodingAccountAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Address'
@@ -315,18 +315,18 @@ func (a *AccountAccess) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the AccountAccess object
-func (a *AccountAccess) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingAccountAccess object
+func (a *encodingAccountAccess) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the BalanceChange object
-func (b *BalanceChange) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingBalanceChange object
+func (b *encodingBalanceChange) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(b)
 }
 
-// MarshalSSZTo ssz marshals the BalanceChange object to a target array
-func (b *BalanceChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingBalanceChange object to a target array
+func (b *encodingBalanceChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
 	// Field (0) 'TxIdx'
@@ -338,8 +338,8 @@ func (b *BalanceChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the BalanceChange object
-func (b *BalanceChange) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingBalanceChange object
+func (b *encodingBalanceChange) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size != 20 {
@@ -355,19 +355,19 @@ func (b *BalanceChange) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the BalanceChange object
-func (b *BalanceChange) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingBalanceChange object
+func (b *encodingBalanceChange) SizeSSZ() (size int) {
 	size = 20
 	return
 }
 
-// HashTreeRoot ssz hashes the BalanceChange object
-func (b *BalanceChange) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingBalanceChange object
+func (b *encodingBalanceChange) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(b)
 }
 
-// HashTreeRootWith ssz hashes the BalanceChange object with a hasher
-func (b *BalanceChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingBalanceChange object with a hasher
+func (b *encodingBalanceChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'TxIdx'
@@ -380,18 +380,18 @@ func (b *BalanceChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the BalanceChange object
-func (b *BalanceChange) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingBalanceChange object
+func (b *encodingBalanceChange) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(b)
 }
 
-// MarshalSSZ ssz marshals the AccountBalanceDiff object
-func (a *AccountBalanceDiff) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingAccountBalanceDiff object
+func (a *encodingAccountBalanceDiff) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AccountBalanceDiff object to a target array
-func (a *AccountBalanceDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingAccountBalanceDiff object to a target array
+func (a *encodingAccountBalanceDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(44)
 
@@ -403,7 +403,7 @@ func (a *AccountBalanceDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Field (1) 'Changes'
 	if size := len(a.Changes); size > 30000 {
-		err = ssz.ErrListTooBigFn("AccountBalanceDiff.Changes", size, 30000)
+		err = ssz.ErrListTooBigFn("encodingAccountBalanceDiff.Changes", size, 30000)
 		return
 	}
 	for ii := 0; ii < len(a.Changes); ii++ {
@@ -415,8 +415,8 @@ func (a *AccountBalanceDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AccountBalanceDiff object
-func (a *AccountBalanceDiff) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingAccountBalanceDiff object
+func (a *encodingAccountBalanceDiff) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 44 {
@@ -445,7 +445,7 @@ func (a *AccountBalanceDiff) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		a.Changes = make([]BalanceChange, num)
+		a.Changes = make([]encodingBalanceChange, num)
 		for ii := 0; ii < num; ii++ {
 			if err = a.Changes[ii].UnmarshalSSZ(buf[ii*20 : (ii+1)*20]); err != nil {
 				return err
@@ -455,8 +455,8 @@ func (a *AccountBalanceDiff) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AccountBalanceDiff object
-func (a *AccountBalanceDiff) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingAccountBalanceDiff object
+func (a *encodingAccountBalanceDiff) SizeSSZ() (size int) {
 	size = 44
 
 	// Field (1) 'Changes'
@@ -465,13 +465,13 @@ func (a *AccountBalanceDiff) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the AccountBalanceDiff object
-func (a *AccountBalanceDiff) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingAccountBalanceDiff object
+func (a *encodingAccountBalanceDiff) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AccountBalanceDiff object with a hasher
-func (a *AccountBalanceDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingAccountBalanceDiff object with a hasher
+func (a *encodingAccountBalanceDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Address'
@@ -497,18 +497,18 @@ func (a *AccountBalanceDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the AccountBalanceDiff object
-func (a *AccountBalanceDiff) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingAccountBalanceDiff object
+func (a *encodingAccountBalanceDiff) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the CodeChange object
-func (c *CodeChange) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingCodeChange object
+func (c *encodingCodeChange) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(c)
 }
 
-// MarshalSSZTo ssz marshals the CodeChange object to a target array
-func (c *CodeChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingCodeChange object to a target array
+func (c *encodingCodeChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(12)
 
@@ -520,7 +520,7 @@ func (c *CodeChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Field (1) 'NewCode'
 	if size := len(c.NewCode); size > 24576 {
-		err = ssz.ErrBytesLengthFn("CodeChange.NewCode", size, 24576)
+		err = ssz.ErrBytesLengthFn("encodingCodeChange.NewCode", size, 24576)
 		return
 	}
 	dst = append(dst, c.NewCode...)
@@ -528,8 +528,8 @@ func (c *CodeChange) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the CodeChange object
-func (c *CodeChange) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingCodeChange object
+func (c *encodingCodeChange) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 12 {
@@ -565,8 +565,8 @@ func (c *CodeChange) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the CodeChange object
-func (c *CodeChange) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingCodeChange object
+func (c *encodingCodeChange) SizeSSZ() (size int) {
 	size = 12
 
 	// Field (1) 'NewCode'
@@ -575,13 +575,13 @@ func (c *CodeChange) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the CodeChange object
-func (c *CodeChange) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingCodeChange object
+func (c *encodingCodeChange) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(c)
 }
 
-// HashTreeRootWith ssz hashes the CodeChange object with a hasher
-func (c *CodeChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingCodeChange object with a hasher
+func (c *encodingCodeChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'TxIdx'
@@ -603,18 +603,18 @@ func (c *CodeChange) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the CodeChange object
-func (c *CodeChange) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingCodeChange object
+func (c *encodingCodeChange) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(c)
 }
 
-// MarshalSSZ ssz marshals the AccountCodeDiff object
-func (a *AccountCodeDiff) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingAccountCodeDiff object
+func (a *encodingAccountCodeDiff) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AccountCodeDiff object to a target array
-func (a *AccountCodeDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingAccountCodeDiff object to a target array
+func (a *encodingAccountCodeDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 	offset := int(44)
 
@@ -626,7 +626,7 @@ func (a *AccountCodeDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 
 	// Field (1) 'Changes'
 	if size := len(a.Changes); size > 30000 {
-		err = ssz.ErrListTooBigFn("AccountCodeDiff.Changes", size, 30000)
+		err = ssz.ErrListTooBigFn("encodingAccountCodeDiff.Changes", size, 30000)
 		return
 	}
 	{
@@ -645,8 +645,8 @@ func (a *AccountCodeDiff) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AccountCodeDiff object
-func (a *AccountCodeDiff) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingAccountCodeDiff object
+func (a *encodingAccountCodeDiff) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size < 44 {
@@ -675,7 +675,7 @@ func (a *AccountCodeDiff) UnmarshalSSZ(buf []byte) error {
 		if err != nil {
 			return err
 		}
-		a.Changes = make([]CodeChange, num)
+		a.Changes = make([]encodingCodeChange, num)
 		err = ssz.UnmarshalDynamic(buf, num, func(indx int, buf []byte) (err error) {
 			if err = a.Changes[indx].UnmarshalSSZ(buf); err != nil {
 				return err
@@ -689,8 +689,8 @@ func (a *AccountCodeDiff) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AccountCodeDiff object
-func (a *AccountCodeDiff) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingAccountCodeDiff object
+func (a *encodingAccountCodeDiff) SizeSSZ() (size int) {
 	size = 44
 
 	// Field (1) 'Changes'
@@ -702,13 +702,13 @@ func (a *AccountCodeDiff) SizeSSZ() (size int) {
 	return
 }
 
-// HashTreeRoot ssz hashes the AccountCodeDiff object
-func (a *AccountCodeDiff) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingAccountCodeDiff object
+func (a *encodingAccountCodeDiff) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AccountCodeDiff object with a hasher
-func (a *AccountCodeDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingAccountCodeDiff object with a hasher
+func (a *encodingAccountCodeDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Address'
@@ -734,18 +734,18 @@ func (a *AccountCodeDiff) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the AccountCodeDiff object
-func (a *AccountCodeDiff) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingAccountCodeDiff object
+func (a *encodingAccountCodeDiff) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
 
-// MarshalSSZ ssz marshals the AccountNonce object
-func (a *AccountNonce) MarshalSSZ() ([]byte, error) {
+// MarshalSSZ ssz marshals the encodingAccountNonce object
+func (a *encodingAccountNonce) MarshalSSZ() ([]byte, error) {
 	return ssz.MarshalSSZ(a)
 }
 
-// MarshalSSZTo ssz marshals the AccountNonce object to a target array
-func (a *AccountNonce) MarshalSSZTo(buf []byte) (dst []byte, err error) {
+// MarshalSSZTo ssz marshals the encodingAccountNonce object to a target array
+func (a *encodingAccountNonce) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	dst = buf
 
 	// Field (0) 'Address'
@@ -757,8 +757,8 @@ func (a *AccountNonce) MarshalSSZTo(buf []byte) (dst []byte, err error) {
 	return
 }
 
-// UnmarshalSSZ ssz unmarshals the AccountNonce object
-func (a *AccountNonce) UnmarshalSSZ(buf []byte) error {
+// UnmarshalSSZ ssz unmarshals the encodingAccountNonce object
+func (a *encodingAccountNonce) UnmarshalSSZ(buf []byte) error {
 	var err error
 	size := uint64(len(buf))
 	if size != 48 {
@@ -774,19 +774,19 @@ func (a *AccountNonce) UnmarshalSSZ(buf []byte) error {
 	return err
 }
 
-// SizeSSZ returns the ssz encoded size in bytes for the AccountNonce object
-func (a *AccountNonce) SizeSSZ() (size int) {
+// SizeSSZ returns the ssz encoded size in bytes for the encodingAccountNonce object
+func (a *encodingAccountNonce) SizeSSZ() (size int) {
 	size = 48
 	return
 }
 
-// HashTreeRoot ssz hashes the AccountNonce object
-func (a *AccountNonce) HashTreeRoot() ([32]byte, error) {
+// HashTreeRoot ssz hashes the encodingAccountNonce object
+func (a *encodingAccountNonce) HashTreeRoot() ([32]byte, error) {
 	return ssz.HashWithDefaultHasher(a)
 }
 
-// HashTreeRootWith ssz hashes the AccountNonce object with a hasher
-func (a *AccountNonce) HashTreeRootWith(hh ssz.HashWalker) (err error) {
+// HashTreeRootWith ssz hashes the encodingAccountNonce object with a hasher
+func (a *encodingAccountNonce) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	indx := hh.Index()
 
 	// Field (0) 'Address'
@@ -799,7 +799,7 @@ func (a *AccountNonce) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	return
 }
 
-// GetTree ssz hashes the AccountNonce object
-func (a *AccountNonce) GetTree() (*ssz.Node, error) {
+// GetTree ssz hashes the encodingAccountNonce object
+func (a *encodingAccountNonce) GetTree() (*ssz.Node, error) {
 	return ssz.ProofTree(a)
 }
