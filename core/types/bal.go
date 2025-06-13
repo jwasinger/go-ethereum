@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
+	"maps"
 	"sort"
 )
 
@@ -58,8 +59,8 @@ type encodingAccountCodeDiff struct {
 type encodingCodeDiffs []encodingAccountCodeDiff
 
 type encodingAccountNonce struct {
-	Address    [20]byte
-	NonceAfter uint64
+	Address     [20]byte
+	NonceBefore uint64
 }
 
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
@@ -73,6 +74,24 @@ type encoderBlockAccessList struct {
 }
 
 // non-encoder objects
+
+func nonceDiffsToEncoderObj(nonceDiffs map[common.Address]uint64) (res encodingNonceDiffs) {
+	var addrs []common.Address
+	for addr, _ := range nonceDiffs {
+		addrs = append(addrs, addr)
+	}
+	sort.Slice(addrs, func(i, j int) bool {
+		return bytes.Compare(addrs[i][:], addrs[j][:]) > 0
+	})
+
+	for _, addr := range addrs {
+		res = append(res, encodingAccountNonce{
+			Address:     addr,
+			NonceBefore: nonceDiffs[addr],
+		})
+	}
+	return
+}
 
 type slotAccess struct {
 	writes map[uint64]common.Hash // map of tx index to post-tx slot value
@@ -173,14 +192,11 @@ func (b balanceDiff) toEncoderObj(addr common.Address) (res encodingAccountBalan
 	return res
 }
 
-// map of tx-idx to pre-state nonce
-type nonceDiff map[uint64]uint64
-
 type BlockAccessList struct {
 	accountAccesses map[common.Address]*accountAccess
 	balanceChanges  map[common.Address]balanceDiff
 	codeChanges     map[common.Address]codeDiff
-	prestateNonces  map[common.Address]nonceDiff
+	prestateNonces  map[common.Address]uint64
 }
 
 func codeDiffsToEncoderObj(codeChanges map[common.Address]codeDiff) (res encodingCodeDiffs) {
@@ -204,7 +220,7 @@ func NewBlockAccessList() *BlockAccessList {
 		make(map[common.Address]*accountAccess),
 		make(map[common.Address]balanceDiff),
 		make(map[common.Address]codeDiff),
-		make(map[common.Address]nonceDiff),
+		make(map[common.Address]uint64),
 	}
 }
 
@@ -254,36 +270,16 @@ func (b *BlockAccessList) Eq(other *BlockAccessList) bool {
 		if !ok {
 			return false
 		}
-		if codeCh.txIdx != otherCodeCh.txIdx {
-			return false
-		}
-		if bytes.Compare(codeCh.code, otherCodeCh.code) != 0 {
+		equal := maps.EqualFunc(codeCh, otherCodeCh, func(b1, b2 []byte) bool {
+			return bytes.Equal(b1, b2)
+		})
+		if !equal {
 			return false
 		}
 	}
 
-	if len(b.prestateNonces) != len(other.prestateNonces) {
+	if !maps.Equal(b.prestateNonces, other.prestateNonces) {
 		return false
-	}
-	for addr, nonces := range b.prestateNonces {
-		otherNonces, ok := other.prestateNonces[addr]
-		if !ok {
-			return false
-		}
-
-		if len(nonces) != len(otherNonces) {
-			return false
-		}
-
-		for txIdx, nonce := range nonces {
-			otherNonce, ok := otherNonces[txIdx]
-			if !ok {
-				return false
-			}
-			if nonce != otherNonce {
-				return false
-			}
-		}
 	}
 
 	if len(b.balanceChanges) != len(other.balanceChanges) {
@@ -314,12 +310,10 @@ func (b *BlockAccessList) Eq(other *BlockAccessList) bool {
 	return true
 }
 
-// called during tx finalisation for each dirty account with changed nonce (whether by being the sender of a tx or calling CREATE)
-func (b *BlockAccessList) NonceDiff(txIdx uint64, address common.Address, originNonce uint64) {
-	if _, ok := b.prestateNonces[address]; !ok {
-		b.prestateNonces[address] = make(nonceDiff)
-	}
-	b.prestateNonces[address][txIdx] = originNonce
+// TODO: this should be called once per account per block for every account that sent txs in that block.
+// the value is the prestate nonce before the start of the first tx execution from that account in the block.
+func (b *BlockAccessList) NonceDiff(address common.Address, originNonce uint64) {
+	b.prestateNonces[address] = originNonce
 }
 
 // called during tx finalisation for each
@@ -364,10 +358,7 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	if _, ok := b.codeChanges[address]; !ok {
 		b.codeChanges[address] = codeDiff{}
 	}
-	b.codeChanges[address] = codeDiff{
-		txIdx,
-		bytes.Clone(code),
-	}
+	b.codeChanges[address][txIdx] = bytes.Clone(code)
 }
 
 func (b *BlockAccessList) EncodeSSZ(result []byte) {
@@ -423,12 +414,12 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		encoderBalanceDiffs = append(encoderBalanceDiffs, b.balanceChanges[addr].toEncoderObj(addr))
 	}
 
-	// encode code diffs
-
 	encoderObj := encoderBlockAccessList{
 		AccountAccesses: encoderAccountAccesses,
 		BalanceDiffs:    encoderBalanceDiffs,
-		CodeDiffs:       nil,
-		NonceDiffs:      nil,
+		CodeDiffs:       codeDiffsToEncoderObj(b.codeChanges),
+		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
 	}
+
+	// TODO: perform the encoding
 }

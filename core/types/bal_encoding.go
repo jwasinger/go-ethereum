@@ -752,7 +752,7 @@ func (a *encodingAccountNonce) MarshalSSZTo(buf []byte) (dst []byte, err error) 
 	dst = append(dst, a.Address[:]...)
 
 	// Field (1) 'NonceAfter'
-	dst = ssz.MarshalUint64(dst, a.NonceAfter)
+	dst = ssz.MarshalUint64(dst, a.NonceBefore)
 
 	return
 }
@@ -769,7 +769,7 @@ func (a *encodingAccountNonce) UnmarshalSSZ(buf []byte) error {
 	copy(a.Address[:], buf[0:40])
 
 	// Field (1) 'NonceAfter'
-	a.NonceAfter = ssz.UnmarshallUint64(buf[40:48])
+	a.NonceBefore = ssz.UnmarshallUint64(buf[40:48])
 
 	return err
 }
@@ -793,7 +793,7 @@ func (a *encodingAccountNonce) HashTreeRootWith(hh ssz.HashWalker) (err error) {
 	hh.PutBytes(a.Address[:])
 
 	// Field (1) 'NonceAfter'
-	hh.PutUint64(a.NonceAfter)
+	hh.PutUint64(a.NonceBefore)
 
 	hh.Merkleize(indx)
 	return
