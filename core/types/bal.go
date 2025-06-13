@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs PerTxAccess,SlotAccess,AccountAccess,BlockAccessList,BalanceDelta,BalanceChange,AccountBalanceDiff,CodeChange,AccountCodeDiff,AccountNonce,NonceDiffs,encoderBal --output bal_encoding.go
+//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountCodeDiff,encodingAccountNonce,encodingNonceDiffs,encoderBlockAccessLists --output bal_encoding.go
 
 // encoder types
 
@@ -25,7 +25,7 @@ type encodingSlotAccess struct {
 type encodingAccountAccess struct {
 	Address  [20]byte             `ssz-size:"32"`
 	Accesses []encodingSlotAccess `ssz-max:"300000"`
-	code     []byte               `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
+	Code     []byte               `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
 }
 
 type encodingAccountAccessList []encodingAccountAccess
@@ -380,7 +380,7 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		encoderAccountAccesses = append(encoderAccountAccesses, encodingAccountAccess{
 			Address:  addr,
 			Accesses: nil,
-			code:     b.accountAccesses[addr].code,
+			Code:     b.accountAccesses[addr].code,
 		})
 		// sort the accesses lexicographically by key, and the occurance of each key ascending by tx idx
 		// then encode them
@@ -398,7 +398,7 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		encoderAccountAccesses = append(encoderAccountAccesses, encodingAccountAccess{
 			Address:  addr,
 			Accesses: accesses,
-			code:     b.accountAccesses[addr].code,
+			Code:     b.accountAccesses[addr].code,
 		})
 	}
 
@@ -421,5 +421,5 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
 	}
 
-	// TODO: perform the encoding
+	_ = encoderObj
 }
