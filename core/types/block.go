@@ -295,6 +295,11 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 		b.withdrawals = slices.Clone(withdrawals)
 	}
 
+	if b.accessList != nil {
+		balHash := b.accessList.Hash()
+		b.header.BALHash = &balHash
+	}
+
 	return b
 }
 

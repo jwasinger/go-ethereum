@@ -3,12 +3,13 @@ package types
 import (
 	"bytes"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
 	"maps"
 	"sort"
 )
 
-//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountCodeDiff,encodingAccountNonce,encodingNonceDiffs,encoderBlockAccessLists --output bal_encoding.go
+//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountCodeDiff,encodingAccountNonce,encodingNonceDiffs,encodingBlockAccessList --output bal_encoding_generated.go
 
 // encoder types
 
@@ -25,7 +26,7 @@ type encodingSlotAccess struct {
 type encodingAccountAccess struct {
 	Address  [20]byte             `ssz-size:"32"`
 	Accesses []encodingSlotAccess `ssz-max:"300000"`
-	Code     []byte               `ssz-max:"24576"` // this is currently a union in the EIP spec, but unions aren't used anywhere in practice so I implement it as a list here.
+	Code     []byte               `ssz-max:"24576"`
 }
 
 type encodingAccountAccessList []encodingAccountAccess
@@ -66,11 +67,11 @@ type encodingAccountNonce struct {
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
 type encodingNonceDiffs []encodingAccountNonce
 
-type encoderBlockAccessList struct {
-	AccountAccesses encodingAccountAccessList
-	BalanceDiffs    encodingBalanceDiffs
-	CodeDiffs       encodingCodeDiffs
-	NonceDiffs      encodingNonceDiffs
+type encodingBlockAccessList struct {
+	AccountAccesses encodingAccountAccessList `ssz-max:"100"`
+	BalanceDiffs    encodingBalanceDiffs      `ssz-max:"100"`
+	CodeDiffs       encodingCodeDiffs         `ssz-max:"100"`
+	NonceDiffs      encodingNonceDiffs        `ssz-max:"100"`
 }
 
 // non-encoder objects
@@ -197,6 +198,7 @@ type BlockAccessList struct {
 	balanceChanges  map[common.Address]balanceDiff
 	codeChanges     map[common.Address]codeDiff
 	prestateNonces  map[common.Address]uint64
+	hash            common.Hash
 }
 
 func codeDiffsToEncoderObj(codeChanges map[common.Address]codeDiff) (res encodingCodeDiffs) {
@@ -221,6 +223,7 @@ func NewBlockAccessList() *BlockAccessList {
 		make(map[common.Address]balanceDiff),
 		make(map[common.Address]codeDiff),
 		make(map[common.Address]uint64),
+		common.Hash{},
 	}
 }
 
@@ -361,7 +364,7 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	b.codeChanges[address][txIdx] = bytes.Clone(code)
 }
 
-func (b *BlockAccessList) EncodeSSZ(result []byte) {
+func (b *BlockAccessList) encodeSSZ() []byte {
 	var (
 		accountAccessesAddrs   []common.Address
 		encoderAccountAccesses encodingAccountAccessList
@@ -414,12 +417,19 @@ func (b *BlockAccessList) EncodeSSZ(result []byte) {
 		encoderBalanceDiffs = append(encoderBalanceDiffs, b.balanceChanges[addr].toEncoderObj(addr))
 	}
 
-	encoderObj := encoderBlockAccessList{
+	encoderObj := encodingBlockAccessList{
 		AccountAccesses: encoderAccountAccesses,
 		BalanceDiffs:    encoderBalanceDiffs,
 		CodeDiffs:       codeDiffsToEncoderObj(b.codeChanges),
 		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
 	}
-
 	_ = encoderObj
+	return nil
+}
+
+func (b *BlockAccessList) Hash() common.Hash {
+	if b.hash == (common.Hash{}) {
+		b.hash = common.BytesToHash(crypto.Keccak256(b.encodeSSZ()))
+	}
+	return b.hash
 }
