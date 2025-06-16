@@ -2,9 +2,12 @@ package types
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+	"io"
 	"maps"
 	"sort"
 )
@@ -31,7 +34,9 @@ type encodingAccountAccess struct {
 
 type encodingAccountAccessList []encodingAccountAccess
 
-type encodingBalanceDelta [12]byte // {}-endian signed integer
+// TODO: this is 12 bytes in the spec
+// TODO: verify that Geth encodes the endianess according to the spec
+type encodingBalanceDelta [32]byte
 
 type encodingBalanceChange struct {
 	TxIdx uint64 `ssz-size:"2"`
@@ -124,6 +129,19 @@ type accountAccess struct {
 	code     []byte
 }
 
+func (a *accountAccess) Copy() *accountAccess {
+	accesses := make(map[common.Hash]slotAccess)
+	for key, access := range a.accesses {
+		accesses[key] = slotAccess{maps.Clone(access.writes)}
+	}
+
+	return &accountAccess{
+		a.address,
+		accesses,
+		bytes.Clone(a.code),
+	}
+}
+
 func (a *accountAccess) MarkRead(key common.Hash) {
 	if _, ok := a.accesses[key]; !ok {
 		a.accesses[key] = slotAccess{
@@ -145,6 +163,14 @@ func (a *accountAccess) MarkWrite(txIdx uint64, key, value common.Hash) {
 // map of transaction idx to the new code
 type codeDiff map[uint64][]byte
 
+func (c codeDiff) Copy() codeDiff {
+	res := make(codeDiff)
+	for idx, code := range c {
+		res[idx] = bytes.Clone(code)
+	}
+	return res
+}
+
 func (c codeDiff) toEncoderObj(addr common.Address) (res encodingAccountCodeDiff) {
 	res.Address = addr
 	var diffIdxs []uint64
@@ -163,16 +189,26 @@ func (c codeDiff) toEncoderObj(addr common.Address) (res encodingAccountCodeDiff
 	return
 }
 
+const maxValBytes = 32
+
 func (b *encodingBalanceDelta) Set(val *uint256.Int) *encodingBalanceDelta {
 	valBytes := val.Bytes()
-	if len(valBytes) > 12 {
+	if len(valBytes) > maxValBytes {
 		panic("can't encode value that is greater than 12 bytes in size")
 	}
-	copy(b[12-len(valBytes):], valBytes[:])
+	copy(b[maxValBytes-len(valBytes):], valBytes[:])
 	return b
 }
 
 type balanceDiff map[uint64]*uint256.Int
+
+func (b balanceDiff) Copy() balanceDiff {
+	res := make(map[uint64]*uint256.Int)
+	for idx, balance := range b {
+		res[idx] = balance.Clone()
+	}
+	return res
+}
 
 func (b balanceDiff) toEncoderObj(addr common.Address) (res encodingAccountBalanceDiff) {
 	res.Address = addr
@@ -199,6 +235,31 @@ type BlockAccessList struct {
 	codeChanges     map[common.Address]codeDiff
 	prestateNonces  map[common.Address]uint64
 	hash            common.Hash
+}
+
+// Copy deep-copies the access list
+func (b *BlockAccessList) Copy() *BlockAccessList {
+	accountAccesses := make(map[common.Address]*accountAccess)
+	balanceChanges := make(map[common.Address]balanceDiff)
+	codeChanges := make(map[common.Address]codeDiff)
+
+	for addr, aa := range b.accountAccesses {
+		accountAccesses[addr] = aa.Copy()
+	}
+	for addr, bd := range b.balanceChanges {
+		balanceChanges[addr] = bd.Copy()
+	}
+	for addr, cd := range b.codeChanges {
+		codeChanges[addr] = cd.Copy()
+	}
+
+	return &BlockAccessList{
+		accountAccesses,
+		balanceChanges,
+		codeChanges,
+		maps.Clone(b.prestateNonces),
+		b.hash,
+	}
 }
 
 func codeDiffsToEncoderObj(codeChanges map[common.Address]codeDiff) (res encodingCodeDiffs) {
@@ -364,7 +425,7 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	b.codeChanges[address][txIdx] = bytes.Clone(code)
 }
 
-func (b *BlockAccessList) encodeSSZ() []byte {
+func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
 	var (
 		accountAccessesAddrs   []common.Address
 		encoderAccountAccesses encodingAccountAccessList
@@ -423,13 +484,46 @@ func (b *BlockAccessList) encodeSSZ() []byte {
 		CodeDiffs:       codeDiffsToEncoderObj(b.codeChanges),
 		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
 	}
-	_ = encoderObj
+	dst, err := encoderObj.MarshalSSZTo(nil)
+	if err != nil {
+		return nil, err
+	}
+	return dst, nil
+}
+
+func (b *BlockAccessList) EncodeRLP(wr io.Writer) error {
+	fmt.Println("ENCODING")
+	w := rlp.NewEncoderBuffer(wr)
+	encoded, err := b.encodeSSZ()
+	if err != nil {
+		return err
+	}
+	w.WriteBytes(encoded)
+	return w.Flush()
+}
+func (b *BlockAccessList) DecodeRLP(dec *rlp.Stream) error {
+	inner, err := dec.Bytes()
+	if err != nil {
+		return err
+	}
+
+	var encInstance encodingBlockAccessList
+	if err = encInstance.UnmarshalSSZ(inner); err != nil {
+		return err
+	}
+
+	fmt.Printf("decoded bal: %v\n", encInstance)
 	return nil
+	// TODO validate lexicographic ordering as part of converting the encoding object to the working form.
 }
 
 func (b *BlockAccessList) Hash() common.Hash {
 	if b.hash == (common.Hash{}) {
-		b.hash = common.BytesToHash(crypto.Keccak256(b.encodeSSZ()))
+		encoded, err := b.encodeSSZ()
+		if err != nil {
+			panic(err)
+		}
+		b.hash = common.BytesToHash(crypto.Keccak256(encoded))
 	}
 	return b.hash
 }
