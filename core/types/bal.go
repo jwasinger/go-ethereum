@@ -2,12 +2,9 @@ package types
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
-	"io"
 	"maps"
 	"sort"
 )
@@ -77,6 +74,10 @@ type encodingBlockAccessList struct {
 	BalanceDiffs    encodingBalanceDiffs      `ssz-max:"100"`
 	CodeDiffs       encodingCodeDiffs         `ssz-max:"100"`
 	NonceDiffs      encodingNonceDiffs        `ssz-max:"100"`
+}
+
+func (b *encodingBlockAccessList) ToBlockAccessList() (*BlockAccessList, error) {
+	// TODO: validate the lexicographic ordering in the encoder object when we do the conversion here
 }
 
 // non-encoder objects
@@ -491,34 +492,9 @@ func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
 	return dst, nil
 }
 
-func (b *BlockAccessList) EncodeRLP(wr io.Writer) error {
-	fmt.Println("ENCODING")
-	w := rlp.NewEncoderBuffer(wr)
-	encoded, err := b.encodeSSZ()
-	if err != nil {
-		return err
-	}
-	w.WriteBytes(encoded)
-	return w.Flush()
-}
-func (b *BlockAccessList) DecodeRLP(dec *rlp.Stream) error {
-	inner, err := dec.Bytes()
-	if err != nil {
-		return err
-	}
-
-	var encInstance encodingBlockAccessList
-	if err = encInstance.UnmarshalSSZ(inner); err != nil {
-		return err
-	}
-
-	fmt.Printf("decoded bal: %v\n", encInstance)
-	return nil
-	// TODO validate lexicographic ordering as part of converting the encoding object to the working form.
-}
-
 func (b *BlockAccessList) Hash() common.Hash {
 	if b.hash == (common.Hash{}) {
+		// TODO: cache the encoded bal
 		encoded, err := b.encodeSSZ()
 		if err != nil {
 			panic(err)
