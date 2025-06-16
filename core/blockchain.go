@@ -1958,6 +1958,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	// while processing transactions. Before Byzantium the prefetcher is mostly
 	// useless due to the intermediate root hashing after each transaction.
 	var witness *stateless.Witness
+	// TODO: only enable BAL-verification if post-glamsterdam
 	if bc.chainConfig.IsByzantium(block.Number()) {
 		// Generate witnesses either if we're self-testing, or if it's the
 		// only block being inserted. A bit crude, but witnesses are huge,
@@ -2008,6 +2009,17 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		if !block.Body().AccessList.Eq(statedb.BlockAccessList()) {
 			bc.reportBlock(block, res, ErrBlockAccessListMismatch)
 		}
+	}
+	// TODO: rename BALConstruction to something that indicates it's for testing purposes only
+	if bc.vmConfig.BALConstruction && makeBAL {
+		// very ugly... deep-copy the block body before setting the block access
+		// list on it to prevent mutating the block instance passed by the caller.
+		existingBody := block.Body()
+		block = block.WithBody(*existingBody)
+		existingBody = block.Body()
+		existingBody.AccessList = statedb.BlockAccessList()
+		fmt.Printf("access list is %v\n", existingBody.AccessList)
+		block = block.WithBody(*existingBody)
 	}
 
 	// If witnesses was generated and stateless self-validation requested, do
