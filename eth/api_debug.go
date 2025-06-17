@@ -444,7 +444,7 @@ func (api *DebugAPI) GetTrieFlushInterval() (string, error) {
 	return api.eth.blockchain.GetTrieFlushInterval().String(), nil
 }
 
-func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) *types.BlockAccessList {
+func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) string {
 	var block *types.Block
 	if num := number.BlockNumber; num != nil {
 		block = api.eth.blockchain.GetBlockByNumber(uint64(num.Int64()))
@@ -453,8 +453,8 @@ func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) *types.Blo
 	}
 
 	if block == nil {
-		return nil
+		return ""
 	}
-	fmt.Println("foobar")
-	return block.Body().AccessList
+	fmt.Println(block.Body().AccessList)
+	return block.Body().AccessList.PrettyPrint()
 }

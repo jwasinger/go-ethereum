@@ -70,10 +70,10 @@ type encodingAccountNonce struct {
 type encodingNonceDiffs []encodingAccountNonce
 
 type encodingBlockAccessList struct {
-	AccountAccesses encodingAccountAccessList `ssz-max:"100"`
-	BalanceDiffs    encodingBalanceDiffs      `ssz-max:"100"`
-	CodeDiffs       encodingCodeDiffs         `ssz-max:"100"`
-	NonceDiffs      encodingNonceDiffs        `ssz-max:"100"`
+	//AccountAccesses encodingAccountAccessList `ssz-max:"100"`
+	BalanceDiffs encodingBalanceDiffs `ssz-max:"100"`
+	CodeDiffs    encodingCodeDiffs    `ssz-max:"100"`
+	NonceDiffs   encodingNonceDiffs   `ssz-max:"100"`
 }
 
 func (c encodingCodeDiffs) toMap() (map[common.Address]codeDiff, error) {
@@ -201,28 +201,34 @@ func (n encodingNonceDiffs) toMap() (map[common.Address]uint64, error) {
 }
 
 func (b *encodingBlockAccessList) ToBlockAccessList() (*BlockAccessList, error) {
-	accountAccesses, err := encodingAccountAccessListToMap(b.AccountAccesses)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		accountAccesses, err := encodingAccountAccessListToMap(b.AccountAccesses)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	balanceChanges, err := encodingBalanceDiffsToMap(b.BalanceDiffs)
 	if err != nil {
 		return nil, err
 	}
-	codeChanges, err := b.CodeDiffs.toMap()
-	if err != nil {
-		return nil, err
-	}
-	nonceDiffs, err := b.NonceDiffs.toMap()
-	if err != nil {
-		return nil, err
-	}
+	/*
+		codeChanges, err := b.CodeDiffs.toMap()
+		if err != nil {
+			return nil, err
+		}
+		nonceDiffs, err := b.NonceDiffs.toMap()
+		if err != nil {
+			return nil, err
+		}
+	*/
 	return &BlockAccessList{
-		accountAccesses,
-		balanceChanges,
-		codeChanges,
-		nonceDiffs,
-		common.Hash{},
+		//accountAccesses,
+		balanceChanges: balanceChanges,
+		/*
+			codeChanges,
+			nonceDiffs,
+		*/
+		//common.Hash{},
 	}, nil
 }
 
@@ -233,17 +239,19 @@ func nonceDiffsToEncoderObj(nonceDiffs map[common.Address]uint64) (res encodingN
 	for addr, _ := range nonceDiffs {
 		addrs = append(addrs, addr)
 	}
+
 	sort.Slice(addrs, func(i, j int) bool {
 		return bytes.Compare(addrs[i][:], addrs[j][:]) > 0
 	})
 
+	fmt.Printf("addrs are %v\n\n", addrs)
 	for _, addr := range addrs {
 		res = append(res, encodingAccountNonce{
 			Address:     addr,
 			NonceBefore: nonceDiffs[addr],
 		})
 	}
-	return
+	return res
 }
 
 type slotAccess struct {
@@ -562,7 +570,7 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	}
 }
 
-func (b *BlockAccessList) toEncodingObj() *encodingBlockAccessList {
+func (b *BlockAccessList) toEncoderObj() *encodingBlockAccessList {
 	var (
 		accountAccessesAddrs   []common.Address
 		encoderAccountAccesses encodingAccountAccessList
@@ -616,16 +624,16 @@ func (b *BlockAccessList) toEncodingObj() *encodingBlockAccessList {
 	}
 
 	encoderObj := encodingBlockAccessList{
-		AccountAccesses: encoderAccountAccesses,
-		BalanceDiffs:    encoderBalanceDiffs,
-		CodeDiffs:       codeDiffsToEncoderObj(b.codeChanges),
-		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
+		//AccountAccesses: encoderAccountAccesses,
+		BalanceDiffs: encoderBalanceDiffs,
+		CodeDiffs:    codeDiffsToEncoderObj(b.codeChanges),
+		NonceDiffs:   nonceDiffsToEncoderObj(b.prestateNonces),
 	}
 	return &encoderObj
 }
 
 func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
-	encoderObj := b.toEncodingObj()
+	encoderObj := b.toEncoderObj()
 	dst, err := encoderObj.MarshalSSZTo(nil)
 	if err != nil {
 		return nil, err
@@ -639,26 +647,42 @@ func (e *encodingBlockAccessList) PrettyPrint() string {
 	printWithIndent := func(indent int, text string) {
 		fmt.Fprintf(&res, "%s%s\n", strings.Repeat("    ", indent), text)
 	}
-	fmt.Fprintf(&res, "accounts:\n")
-	for _, accountDiff := range e.AccountAccesses {
-		printWithIndent(1, fmt.Sprintf("address: %x", accountDiff.Address))
-		printWithIndent(1, fmt.Sprintf("code:    %x", accountDiff.Code)) // TODO: code shouldn't be in account accesses (?)
+	/*
+		fmt.Fprintf(&res, "accounts:\n")
+		for _, accountDiff := range e.AccountAccesses {
+			printWithIndent(1, fmt.Sprintf("address: %x", accountDiff.Address))
+			printWithIndent(1, fmt.Sprintf("code:    %x", accountDiff.Code)) // TODO: code shouldn't be in account accesses (?)
 
-		printWithIndent(1, "slots:")
-		for _, slot := range accountDiff.Accesses {
-			printWithIndent(2, fmt.Sprintf("%x", slot))
-			printWithIndent(2, "accesses:")
-			for _, access := range slot.Accesses {
-				printWithIndent(3, fmt.Sprintf("idx: %d", access.TxIdx))
-				printWithIndent(3, fmt.Sprintf("post: %x", access.ValueAfter))
+			printWithIndent(1, "slots:")
+			for _, slot := range accountDiff.Accesses {
+				printWithIndent(2, fmt.Sprintf("%x", slot))
+				printWithIndent(2, "accesses:")
+				for _, access := range slot.Accesses {
+					printWithIndent(3, fmt.Sprintf("idx: %d", access.TxIdx))
+					printWithIndent(3, fmt.Sprintf("post: %x", access.ValueAfter))
+				}
 			}
 		}
-	}
-	fmt.Fprintf(&res, "code:\n")
+	*/
+	printWithIndent(0, "code:")
 	for _, codeDiff := range e.CodeDiffs {
 		printWithIndent(1, fmt.Sprintf("address: %x", codeDiff.Address))
 		printWithIndent(1, fmt.Sprintf("index:   %x", codeDiff.TxIdx))
 		printWithIndent(1, fmt.Sprintf("code:    %x", codeDiff.NewCode))
+	}
+	printWithIndent(0, "balances:")
+	for _, b := range e.BalanceDiffs {
+		printWithIndent(1, fmt.Sprintf("%x:", b.Address))
+		for _, change := range b.Changes {
+			printWithIndent(2, fmt.Sprintf("index: %d", change.TxIdx))
+			printWithIndent(2, fmt.Sprintf("balance: %s", new(uint256.Int).SetBytes(change.Delta[:]).String()))
+		}
+	}
+
+	printWithIndent(0, "nonces:")
+	for _, n := range e.NonceDiffs {
+		printWithIndent(1, fmt.Sprintf("address: %x", n.Address))
+		printWithIndent(1, fmt.Sprintf("nonce: %d", n.NonceBefore))
 	}
 
 	return res.String()
@@ -666,7 +690,7 @@ func (e *encodingBlockAccessList) PrettyPrint() string {
 
 // human-readable representation
 func (b *BlockAccessList) PrettyPrint() string {
-	enc := b.toEncodingObj()
+	enc := b.toEncoderObj()
 	return enc.PrettyPrint()
 }
 
@@ -698,9 +722,12 @@ func (b BlockAccessList) DecodeRLP(s *rlp.Stream) error {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("decode block rlp: %x\n", encBytes)
 	if err := enc.UnmarshalSSZ(encBytes); err != nil {
 		return err
 	}
+	fmt.Printf("enc is %v\n", enc)
+	fmt.Println(enc.PrettyPrint())
 	res, err := enc.ToBlockAccessList()
 	if err != nil {
 		return err

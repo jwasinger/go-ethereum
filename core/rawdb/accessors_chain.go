@@ -492,6 +492,7 @@ func ReadBody(db ethdb.Reader, hash common.Hash, number uint64) *types.Body {
 	if len(data) == 0 {
 		return nil
 	}
+	fmt.Printf("read block raw: %x\n", data)
 	body := new(types.Body)
 	if err := rlp.DecodeBytes(data, body); err != nil {
 		fmt.Printf("raw: %x\n", data)
