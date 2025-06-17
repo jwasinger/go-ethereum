@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/holiman/uint256"
@@ -9,7 +10,7 @@ import (
 	"sort"
 )
 
-//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountCodeDiff,encodingAccountNonce,encodingNonceDiffs,encodingBlockAccessList --output bal_encoding_generated.go
+//go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountNonce,encodingNonceDiffs,encodingBlockAccessList --output bal_encoding_generated.go
 
 // encoder types
 
@@ -48,14 +49,10 @@ type encodingAccountBalanceDiff struct {
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
 type encodingBalanceDiffs = []encodingAccountBalanceDiff
 
-type encodingCodeChange struct {
-	TxIdx   uint64 `ssz-size:"2"`
-	NewCode []byte `ssz-max:"24576"`
-}
-
 type encodingAccountCodeDiff struct {
 	Address [20]byte
-	Changes []encodingCodeChange `ssz-max:"30000"`
+	TxIdx   uint64 `ssz-size:"2"`
+	NewCode []byte `ssz-max:"24576"`
 }
 
 // TODO: implement encoder/decoder manually on this, as we can't specify tags for a type declaration
@@ -76,8 +73,129 @@ type encodingBlockAccessList struct {
 	NonceDiffs      encodingNonceDiffs        `ssz-max:"100"`
 }
 
+func (c encodingCodeDiffs) toMap() (map[common.Address]codeDiff, error) {
+	var prevAddr *common.Address
+	res := make(map[common.Address]codeDiff)
+	for _, diff := range c {
+		if prevAddr != nil {
+			if bytes.Compare(diff.Address[:], (*prevAddr)[:]) <= 0 {
+				return nil, fmt.Errorf("code diffs not in lexicographic order")
+			}
+		}
+		res[diff.Address] = codeDiff{
+			diff.TxIdx,
+			bytes.Clone(diff.NewCode),
+		}
+		var p common.Address = diff.Address
+		prevAddr = &p
+	}
+	return res, nil
+}
+
+func (c *encodingAccountBalanceDiff) toMap() (balanceDiff, error) {
+	var prevIdx *uint64
+	res := make(balanceDiff)
+	for _, diff := range c.Changes {
+		if prevIdx != nil {
+			if *prevIdx >= diff.TxIdx {
+				return nil, fmt.Errorf("not in lexicographic ordering")
+			}
+		}
+		res[diff.TxIdx] = new(uint256.Int).SetBytes(diff.Delta[:])
+	}
+	return res, nil
+}
+
+// TODO: make this a function on the parameter tpye
+func encodingBalanceDiffsToMap(c encodingBalanceDiffs) (map[common.Address]balanceDiff, error) {
+	var prevAddr *common.Address
+	res := make(map[common.Address]balanceDiff)
+	for _, diff := range c {
+		if prevAddr != nil {
+			if bytes.Compare(diff.Address[:], (*prevAddr)[:]) <= 0 {
+				return nil, fmt.Errorf("code diffs not in lexicographic order")
+			}
+		}
+		mp, err := diff.toMap()
+		if err != nil {
+			return nil, err
+		}
+		res[diff.Address] = mp
+		var p common.Address = diff.Address
+		prevAddr = &p
+	}
+	return res, nil
+}
+
+//func accountAccessesToMap()
+
+func (a *encodingSlotAccess) toSlotAccess() (*slotAccess, error) {
+	var prevIdx *uint64
+	res := slotAccess{make(map[uint64]common.Hash)}
+	for _, diff := range a.Accesses {
+		if prevIdx != nil {
+			if *prevIdx >= diff.TxIdx {
+				return nil, fmt.Errorf("not in lexicographic ordering")
+			}
+		}
+		res.writes[diff.TxIdx] = diff.ValueAfter
+	}
+	return &res, nil
+}
+
+func (a *encodingAccountAccess) toAccountAccess() (*accountAccess, error) {
+	var res accountAccess
+	var prevSlot *[32]byte
+	for _, diff := range a.Accesses {
+		if prevSlot != nil {
+			if bytes.Compare(diff.Slot[:], (*prevSlot)[:]) <= 0 {
+				return nil, fmt.Errorf("code diffs not in lexicographic order")
+			}
+		}
+		mp, err := diff.toSlotAccess()
+		if err != nil {
+			return nil, err
+		}
+		res.accesses[diff.Slot] = *mp
+		prevSlot = &diff.Slot
+	}
+	return &res, nil
+}
+
+func encodingAccountAccessListToMap(al encodingAccountAccessList) (map[common.Address]*accountAccess, error) {
+	var prevAddr *common.Address
+	res := make(map[common.Address]*accountAccess)
+	for _, diff := range al {
+		if prevAddr != nil {
+			if bytes.Compare(diff.Address[:], (*prevAddr)[:]) <= 0 {
+				return nil, fmt.Errorf("code diffs not in lexicographic order")
+			}
+		}
+		mp, err := diff.toAccountAccess()
+		if err != nil {
+			return nil, err
+		}
+		res[diff.Address] = mp
+		var p common.Address = diff.Address
+		prevAddr = &p
+	}
+	return res, nil
+}
+
 func (b *encodingBlockAccessList) ToBlockAccessList() (*BlockAccessList, error) {
-	// TODO: validate the lexicographic ordering in the encoder object when we do the conversion here
+	accountAccesses, err := encodingAccountAccessListToMap(b.AccountAccesses)
+	if err != nil {
+		return nil, err
+	}
+	balanceChanges, err := encodingBalanceDiffsToMap(b.BalanceDiffs)
+	if err != nil {
+		return nil, err
+	}
+
+	codeChanges, err := b.CodeDiffs.toMap()
+	if err != nil {
+		return nil, err
+	}
 }
 
 // non-encoder objects
@@ -161,36 +279,7 @@ func (a *accountAccess) MarkWrite(txIdx uint64, key, value common.Hash) {
 	a.accesses[key].writes[txIdx] = value
 }
 
-// map of transaction idx to the new code
-type codeDiff map[uint64][]byte
-
-func (c codeDiff) Copy() codeDiff {
-	res := make(codeDiff)
-	for idx, code := range c {
-		res[idx] = bytes.Clone(code)
-	}
-	return res
-}
-
-func (c codeDiff) toEncoderObj(addr common.Address) (res encodingAccountCodeDiff) {
-	res.Address = addr
-	var diffIdxs []uint64
-	for idx, _ := range c {
-		diffIdxs = append(diffIdxs, idx)
-	}
-	sort.Slice(diffIdxs, func(i, j int) bool {
-		return diffIdxs[i] < diffIdxs[j]
-	})
-	for _, idx := range diffIdxs {
-		res.Changes = append(res.Changes, encodingCodeChange{
-			TxIdx:   idx,
-			NewCode: bytes.Clone(c[idx]),
-		})
-	}
-	return
-}
-
-const maxValBytes = 32
+const maxValBytes = 32 // TODO: change this...
 
 func (b *encodingBalanceDelta) Set(val *uint256.Int) *encodingBalanceDelta {
 	valBytes := val.Bytes()
@@ -228,6 +317,18 @@ func (b balanceDiff) toEncoderObj(addr common.Address) (res encodingAccountBalan
 		})
 	}
 	return res
+}
+
+type codeDiff struct {
+	txIdx uint64
+	code  []byte
+}
+
+func (c *codeDiff) Copy() codeDiff {
+	return codeDiff{
+		c.txIdx,
+		bytes.Clone(c.code),
+	}
 }
 
 type BlockAccessList struct {
@@ -274,7 +375,11 @@ func codeDiffsToEncoderObj(codeChanges map[common.Address]codeDiff) (res encodin
 	})
 
 	for _, addr := range codeChangeAddrs {
-		res = append(res, codeChanges[addr].toEncoderObj(addr))
+		res = append(res, encodingAccountCodeDiff{
+			addr,
+			codeChanges[addr].txIdx,
+			bytes.Clone(codeChanges[addr].code),
+		})
 	}
 	return
 }
@@ -335,10 +440,10 @@ func (b *BlockAccessList) Eq(other *BlockAccessList) bool {
 		if !ok {
 			return false
 		}
-		equal := maps.EqualFunc(codeCh, otherCodeCh, func(b1, b2 []byte) bool {
-			return bytes.Equal(b1, b2)
-		})
-		if !equal {
+		if bytes.Compare(codeCh.code, otherCodeCh.code) != 0 {
+			return false
+		}
+		if codeCh.txIdx != otherCodeCh.txIdx {
 			return false
 		}
 	}
@@ -423,7 +528,10 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	if _, ok := b.codeChanges[address]; !ok {
 		b.codeChanges[address] = codeDiff{}
 	}
-	b.codeChanges[address][txIdx] = bytes.Clone(code)
+	b.codeChanges[address] = codeDiff{
+		txIdx,
+		bytes.Clone(code),
+	}
 }
 
 func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
