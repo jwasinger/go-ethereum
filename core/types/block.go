@@ -186,7 +186,7 @@ type Body struct {
 	Transactions []*Transaction
 	Uncles       []*Header
 	Withdrawals  []*Withdrawal    `rlp:"optional"`
-	AccessList   *BlockAccessList `rlp:"optional"`
+	AccessList   *BlockAccessList `rlp:"optional,nil"`
 }
 
 // Block represents an Ethereum block.
@@ -296,9 +296,10 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher TrieHasher
 		b.withdrawals = slices.Clone(withdrawals)
 	}
 
-	if b.accessList != nil {
-		balHash := b.accessList.Hash()
+	if body.AccessList != nil {
+		balHash := body.AccessList.Hash()
 		b.header.BALHash = &balHash
+		b.accessList = body.AccessList
 	}
 
 	return b
@@ -374,7 +375,6 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 	var alEnc []byte
 	var err error
 
-	fmt.Printf("encode block RLP: %v\n", b.accessList)
 	if b.accessList != nil {
 		alEnc, err = b.accessList.encodeSSZ()
 		if err != nil {

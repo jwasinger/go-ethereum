@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+	"io"
 	"maps"
 	"sort"
 )
@@ -622,6 +624,7 @@ func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("marshalled ssz is %x\n", dst)
 	return dst, nil
 }
 
@@ -636,3 +639,38 @@ func (b *BlockAccessList) Hash() common.Hash {
 	}
 	return b.hash
 }
+
+func (b BlockAccessList) EncodeRLP(wr io.Writer) error {
+	fmt.Println("ENCODERLP")
+	w := rlp.NewEncoderBuffer(wr)
+	buf, err := b.encodeSSZ()
+	if err != nil {
+		return err
+	}
+	w.WriteBytes(buf)
+	return w.Flush()
+}
+
+func (b BlockAccessList) DecodeRLP(s *rlp.Stream) error {
+	fmt.Println("Bal.DecodeRLP")
+	var enc encodingBlockAccessList
+	encBytes, err := s.Bytes()
+	if err != nil {
+		return err
+	}
+	if err := enc.UnmarshalSSZ(encBytes); err != nil {
+		fmt.Println("ok2")
+		return err
+	}
+	res, err := enc.ToBlockAccessList()
+	if err != nil {
+		fmt.Println("ok3")
+		return err
+	}
+	b = *res
+	fmt.Printf("res is %v\n", b)
+	return nil
+}
+
+var _ rlp.Encoder = BlockAccessList{}
+var _ rlp.Decoder = BlockAccessList{}
