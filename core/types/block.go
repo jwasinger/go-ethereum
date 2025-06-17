@@ -345,17 +345,26 @@ func CopyHeader(h *Header) *Header {
 
 // DecodeRLP decodes a block from RLP.
 func (b *Block) DecodeRLP(s *rlp.Stream) error {
-	var eb extblock
+	var (
+		eb  extblock
+		err error
+	)
 	_, size, _ := s.Kind()
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions, b.withdrawals, b.accessList = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals, eb.BAL
+	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
 	if eb.BAL != nil {
-		if err := b.accessList.UnmarshalSSZ(eb.BAL); err != nil {
-
+		bal := new(encodingBlockAccessList)
+		if err := bal.UnmarshalSSZ(eb.BAL); err != nil {
+			return err
+		}
+		b.accessList, err = bal.ToBlockAccessList()
+		if err != nil {
+			return err
 		}
 	}
+	// TODO: ensure that BAL is accounted for in size
 	b.size.Store(rlp.ListSize(size))
 	return nil
 }

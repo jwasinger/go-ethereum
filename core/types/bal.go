@@ -127,8 +127,6 @@ func encodingBalanceDiffsToMap(c encodingBalanceDiffs) (map[common.Address]balan
 	return res, nil
 }
 
-//func accountAccessesToMap()
-
 func (a *encodingSlotAccess) toSlotAccess() (*slotAccess, error) {
 	var prevIdx *uint64
 	res := slotAccess{make(map[uint64]common.Hash)}
@@ -139,6 +137,7 @@ func (a *encodingSlotAccess) toSlotAccess() (*slotAccess, error) {
 			}
 		}
 		res.writes[diff.TxIdx] = diff.ValueAfter
+		prevIdx = &diff.TxIdx
 	}
 	return &res, nil
 }
@@ -182,6 +181,22 @@ func encodingAccountAccessListToMap(al encodingAccountAccessList) (map[common.Ad
 	return res, nil
 }
 
+func (n encodingNonceDiffs) toMap() (map[common.Address]uint64, error) {
+	var prevAddr *common.Address
+	res := make(map[common.Address]uint64)
+	for _, diff := range n {
+		if prevAddr != nil {
+			if bytes.Compare(diff.Address[:], (*prevAddr)[:]) <= 0 {
+				return nil, fmt.Errorf("code diffs not in lexicographic order")
+			}
+		}
+		res[diff.Address] = diff.NonceBefore
+		var p common.Address = diff.Address
+		prevAddr = &p
+	}
+	return res, nil
+}
+
 func (b *encodingBlockAccessList) ToBlockAccessList() (*BlockAccessList, error) {
 	accountAccesses, err := encodingAccountAccessListToMap(b.AccountAccesses)
 	if err != nil {
@@ -191,11 +206,21 @@ func (b *encodingBlockAccessList) ToBlockAccessList() (*BlockAccessList, error) 
 	if err != nil {
 		return nil, err
 	}
-
 	codeChanges, err := b.CodeDiffs.toMap()
 	if err != nil {
 		return nil, err
 	}
+	nonceDiffs, err := b.NonceDiffs.toMap()
+	if err != nil {
+		return nil, err
+	}
+	return &BlockAccessList{
+		accountAccesses,
+		balanceChanges,
+		codeChanges,
+		nonceDiffs,
+		common.Hash{},
+	}, nil
 }
 
 // non-encoder objects
