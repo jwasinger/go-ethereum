@@ -631,12 +631,10 @@ func (b *BlockAccessList) toEncoderObj() *encodingBlockAccessList {
 
 func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
 	encoderObj := b.toEncoderObj()
-	fmt.Printf("bal encoder obj is %v\n", encoderObj)
 	dst, err := encoderObj.MarshalSSZTo(nil)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("marshalled ssz is %x\n", dst)
 	return dst, nil
 }
 
