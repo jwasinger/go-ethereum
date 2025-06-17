@@ -2018,7 +2018,6 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		block = block.WithBody(*existingBody)
 		existingBody = block.Body()
 		existingBody.AccessList = statedb.BlockAccessList()
-		fmt.Printf("access list is %v\n", existingBody.AccessList)
 		block = block.WithBody(*existingBody)
 	}
 

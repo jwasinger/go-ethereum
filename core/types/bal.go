@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"sort"
+	"strings"
 )
 
 //go:generate go run github.com/ferranbt/fastssz/sszgen --path . --objs encodingPerTxAccess,encodingSlotAccess,encodingAccountAccess,encodingBlockAccessList,encodingBalanceDelta,encodingBalanceChange,encodingAccountBalanceDiff,encodingCodeChange,encodingAccountNonce,encodingNonceDiffs,encodingBlockAccessList --output bal_encoding_generated.go
@@ -561,7 +562,7 @@ func (b *BlockAccessList) CodeChange(txIdx uint64, address common.Address, code 
 	}
 }
 
-func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
+func (b *BlockAccessList) toEncodingObj() *encodingBlockAccessList {
 	var (
 		accountAccessesAddrs   []common.Address
 		encoderAccountAccesses encodingAccountAccessList
@@ -620,12 +621,53 @@ func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
 		CodeDiffs:       codeDiffsToEncoderObj(b.codeChanges),
 		NonceDiffs:      nonceDiffsToEncoderObj(b.prestateNonces),
 	}
+	return &encoderObj
+}
+
+func (b *BlockAccessList) encodeSSZ() ([]byte, error) {
+	encoderObj := b.toEncodingObj()
 	dst, err := encoderObj.MarshalSSZTo(nil)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Printf("marshalled ssz is %x\n", dst)
 	return dst, nil
+}
+
+func (e *encodingBlockAccessList) PrettyPrint() string {
+	var res bytes.Buffer
+	printWithIndent := func(indent int, text string) {
+		fmt.Fprintf(&res, "%s%s\n", strings.Repeat("    ", indent), text)
+	}
+	fmt.Fprintf(&res, "accounts:\n")
+	for _, accountDiff := range e.AccountAccesses {
+		printWithIndent(1, fmt.Sprintf("address: %x", accountDiff.Address))
+		printWithIndent(1, fmt.Sprintf("code:    %x", accountDiff.Code)) // TODO: code shouldn't be in account accesses (?)
+
+		printWithIndent(1, "slots:")
+		for _, slot := range accountDiff.Accesses {
+			printWithIndent(2, fmt.Sprintf("%x", slot))
+			printWithIndent(2, "accesses:")
+			for _, access := range slot.Accesses {
+				printWithIndent(3, fmt.Sprintf("idx: %d", access.TxIdx))
+				printWithIndent(3, fmt.Sprintf("post: %x", access.ValueAfter))
+			}
+		}
+	}
+	fmt.Fprintf(&res, "code:\n")
+	for _, codeDiff := range e.CodeDiffs {
+		printWithIndent(1, fmt.Sprintf("address: %x", codeDiff.Address))
+		printWithIndent(1, fmt.Sprintf("index:   %x", codeDiff.TxIdx))
+		printWithIndent(1, fmt.Sprintf("code:    %x", codeDiff.NewCode))
+	}
+
+	return res.String()
+}
+
+// human-readable representation
+func (b *BlockAccessList) PrettyPrint() string {
+	enc := b.toEncodingObj()
+	return enc.PrettyPrint()
 }
 
 func (b *BlockAccessList) Hash() common.Hash {
@@ -641,7 +683,6 @@ func (b *BlockAccessList) Hash() common.Hash {
 }
 
 func (b BlockAccessList) EncodeRLP(wr io.Writer) error {
-	fmt.Println("ENCODERLP")
 	w := rlp.NewEncoderBuffer(wr)
 	buf, err := b.encodeSSZ()
 	if err != nil {
@@ -652,23 +693,19 @@ func (b BlockAccessList) EncodeRLP(wr io.Writer) error {
 }
 
 func (b BlockAccessList) DecodeRLP(s *rlp.Stream) error {
-	fmt.Println("Bal.DecodeRLP")
 	var enc encodingBlockAccessList
 	encBytes, err := s.Bytes()
 	if err != nil {
 		return err
 	}
 	if err := enc.UnmarshalSSZ(encBytes); err != nil {
-		fmt.Println("ok2")
 		return err
 	}
 	res, err := enc.ToBlockAccessList()
 	if err != nil {
-		fmt.Println("ok3")
 		return err
 	}
 	b = *res
-	fmt.Printf("res is %v\n", b)
 	return nil
 }
 

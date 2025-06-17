@@ -43,7 +43,7 @@ func TestCompleteKeywords(t *testing.T) {
 	}{
 		{
 			input: "St",
-			want:  []string{"String"},
+			want:  []string{"PrettyPrint"},
 		},
 		{
 			input: "x",

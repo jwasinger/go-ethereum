@@ -221,7 +221,7 @@ func (cs caseList) deactivate(index int) caseList {
 	return cs[:last]
 }
 
-// func (cs caseList) String() string {
+// func (cs caseList) PrettyPrint() string {
 //     s := "["
 //     for i, cas := range cs {
 //             if i != 0 {

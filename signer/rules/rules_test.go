@@ -64,7 +64,7 @@ function ApproveTx(request){
 }
 
 function test(thing){
-	console.log(thing.String())
+	console.log(thing.PrettyPrint())
 }
 
 `

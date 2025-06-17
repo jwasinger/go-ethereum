@@ -599,13 +599,13 @@ var bindTests = []struct {
 		`NonExistent`,
 		`
 			contract NonExistent {
-				function String() constant returns(string) {
+				function PrettyPrint() constant returns(string) {
 					return "I don't exist";
 				}
 			}
 		`,
 		[]string{`6060604052609f8060106000396000f3606060405260e060020a6000350463f97a60058114601a575b005b600060605260c0604052600d60809081527f4920646f6e27742065786973740000000000000000000000000000000000000060a052602060c0908152600d60e081905281906101009060a09080838184600060046012f15050815172ffffffffffffffffffffffffffffffffffffff1916909152505060405161012081900392509050f3`},
-		[]string{`[{"constant":true,"inputs":[],"name":"String","outputs":[{"name":"","type":"string"}],"type":"function"}]`},
+		[]string{`[{"constant":true,"inputs":[],"name":"PrettyPrint","outputs":[{"name":"","type":"string"}],"type":"function"}]`},
 		`
 			"github.com/ethereum/go-ethereum/accounts/abi/bind"
 			"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -623,7 +623,7 @@ var bindTests = []struct {
 				t.Fatalf("Failed to access non-existent contract: %v", err)
 			}
 			// Ensure that contract calls fail with the appropriate error
-			if res, err := nonexistent.String(nil); err == nil {
+			if res, err := nonexistent.PrettyPrint(nil); err == nil {
 				t.Fatalf("Call succeeded on non-existent contract: %v", res)
 			} else if (err != bind.ErrNoCode) {
 				t.Fatalf("Error mismatch: have %v, want %v", err, bind.ErrNoCode)
@@ -842,7 +842,7 @@ var bindTests = []struct {
 			// Verify that underscored return values correctly parse into structs
 			if res, err := underscorer.UnderscoredOutput(nil); err != nil {
 				t.Errorf("Failed to call constant function: %v", err)
-			} else if res.Int.Cmp(big.NewInt(314)) != 0 || res.String != "pi" {
+			} else if res.Int.Cmp(big.NewInt(314)) != 0 || res.PrettyPrint != "pi" {
 				t.Errorf("Invalid result, want: {314, \"pi\"}, got: %+v", res)
 			}
 			// Verify that underscored and non-underscored name collisions force tuple outputs

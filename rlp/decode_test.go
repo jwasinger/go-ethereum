@@ -295,12 +295,12 @@ func TestStreamReadBytes(t *testing.T) {
 		err   string
 	}{
 		// kind List
-		{input: "C0", size: 1, err: "rlp: expected String or Byte"},
+		{input: "C0", size: 1, err: "rlp: expected PrettyPrint or Byte"},
 		// kind Byte
 		{input: "04", size: 0, err: "input value has wrong size 1, want 0"},
 		{input: "04", size: 1},
 		{input: "04", size: 2, err: "input value has wrong size 1, want 2"},
-		// kind String
+		// kind PrettyPrint
 		{input: "820102", size: 0, err: "input value has wrong size 2, want 0"},
 		{input: "820102", size: 1, err: "input value has wrong size 2, want 1"},
 		{input: "820102", size: 2},
@@ -676,7 +676,7 @@ var decodeTests = []decodeTest{
 	{
 		input: "C180",
 		ptr:   new(nilListUint),
-		error: "rlp: wrong kind of empty value (got String, want List) for *uint, decoding into (rlp.nilListUint).X",
+		error: "rlp: wrong kind of empty value (got PrettyPrint, want List) for *uint, decoding into (rlp.nilListUint).X",
 	},
 	{
 		input: "C1C0",
@@ -696,7 +696,7 @@ var decodeTests = []decodeTest{
 	{
 		input: "C1C0",
 		ptr:   new(nilStringSlice),
-		error: "rlp: wrong kind of empty value (got List, want String) for *[]uint, decoding into (rlp.nilStringSlice).X",
+		error: "rlp: wrong kind of empty value (got List, want PrettyPrint) for *[]uint, decoding into (rlp.nilStringSlice).X",
 	},
 	{
 		input: "C180",
@@ -1116,7 +1116,7 @@ func ExampleDecode() {
 		fmt.Printf("Decoded value: %#v\n", s)
 	}
 	// Output:
-	// Decoded value: rlp.example{A:0xa, B:0x14, String:"foobar"}
+	// Decoded value: rlp.example{A:0xa, B:0x14, PrettyPrint:"foobar"}
 }
 
 func ExampleDecode_structTagNil() {
@@ -1131,7 +1131,7 @@ func ExampleDecode_structTagNil() {
 		String *string
 	}
 	Decode(bytes.NewReader(input), &normalRules)
-	fmt.Printf("normal: String = %q\n", *normalRules.String)
+	fmt.Printf("normal: PrettyPrint = %q\n", *normalRules.String)
 
 	// This type uses the struct tag.
 	// The empty input string is decoded as a nil pointer.
@@ -1139,11 +1139,11 @@ func ExampleDecode_structTagNil() {
 		String *string `rlp:"nil"`
 	}
 	Decode(bytes.NewReader(input), &withEmptyOK)
-	fmt.Printf("with nil tag: String = %v\n", withEmptyOK.String)
+	fmt.Printf("with nil tag: PrettyPrint = %v\n", withEmptyOK.String)
 
 	// Output:
-	// normal: String = ""
-	// with nil tag: String = <nil>
+	// normal: PrettyPrint = ""
+	// with nil tag: PrettyPrint = <nil>
 }
 
 func ExampleStream() {

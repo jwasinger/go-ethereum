@@ -84,7 +84,7 @@ func toBuf(vm *goja.Runtime, bufType goja.Value, val []byte) (goja.Value, error)
 func fromBuf(vm *goja.Runtime, bufType goja.Value, buf goja.Value, allowString bool) ([]byte, error) {
 	obj := buf.ToObject(vm)
 	switch obj.ClassName() {
-	case "String":
+	case "PrettyPrint":
 		if !allowString {
 			break
 		}

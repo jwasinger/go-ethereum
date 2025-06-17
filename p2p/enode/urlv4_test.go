@@ -188,7 +188,7 @@ func TestNodeString(t *testing.T) {
 		if test.wantError == "" && strings.HasPrefix(test.input, "enode://") {
 			str := test.wantResult.String()
 			if str != test.input {
-				t.Errorf("test %d: Node.String() mismatch:\ngot:  %s\nwant: %s", i, str, test.input)
+				t.Errorf("test %d: Node.PrettyPrint() mismatch:\ngot:  %s\nwant: %s", i, str, test.input)
 			}
 		}
 	}

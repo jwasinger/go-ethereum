@@ -273,7 +273,7 @@ func (r *encReader) next() []byte {
 		head := r.buf.lheads[r.lhpos]
 		sizebefore := head.offset - r.strpos
 		if sizebefore > 0 {
-			// String data before header.
+			// PrettyPrint data before header.
 			p := r.buf.str[r.strpos:head.offset]
 			r.strpos += sizebefore
 			return p
@@ -282,7 +282,7 @@ func (r *encReader) next() []byte {
 		return head.encode(r.buf.sizebuf[:])
 
 	case r.strpos < len(r.buf.str):
-		// String data at the end, after all list headers.
+		// PrettyPrint data at the end, after all list headers.
 		p := r.buf.str[r.strpos:]
 		r.strpos = len(r.buf.str)
 		return p

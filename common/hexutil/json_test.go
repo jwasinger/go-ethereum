@@ -120,7 +120,7 @@ func TestMarshalBytes(t *testing.T) {
 			continue
 		}
 		if out := Bytes(in).String(); out != test.want {
-			t.Errorf("%x: String mismatch: got %q, want %q", in, out, test.want)
+			t.Errorf("%x: PrettyPrint mismatch: got %q, want %q", in, out, test.want)
 			continue
 		}
 	}
@@ -259,7 +259,7 @@ func TestMarshalBig(t *testing.T) {
 			continue
 		}
 		if out := (*Big)(in).String(); out != test.want {
-			t.Errorf("%x: String mismatch: got %q, want %q", in, out, test.want)
+			t.Errorf("%x: PrettyPrint mismatch: got %q, want %q", in, out, test.want)
 			continue
 		}
 	}
@@ -323,7 +323,7 @@ func TestMarshalUint64(t *testing.T) {
 			continue
 		}
 		if out := (Uint64)(in).String(); out != test.want {
-			t.Errorf("%x: String mismatch: got %q, want %q", in, out, test.want)
+			t.Errorf("%x: PrettyPrint mismatch: got %q, want %q", in, out, test.want)
 			continue
 		}
 	}
@@ -342,7 +342,7 @@ func TestMarshalUint(t *testing.T) {
 			continue
 		}
 		if out := (Uint)(in).String(); out != test.want {
-			t.Errorf("%x: String mismatch: got %q, want %q", in, out, test.want)
+			t.Errorf("%x: PrettyPrint mismatch: got %q, want %q", in, out, test.want)
 			continue
 		}
 	}

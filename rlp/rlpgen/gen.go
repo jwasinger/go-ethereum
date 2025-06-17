@@ -183,7 +183,7 @@ func (*buildContext) makeBasicOp(typ *types.Basic) (op, error) {
 	case kind == types.String:
 		op.writeMethod = "WriteString"
 		op.writeArgType = types.Typ[types.String]
-		op.decMethod = "String"
+		op.decMethod = "PrettyPrint"
 		op.decResultType = types.Typ[types.String]
 	default:
 		return nil, fmt.Errorf("unhandled basic type: %v", typ)
@@ -466,7 +466,7 @@ func (op ptrOp) genDecode(ctx *genContext) (string, string) {
 	if op.nilValue == rlpstruct.NilKindList {
 		wantKind = "rlp.List"
 	} else {
-		wantKind = "rlp.String"
+		wantKind = "rlp.PrettyPrint"
 	}
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "var %s %s\n", resultV, types.TypeString(types.NewPointer(op.elemTyp), ctx.qualify))
