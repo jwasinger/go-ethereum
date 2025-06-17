@@ -455,5 +455,6 @@ func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) *types.Blo
 	if block == nil {
 		return nil
 	}
+	fmt.Println("foobar")
 	return block.Body().AccessList
 }

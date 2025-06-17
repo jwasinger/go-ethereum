@@ -374,6 +374,7 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 	var alEnc []byte
 	var err error
 
+	fmt.Printf("encode block RLP: %v\n", b.accessList)
 	if b.accessList != nil {
 		alEnc, err = b.accessList.encodeSSZ()
 		if err != nil {
