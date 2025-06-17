@@ -455,6 +455,6 @@ func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) string {
 	if block == nil {
 		return ""
 	}
-	fmt.Println(block.Body().AccessList)
+	// TODO: change this to an interface{} once json encoding is implemented
 	return block.Body().AccessList.PrettyPrint()
 }

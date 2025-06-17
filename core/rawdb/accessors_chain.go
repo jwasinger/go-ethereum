@@ -492,25 +492,23 @@ func ReadBody(db ethdb.Reader, hash common.Hash, number uint64) *types.Body {
 	if len(data) == 0 {
 		return nil
 	}
-	fmt.Printf("read block raw: %x\n", data)
+	fmt.Printf("read block body rlp %x\n", data)
 	body := new(types.Body)
 	if err := rlp.DecodeBytes(data, body); err != nil {
-		fmt.Printf("raw: %x\n", data)
 		log.Error("Invalid block body RLP", "hash", hash, "err", err)
-		panic("foobarzzz")
 		return nil
 	}
+	fmt.Printf("block body al %v\n", body.AccessList)
 	return body
 }
 
 // WriteBody stores a block body into the database.
 func WriteBody(db ethdb.KeyValueWriter, hash common.Hash, number uint64, body *types.Body) {
-	fmt.Printf("WriteBody %v\n", body.AccessList)
+	fmt.Printf("write block %d with al %v\n", number, body.AccessList)
 	data, err := rlp.EncodeToBytes(body)
 	if err != nil {
 		log.Crit("Failed to RLP encode body", "err", err)
 	}
-	fmt.Printf("body rlp is %x\n", data)
 	WriteBodyRLP(db, hash, number, data)
 }
 

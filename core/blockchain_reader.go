@@ -18,6 +18,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -169,6 +170,7 @@ func (bc *BlockChain) GetBlock(hash common.Hash, number uint64) *types.Block {
 	if block == nil {
 		return nil
 	}
+	fmt.Printf("add block %s with AL: %v\n", block.Number(), block.Body().AccessList)
 	// Cache the found block for next time and return
 	bc.blockCache.Add(block.Hash(), block)
 	return block

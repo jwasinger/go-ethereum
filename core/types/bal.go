@@ -706,7 +706,8 @@ func (b *BlockAccessList) Hash() common.Hash {
 	return b.hash
 }
 
-func (b BlockAccessList) EncodeRLP(wr io.Writer) error {
+func (b *BlockAccessList) EncodeRLP(wr io.Writer) error {
+	fmt.Println("bal encode rlp")
 	w := rlp.NewEncoderBuffer(wr)
 	buf, err := b.encodeSSZ()
 	if err != nil {
@@ -716,25 +717,22 @@ func (b BlockAccessList) EncodeRLP(wr io.Writer) error {
 	return w.Flush()
 }
 
-func (b BlockAccessList) DecodeRLP(s *rlp.Stream) error {
+func (b *BlockAccessList) DecodeRLP(s *rlp.Stream) error {
 	var enc encodingBlockAccessList
 	encBytes, err := s.Bytes()
 	if err != nil {
 		return err
 	}
-	fmt.Printf("decode block rlp: %x\n", encBytes)
 	if err := enc.UnmarshalSSZ(encBytes); err != nil {
 		return err
 	}
-	fmt.Printf("enc is %v\n", enc)
-	fmt.Println(enc.PrettyPrint())
 	res, err := enc.ToBlockAccessList()
 	if err != nil {
 		return err
 	}
-	b = *res
+	*b = *res
 	return nil
 }
 
-var _ rlp.Encoder = BlockAccessList{}
-var _ rlp.Decoder = BlockAccessList{}
+var _ rlp.Encoder = &BlockAccessList{}
+var _ rlp.Decoder = &BlockAccessList{}
