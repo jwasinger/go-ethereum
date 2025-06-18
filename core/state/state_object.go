@@ -83,6 +83,9 @@ type stateObject struct {
 	// object was previously existent and is being deployed as a contract within
 	// the current transaction.
 	newContract bool
+
+	// This is set if the object is a contract that was created by another contract
+	creatorContract common.Address
 }
 
 // empty returns whether the account is considered empty.
@@ -492,6 +495,7 @@ func (s *stateObject) deepCopy(db *StateDB) *stateObject {
 		dirtyCode:          s.dirtyCode,
 		selfDestructed:     s.selfDestructed,
 		newContract:        s.newContract,
+		creatorContract: s.creatorContract,
 	}
 	if s.trie != nil {
 		obj.trie = mustCopyTrie(s.trie)

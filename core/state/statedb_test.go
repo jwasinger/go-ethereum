@@ -406,7 +406,7 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 				storageRoot := s.GetStorageRoot(addr)
 				emptyStorage := storageRoot == (common.Hash{}) || storageRoot == types.EmptyRootHash
 				if s.GetNonce(addr) == 0 && emptyCode && emptyStorage {
-					s.CreateContract(addr)
+					s.CreateContract(common.BytesToAddress([]byte{0xff}), addr)
 					// We also set some code here, to prevent the
 					// CreateContract action from being performed twice in a row,
 					// which would cause a difference in state when unrolling

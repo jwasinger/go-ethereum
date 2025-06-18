@@ -650,11 +650,16 @@ func (s *StateDB) CreateAccount(addr common.Address) {
 // state due to funds sent beforehand.
 // This operation sets the 'newContract'-flag, which is required in order to
 // correctly handle EIP-6780 'delete-in-same-transaction' logic.
-func (s *StateDB) CreateContract(addr common.Address) {
+func (s *StateDB) CreateContract(creator, addr common.Address) {
 	obj := s.getStateObject(addr)
 	if !obj.newContract {
 		obj.newContract = true
 		s.journal.createContract(addr)
+
+		creator := s.getStateObject(creator)
+		if common.BytesToHash(creator.CodeHash()) != types.EmptyCodeHash {
+			obj.creatorContract = creator.address
+		}
 	}
 }
 
