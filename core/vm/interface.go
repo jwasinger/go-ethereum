@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
@@ -104,5 +105,5 @@ type StateDB interface {
 	TxIndex() int
 
 	// Finalise must be invoked at the end of a transaction
-	Finalise(bool)
+	Finalise(bool, *bal.StateDiff)
 }

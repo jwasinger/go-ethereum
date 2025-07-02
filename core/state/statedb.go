@@ -18,15 +18,15 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"maps"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -141,7 +141,11 @@ type StateDB struct {
 	witness *stateless.Witness
 
 	// block access list, if bal construction is specified
-	b *bal.ConstructionBlockAccessList
+	constructionBAL *bal.ConstructionBlockAccessList
+
+	// block access list we are executing against
+	execBAL *bal.BlockAccessList
+	balIt   *bal.BALIterator
 
 	// Measurements gathered during execution for debugging purposes
 	AccountReads    time.Duration
@@ -166,13 +170,13 @@ type StateDB struct {
 // access lists from state reads/writes recorded during block execution
 func (s *StateDB) EnableBALConstruction() {
 	bal := bal.NewConstructionBlockAccessList()
-	s.b = &bal
+	s.constructionBAL = &bal
 }
 
 // BlockAccessList retrieves the access list that has been constructed
 // by the StateDB instance, or nil if BAL construction was not enabled.
 func (s *StateDB) BlockAccessList() *bal.ConstructionBlockAccessList {
-	return s.b
+	return s.constructionBAL
 }
 
 // New creates a new state from a given trie.
@@ -391,8 +395,8 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 // GetState retrieves the value associated with the specific key.
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
-	if s.b != nil {
-		s.b.StorageRead(addr, hash)
+	if s.constructionBAL != nil {
+		s.constructionBAL.StorageRead(addr, hash)
 	}
 	if stateObject != nil {
 		return stateObject.GetState(hash)
@@ -651,10 +655,10 @@ func (s *StateDB) getOrNewStateObject(addr common.Address) *stateObject {
 		obj = s.createObject(addr)
 	}
 
-	if s.b != nil {
+	if s.constructionBAL != nil {
 		// note: when sending a transfer with no value, the target account is loaded here
 		// we probably want to specify whether this is proper behavior in the EIP
-		s.b.AccountRead(addr)
+		s.constructionBAL.AccountRead(addr)
 	}
 	return obj
 }
@@ -769,7 +773,15 @@ func (s *StateDB) GetRefund() uint64 {
 // Finalise finalises the state by removing the destructed objects and clears
 // the journal as well as the refunds. Finalise, however, will not push any updates
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
-func (s *StateDB) Finalise(deleteEmptyObjects bool) {
+//
+// if accessList is provided, verify the post-tx state against the diff.
+func (s *StateDB) Finalise(deleteEmptyObjects bool, accessList *bal.StateDiff) {
+	var balDiff *bal.StateDiff
+	if s.execBAL != nil {
+		// TODO: move diff before the loop
+		balDiff = s.balIt.Iterate(uint16(s.txIndex))
+	}
+
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
 		obj, exist := s.stateObjects[addr]
@@ -792,26 +804,49 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 				s.stateObjectsDestruct[obj.address] = obj
 			}
 		} else {
-			if s.b != nil {
+			if s.constructionBAL != nil {
 				// add written storage keys/values
 				for key, val := range obj.dirtyStorage {
-					s.b.StorageWrite(uint16(s.txIndex), obj.address, key, val)
+					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
 				}
 
 				// for addresses that changed balance, add the post-change value
 				if obj.Balance().Cmp(obj.txPreBalance) != 0 {
-					s.b.BalanceChange(uint16(s.txIndex), obj.address, obj.Balance())
+					s.constructionBAL.BalanceChange(uint16(s.txIndex), obj.address, obj.Balance())
 				}
 
-				// include nonces for any contract-like accounts which incremented them
-				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
-					s.b.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
+				// include nonces for any contracts which incremented them.
+				// newly-delegated contracts are not included
+				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce && !obj.isNewlyDelegated() {
+					s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
 				}
 
 				// include code of created contracts
-				// TODO: validate that this doesn't trigger on delegated EOAs
+				// delegations are not included because they can be statically inferred from the tx and its prestate
 				if obj.newContract {
-					s.b.CodeChange(obj.address, uint16(s.txIndex), obj.code)
+					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
+				}
+			} else if balDiff != nil {
+				accountDiff, ok := balDiff.Mutations[obj.address]
+				if !ok {
+					panic("TODO return error here, bad block")
+				}
+				if obj.newContract && (accountDiff.Code == nil || bytes.Compare(*accountDiff.Code, obj.code) != 0) {
+					panic("TODO return error here, bad block")
+				}
+				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
+					if obj.isDelegated() || accountDiff.Nonce == nil || *accountDiff.Nonce != obj.Nonce() {
+						panic("TODO return error here, bad block")
+					}
+				}
+
+				if len(obj.dirtyStorage) > 0 {
+					if len(accountDiff.StorageWrites) != len(obj.dirtyStorage) {
+						panic("TODO return error here, bad block")
+					}
+					if !maps.Equal(accountDiff.StorageWrites, obj.dirtyStorage) {
+						panic("TODO return error here, bad block")
+					}
 				}
 			}
 
@@ -837,7 +872,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 // goes into transaction receipts.
 func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	// Finalise all the dirty storage states and write them into the tries
-	s.Finalise(deleteEmptyObjects)
+	s.Finalise(deleteEmptyObjects, nil)
 
 	// Initialize the trie if it's not constructed yet. If the prefetch
 	// is enabled, the trie constructed below will be replaced by the
@@ -1125,7 +1160,7 @@ func (s *StateDB) deleteStorage(addr common.Address, addrHash common.Hash, root 
 //	    however it's resurrected later in the same block.
 //
 // In case (a), nothing needs be deleted, nil to nil transition can be ignored.
-// In case (b), nothing needs be deleted, nil is used as the original value for
+// In case (constructionBAL), nothing needs be deleted, nil is used as the original value for
 // newly created account and storages
 // In case (c), **original** account along with its storages should be deleted,
 // with their values be tracked as original value.

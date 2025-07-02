@@ -342,3 +342,55 @@ func (e *BlockAccessList) Copy() (res BlockAccessList) {
 	}
 	return
 }
+
+type AccountState struct {
+	Balance *uint256.Int
+	Nonce   *uint64
+
+	// TODO: this can refer to the code of a delegated account.  as delegations
+	// are not dependent on the code size of the delegation target, naively including
+	// this in the state diff (done in statedb when we augment BAL state diffs to include
+	// delegated accounts), could balloon the size of the state diff.
+	//
+	// Instead of having a pointer to the bytes here, we should have this refer to a resolver
+	// that can load the code when needed (or it might be already loaded in some state object).
+	Code *[]byte
+
+	Delegation    common.Hash
+	StorageWrites map[common.Hash]common.Hash
+}
+
+type StateDiff struct {
+	Mutations map[common.Address]*AccountState
+	// TODO: this diff will be augmented with 7702 delegations.  Do we store the delegation code directly in the diff or resolve it as needed?
+	// I lean towards, resolve as needed (at least initially), or only resolve if the delegation code will be used further on in the block.
+}
+
+func (s *StateDiff) Merge(next *StateDiff) *StateDiff {
+	// merge the future state from next into the current diff
+	return nil
+}
+
+type AccountIterator struct {
+	slotWriteIndicies [][]int
+	balanceChangeIdx  int
+	nonceChangeIdx    int
+}
+
+func (it *AccountIterator) Iterate(until uint16) *AccountState {
+	return nil
+}
+
+type BALIterator struct {
+	bal    *BlockAccessList
+	curIdx uint16
+}
+
+// return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
+func (it *BALIterator) Iterate(until uint16) *StateDiff {
+	if until < it.curIdx {
+		return nil
+	}
+
+	return nil
+}

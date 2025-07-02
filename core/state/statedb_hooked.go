@@ -17,9 +17,8 @@
 package state
 
 import (
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/core/types/bal"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/stateless"
@@ -271,8 +270,8 @@ func (s *hookedStateDB) TxIndex() int {
 	return s.inner.TxIndex()
 }
 
-func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
-	defer s.inner.Finalise(deleteEmptyObjects)
+func (s *hookedStateDB) Finalise(deleteEmptyObjects bool, diff *bal.StateDiff) {
+	defer s.inner.Finalise(deleteEmptyObjects, nil)
 	if s.hooks.OnBalanceChange == nil {
 		return
 	}

@@ -596,3 +596,10 @@ func (s *stateObject) Nonce() uint64 {
 func (s *stateObject) Root() common.Hash {
 	return s.data.Root
 }
+
+func (s *stateObject) isDelegated() bool {
+	return len(s.Code()) == common.AddressLength+3 && bytes.HasPrefix(s.Code(), common.Hex2Bytes("ef0100"))
+}
+func (s *stateObject) isNewlyDelegated() bool {
+	return s.dirtyCode && s.isDelegated()
+}
