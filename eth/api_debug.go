@@ -17,10 +17,13 @@
 package eth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -490,4 +493,30 @@ func (api *DebugAPI) StateSize(blockHashOrNumber *rpc.BlockNumberOrHash) (interf
 		"contractCodes":        hexutil.Uint64(stats.ContractCodes),
 		"contractCodeBytes":    hexutil.Uint64(stats.ContractCodeBytes),
 	}, nil
+}
+
+func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) (*bal.BlockAccessList, error) {
+	var block *types.Block
+	if num := number.BlockNumber; num != nil {
+		block = api.eth.blockchain.GetBlockByNumber(uint64(num.Int64()))
+	} else if hash := number.BlockHash; hash != nil {
+		block = api.eth.blockchain.GetBlockByHash(*hash)
+	}
+
+	if block == nil {
+		return nil, fmt.Errorf("block not found")
+	}
+	return block.Body().AccessList, nil
+}
+
+func (api *DebugAPI) GetEncodedBlockAccessList(number rpc.BlockNumberOrHash) ([]byte, error) {
+	bal, err := api.GetBlockAccessList(number)
+	if err != nil {
+		return nil, err
+	}
+	var enc bytes.Buffer
+	if err = bal.EncodeRLP(&enc); err != nil {
+		return nil, err
+	}
+	return enc.Bytes(), nil
 }

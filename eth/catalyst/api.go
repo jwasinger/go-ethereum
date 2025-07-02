@@ -82,6 +82,42 @@ const (
 	beaconUpdateWarnFrequency = 5 * time.Minute
 )
 
+// All methods provided over the engine endpoint.
+var caps = []string{
+	"engine_forkchoiceUpdatedV1",
+	"engine_forkchoiceUpdatedV2",
+	"engine_forkchoiceUpdatedV3",
+	"engine_forkchoiceUpdatedWithWitnessV1",
+	"engine_forkchoiceUpdatedWithWitnessV2",
+	"engine_forkchoiceUpdatedWithWitnessV3",
+	"engine_exchangeTransitionConfigurationV1",
+	"engine_getPayloadV1",
+	"engine_getPayloadV2",
+	"engine_getPayloadV3",
+	"engine_getPayloadV4",
+	"engine_getPayloadV5",
+	"engine_getBlobsV1",
+	"engine_getBlobsV2",
+	"engine_newPayloadV1",
+	"engine_newPayloadV2",
+	"engine_newPayloadV3",
+	"engine_newPayloadV4",
+	"engine_newPayloadV5",
+	"engine_newPayloadWithWitnessV1",
+	"engine_newPayloadWithWitnessV2",
+	"engine_newPayloadWithWitnessV3",
+	"engine_newPayloadWithWitnessV4",
+	"engine_executeStatelessPayloadV1",
+	"engine_executeStatelessPayloadV2",
+	"engine_executeStatelessPayloadV3",
+	"engine_executeStatelessPayloadV4",
+	"engine_getPayloadBodiesByHashV1",
+	"engine_getPayloadBodiesByHashV2",
+	"engine_getPayloadBodiesByRangeV1",
+	"engine_getPayloadBodiesByRangeV2",
+	"engine_getClientVersionV1",
+}
+
 var (
 	// Number of blobs requested via getBlobsV2
 	getBlobsRequestedCounter = metrics.NewRegisteredCounter("engine/getblobs/requested", nil)
@@ -638,6 +674,33 @@ func (api *ConsensusAPI) NewPayloadV4(params engine.ExecutableData, versionedHas
 		return invalidStatus, paramsErr("nil executionRequests post-prague")
 	case !api.checkFork(params.Timestamp, forks.Prague, forks.Osaka):
 		return invalidStatus, unsupportedForkErr("newPayloadV4 must only be called for prague payloads")
+	}
+	requests := convertRequests(executionRequests)
+	if err := validateRequests(requests); err != nil {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(err)
+	}
+	return api.newPayload(params, versionedHashes, beaconRoot, requests, false)
+}
+
+// NewPayloadV5 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
+func (api *ConsensusAPI) NewPayloadV5(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, executionRequests []hexutil.Bytes) (engine.PayloadStatusV1, error) {
+	switch {
+	case params.Withdrawals == nil:
+		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
+	case params.ExcessBlobGas == nil:
+		return invalidStatus, paramsErr("nil excessBlobGas post-cancun")
+	case params.BlobGasUsed == nil:
+		return invalidStatus, paramsErr("nil blobGasUsed post-cancun")
+	case versionedHashes == nil:
+		return invalidStatus, paramsErr("nil versionedHashes post-cancun")
+	case beaconRoot == nil:
+		return invalidStatus, paramsErr("nil beaconRoot post-cancun")
+	case executionRequests == nil:
+		return invalidStatus, paramsErr("nil executionRequests post-prague")
+	case params.BlockAccessList == nil:
+		return invalidStatus, paramsErr("nil block access list post-amsterdam")
+	case !api.checkFork(params.Timestamp, forks.Prague, forks.Osaka, forks.Amsterdam):
+		return invalidStatus, unsupportedForkErr("newPayloadV5 must only be called for amsterdam payloads")
 	}
 	requests := convertRequests(executionRequests)
 	if err := validateRequests(requests); err != nil {

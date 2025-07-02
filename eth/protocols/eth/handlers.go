@@ -381,6 +381,7 @@ func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 			txsHashes        = make([]common.Hash, len(res.BlockBodiesResponse))
 			uncleHashes      = make([]common.Hash, len(res.BlockBodiesResponse))
 			withdrawalHashes = make([]common.Hash, len(res.BlockBodiesResponse))
+			accessListHashes = make([]common.Hash, len(res.BlockBodiesResponse))
 		)
 		hasher := trie.NewStackTrie(nil)
 		for i, body := range res.BlockBodiesResponse {
@@ -388,6 +389,9 @@ func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 			uncleHashes[i] = types.CalcUncleHash(body.Uncles)
 			if body.Withdrawals != nil {
 				withdrawalHashes[i] = types.DeriveSha(types.Withdrawals(body.Withdrawals), hasher)
+			}
+			if body.AccessList != nil {
+				accessListHashes[i] = body.AccessList.Hash() // TODO: where is this validated against the header?
 			}
 		}
 		return [][]common.Hash{txsHashes, uncleHashes, withdrawalHashes}
