@@ -100,7 +100,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
-	// TODO: set the beacon root on the BAL if we are building a BAL
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
@@ -230,22 +229,24 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			// will be recorded in the BAL
 			if senderDiff.Nonce == nil {
 				// TODO: can infer the new nonce from the transaction
+				// TODO: only bump if the transaction could be successfuly applied
 				senderPostNonce := stateReader.GetNonce(sender) + 1
 				senderDiff.Nonce = &senderPostNonce
 			}
 		} else {
 			// TODO: can infer it from the transaction
+			// TODO: only bump if the transaction could be successfuly applied
 			senderPostNonce := stateReader.GetNonce(sender) + 1
 
 			txDiff.Mutations[sender] = &bal.AccountState{
 				Balance:       nil,
 				Nonce:         &senderPostNonce,
 				Code:          nil,
-				Delegation:    common.Hash{},
 				StorageWrites: nil,
 			}
 		}
 
+		// TODO: only apply authorizations if their transaction could be successfuly applied
 		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
 		for _, delegation := range tx.SetCodeAuthorizations() {
 			// TODO: don't blindly-assume that the delegation will succeed
@@ -265,7 +266,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					Balance:       nil,
 					Nonce:         nil,
 					Code:          &delegationCode,
-					Delegation:    common.Hash{},
 					StorageWrites: nil,
 				}
 			}
@@ -315,15 +315,15 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		requests = [][]byte{}
 		// EIP-6110
 		if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// EIP-7002
 		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// EIP-7251
 		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -349,7 +349,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database
 // and uses the input parameters for its environment similar to ApplyTransaction. However,
 // this method takes an already created EVM instance as input.
-func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, blockTime uint64, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, accessList *bal.BlockAccessList) (diff *bal.StateDiff, receipt *types.Receipt, err error) {
+func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, blockTime uint64, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, balDiff *bal.StateDiff) (diff *bal.StateDiff, receipt *types.Receipt, err error) {
 	if hooks := evm.Config.Tracer; hooks != nil {
 		if hooks.OnTxStart != nil {
 			hooks.OnTxStart(evm.GetVMContext(), tx, msg.From)
@@ -367,7 +367,10 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	// Update the state with pending changes.
 	var root []byte
 	if evm.ChainConfig().IsByzantium(blockNumber) {
-		diff = evm.StateDB.Finalise(true)
+		diff, err = evm.StateDB.Finalise(true, balDiff)
+		if err != nil {
+			return nil, nil, err
+		}
 	} else {
 		root = statedb.IntermediateRoot(evm.ChainConfig().IsEIP158(blockNumber)).Bytes()
 	}
@@ -423,7 +426,8 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 		return nil, err
 	}
 	// Create a new context to be used in the EVM environment
-	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, usedGas, evm, nil)
+	_, receipts, err := ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, usedGas, evm, nil)
+	return receipts, err
 }
 
 // ProcessBeaconBlockRoot applies the EIP-4788 system call to the beacon block root
