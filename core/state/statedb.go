@@ -179,6 +179,10 @@ func (s *StateDB) BlockAccessList() *bal.ConstructionBlockAccessList {
 	return s.constructionBAL
 }
 
+func (s *StateDB) ExecAccessList() *bal.BlockAccessList {
+	return s.execBAL
+}
+
 // New creates a new state from a given trie.
 func New(root common.Hash, db Database) (*StateDB, error) {
 	reader, err := db.Reader(root)
@@ -775,12 +779,7 @@ func (s *StateDB) GetRefund() uint64 {
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
 //
 // if accessList is provided, verify the post-tx state against the diff.
-func (s *StateDB) Finalise(deleteEmptyObjects bool, accessList *bal.StateDiff) {
-	var balDiff *bal.StateDiff
-	if s.execBAL != nil {
-		// TODO: move diff before the loop
-		balDiff = s.balIt.Iterate(uint16(s.txIndex))
-	}
+func (s *StateDB) Finalise(deleteEmptyObjects bool, expectedPost *bal.StateDiff) (post *bal.StateDiff, err error) {
 
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
@@ -826,8 +825,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, accessList *bal.StateDiff) {
 				if obj.newContract {
 					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
 				}
-			} else if balDiff != nil {
-				accountDiff, ok := balDiff.Mutations[obj.address]
+			} else if expectedPost != nil {
+				// TODO: compute a bal.StateDiff from the finalized objects and do the comparison outside this func
+				// I will also call finalise after performing pre-tx-execution operations (withdrawals + beacon root)
+				// and in addition call it after post-tx system contracts have executed.
+				accountDiff, ok := expectedPost.Mutations[obj.address]
 				if !ok {
 					panic("TODO return error here, bad block")
 				}
@@ -848,6 +850,8 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, accessList *bal.StateDiff) {
 						panic("TODO return error here, bad block")
 					}
 				}
+			} else {
+				// TODO: instantiate post[object.addr] as a new object, only set modified state values on objects in post
 			}
 
 			obj.finalise()
@@ -865,6 +869,8 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, accessList *bal.StateDiff) {
 	}
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
+
+	return post, nil
 }
 
 // IntermediateRoot computes the current root hash of the state trie.
@@ -1038,6 +1044,10 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 func (s *StateDB) SetTxContext(thash common.Hash, ti int) {
 	s.thash = thash
 	s.txIndex = ti
+}
+
+func (s *StateDB) ApplyDiff(diff *bal.StateDiff) {
+
 }
 
 func (s *StateDB) clearJournalAndRefund() {
@@ -1548,4 +1558,28 @@ func (s *StateDB) Witness() *stateless.Witness {
 
 func (s *StateDB) AccessEvents() *AccessEvents {
 	return s.accessEvents
+}
+
+func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
+	for addr, accountDiff := range diff.Mutations {
+		stateObject := s.getOrNewStateObject(addr)
+		if accountDiff.Code != nil {
+			stateObject.setCode(crypto.Keccak256Hash(*accountDiff.Code), *accountDiff.Code)
+		}
+		if accountDiff.Nonce != nil {
+			stateObject.SetNonce(*accountDiff.Nonce)
+		}
+		if accountDiff.Balance != nil {
+			stateObject.SetBalance(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))
+		}
+		if accountDiff.StorageWrites != nil {
+			for slot, val := range accountDiff.StorageWrites {
+				stateObject.SetState(slot, val)
+			}
+		}
+		if accountDiff.Delegation != (common.Hash{}) {
+			panic("properly handle delegations")
+		}
+		// TODO: double-check that the origin is not set here (we can't revert across tx boundaries anyways)
+	}
 }

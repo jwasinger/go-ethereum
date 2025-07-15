@@ -344,7 +344,7 @@ func (e *BlockAccessList) Copy() (res BlockAccessList) {
 }
 
 type AccountState struct {
-	Balance *uint256.Int
+	Balance *[16]byte
 	Nonce   *uint64
 
 	// TODO: this can refer to the code of a delegated account.  as delegations
@@ -372,25 +372,127 @@ func (s *StateDiff) Merge(next *StateDiff) *StateDiff {
 }
 
 type AccountIterator struct {
-	slotWriteIndicies [][]int
-	balanceChangeIdx  int
-	nonceChangeIdx    int
+	slotWriteIndices [][]int
+	balanceChangeIdx int
+	nonceChangeIdx   int
+	codeChangeIdx    int
+
+	curIdx int
+	maxIdx int
+	accum  *AccountState
+	aa     *AccountAccess
 }
 
-func (it *AccountIterator) Iterate(until uint16) *AccountState {
-	return nil
+func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
+	return &AccountIterator{
+		slotWriteIndices: make([][]int, len(accesses.StorageWrites)),
+		balanceChangeIdx: 0,
+		nonceChangeIdx:   0,
+		codeChangeIdx:    0,
+		curIdx:           0,
+		maxIdx:           txCount - 1,
+		accum: &AccountState{
+			Balance:       nil,
+			Nonce:         nil,
+			Code:          nil,
+			Delegation:    common.Hash{},
+			StorageWrites: make(map[common.Hash]common.Hash),
+		},
+		aa: accesses,
+	}
+}
+
+// increment the account iterator by one, returning only the mutated state
+// TODO: only return the mutated state, don't return the accumulated mutations
+func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
+	if it.curIdx == it.maxIdx {
+		return nil, false
+	}
+
+	it.curIdx++
+	for i, slotIdxs := range it.slotWriteIndices {
+		for _, curSlotIdx := range slotIdxs {
+			storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
+			if storageWrite.TxIdx < uint16(it.curIdx) {
+				it.accum.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
+			}
+		}
+	}
+
+	if it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx < uint16(it.curIdx) {
+		it.accum.Balance = it.aa.BalanceChanges[it.balanceChangeIdx].Balance
+		it.balanceChangeIdx++
+	}
+
+	if it.aa.Code[it.codeChangeIdx].TxIndex < uint16(it.curIdx) {
+		newCode := bytes.Clone(it.aa.Code[it.codeChangeIdx].Code)
+		it.accum.Code = &newCode
+		it.codeChangeIdx++
+	}
+
+	if it.aa.NonceChanges[it.nonceChangeIdx].TxIdx < uint16(it.curIdx) {
+		it.accum.Nonce = new(uint64)
+		*it.accum.Nonce = it.aa.NonceChanges[it.nonceChangeIdx].Nonce
+		it.nonceChangeIdx++
+	}
+
+	isMut := true          // TODO: determine this above
+	return it.accum, isMut // TODO: return deep-copy here?
 }
 
 type BALIterator struct {
-	bal    *BlockAccessList
-	curIdx uint16
+	bal           *BlockAccessList
+	acctIterators map[common.Address]*AccountIterator
+	curIdx        uint16
+}
+
+func NewIterator(b *BlockAccessList) *BALIterator {
+	accounts := make(map[common.Address]*AccountIterator)
+	for _, aa := range b.Accesses {
+		accounts[aa.Address] = NewAccountIterator()
+	}
+	return &BALIterator{
+		b,
+		accounts,
+		0,
+	}
+}
+
+// Iterate one transaction into the BAL, returning the state diff from that tx
+func (it *BALIterator) Next() (mutations *StateDiff) {
+	return nil
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
-func (it *BALIterator) Iterate(until uint16) *StateDiff {
+func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, error) {
 	if until < it.curIdx {
 		return nil
 	}
 
-	return nil
+	var accumDiff *StateDiff
+
+	for ; it.curIdx < until; it.curIdx++ {
+		// update accumDiff based on the BAL
+
+		layerMutations := StateDiff{
+			make(map[common.Address]*AccountState),
+		}
+		for addr, acctIt := range it.acctIterators {
+			if diff, mut := acctIt.Increment(); mut {
+				layerMutations.Mutations[addr] = diff
+			}
+		}
+
+		// callback to fill in state mutations that can't be sourced from the BAL:
+		// * EOA tx sender nonce increments
+		// * 7702 delegations
+		if err := onTx(it.curIdx, accumDiff, &layerMutations); err != nil {
+			return nil, err
+		}
+
+		accumDiff.Merge(&layerMutations)
+	}
+
+	// TODO: return a copy of the accumed diff
+	return nil, nil
 }

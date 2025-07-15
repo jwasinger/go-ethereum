@@ -87,19 +87,28 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// do not include the storage writes in the BAL:
 	// * beacon root will be provided as a standalone field in the BAL
 	// * parent block hash is already in the header field of the block
+
+	// TODO: use TxContext (hash == common.Hash{}) as a signal that we aren't
+	// executing a tx yet, and don't record state based on that?
 	if statedb.BlockAccessList() != nil {
 		statedb.BlockAccessList().DisableMutations()
 	}
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
-	// TODO: set the beacon root on the BAL
+	// TODO: set the beacon root on the BAL if we are building a BAL
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 	if statedb.BlockAccessList() != nil {
 		statedb.BlockAccessList().EnableMutations()
 	}
+	preTxDiff, _ := statedb.Finalise(true, nil)
+	// create a number of diffs (one for each worker goroutine)
+	postTxsDiff := bal.NewIterator(statedb.ExecAccessList()).Iterate(uint16(len(block.Transactions())))
+
+	// TODO: if we are executing against a BAL, create the pre-tx-execution state diff here (produce this from invoking statedb.Finalise)
+	// then combine it with the state diff represented in the BAL (this will be used to initiate the trie root calc)
 
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
@@ -117,6 +126,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs = append(allLogs, receipt.Logs...)
 	}
 
+	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
 	// don't write post-block state mutations to the BAL to save on size.
 	// these can be easily computed in BAL verification.
 	if statedb.BlockAccessList() != nil {
@@ -139,6 +149,185 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, err
 		}
 	}
+
+	postBlockDiff, _ := statedb.Finalise(true, nil)
+
+	totalDiff := preTxDiff.Merge(postTxsDiff).Merge(postBlockDiff)
+	statedb.ApplyDiff(totalDiff)
+
+	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
+	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
+
+	return &ProcessResult{
+		Receipts: receipts,
+		Requests: requests,
+		Logs:     allLogs,
+		GasUsed:  *usedGas,
+	}, nil
+}
+func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*ProcessResult, error) {
+	var (
+		receipts    types.Receipts
+		usedGas     = new(uint64)
+		header      = block.Header()
+		blockHash   = block.Hash()
+		blockNumber = block.Number()
+		allLogs     []*types.Log
+		gp          = new(GasPool).AddGas(block.GasLimit())
+	)
+
+	// Mutate the block and state according to any hard-fork specs
+	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
+		misc.ApplyDAOHardFork(statedb)
+	}
+	var (
+		context vm.BlockContext
+		signer  = types.MakeSigner(p.config, header.Number, header.Time)
+	)
+
+	// Apply pre-execution system calls.
+	var tracingStateDB = vm.StateDB(statedb)
+	if hooks := cfg.Tracer; hooks != nil {
+		tracingStateDB = state.NewHookedState(statedb, hooks)
+	}
+	context = NewEVMBlockContext(header, p.chain, nil)
+	evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
+
+	// process beacon-root and parent block system contracts.
+	// do not include the storage writes in the BAL:
+	// * beacon root will be provided as a standalone field in the BAL
+	// * parent block hash is already in the header field of the block
+
+	// TODO: use TxContext (hash == common.Hash{}) as a signal that we aren't
+	// executing a tx yet, and don't record state based on that?
+	if statedb.BlockAccessList() != nil {
+		statedb.BlockAccessList().DisableMutations()
+	}
+	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
+		ProcessBeaconBlockRoot(*beaconRoot, evm)
+	}
+	// TODO: set the beacon root on the BAL if we are building a BAL
+	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
+		ProcessParentBlockHash(block.ParentHash(), evm)
+	}
+	if statedb.BlockAccessList() != nil {
+		statedb.BlockAccessList().EnableMutations()
+	}
+	preTxDiff, _ := statedb.Finalise(true, nil)
+	// create a number of diffs (one for each worker goroutine)
+	postTxsDiff := bal.NewIterator(statedb.ExecAccessList())
+	postTxsDiff.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+
+		// create the complete account tx post-state by filling in values that the BAL does not provide:
+		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
+		// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
+
+		stateReader := state.NewBALStateReader(statedb, txDiff)
+
+		tx := block.Transactions()[txIndex]
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			panic("what could cause the error here?!?!")
+		}
+
+		// fill in the tx sender nonce
+		if senderDiff, ok := txDiff.Mutations[sender]; ok {
+			// if the sender account nonce diff is set, it is a delegated EOA
+			// which performed one or more creations, so the post-tx nonce value
+			// will be recorded in the BAL
+			if senderDiff.Nonce == nil {
+				// TODO: can infer the new nonce from the transaction
+				senderPostNonce := stateReader.GetNonce(sender) + 1
+				senderDiff.Nonce = &senderPostNonce
+			}
+		} else {
+			// TODO: can infer it from the transaction
+			senderPostNonce := stateReader.GetNonce(sender) + 1
+
+			txDiff.Mutations[sender] = &bal.AccountState{
+				Balance:       nil,
+				Nonce:         &senderPostNonce,
+				Code:          nil,
+				Delegation:    common.Hash{},
+				StorageWrites: nil,
+			}
+		}
+
+		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
+		for _, delegation := range tx.SetCodeAuthorizations() {
+			// TODO: don't blindly-assume that the delegation will succeed
+			// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
+
+			authority, err := delegation.Authority()
+			if err != nil {
+				continue
+			}
+
+			delegationCode := stateReader.GetCode(delegation.Address)
+			if accountDiff, ok := txDiff.Mutations[authority]; ok {
+				// TODO: elsewhere before delegations, validate that the tx diff does not have a code diff for that account (malformed BAL)
+				accountDiff.Code = &delegationCode
+			} else {
+				txDiff.Mutations[authority] = &bal.AccountState{
+					Balance:       nil,
+					Nonce:         nil,
+					Code:          &delegationCode,
+					Delegation:    common.Hash{},
+					StorageWrites: nil,
+				}
+			}
+		}
+
+		return nil
+	})
+
+	// TODO: if we are executing against a BAL, create the pre-tx-execution state diff here (produce this from invoking statedb.Finalise)
+	// then combine it with the state diff represented in the BAL (this will be used to initiate the trie root calc)
+
+	// Iterate over and process the individual transactions
+	for i, tx := range block.Transactions() {
+		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
+		if err != nil {
+			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+		}
+		statedb.SetTxContext(tx.Hash(), i)
+
+		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+		if err != nil {
+			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+		}
+		receipts = append(receipts, receipt)
+		allLogs = append(allLogs, receipt.Logs...)
+	}
+
+	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
+	// don't write post-block state mutations to the BAL to save on size.
+	// these can be easily computed in BAL verification.
+	if statedb.BlockAccessList() != nil {
+		statedb.BlockAccessList().DisableMutations()
+	}
+	// Read requests if Prague is enabled.
+	var requests [][]byte
+	if p.config.IsPrague(block.Number(), block.Time()) {
+		requests = [][]byte{}
+		// EIP-6110
+		if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
+			return nil, err
+		}
+		// EIP-7002
+		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+			return nil, err
+		}
+		// EIP-7251
+		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+			return nil, err
+		}
+	}
+
+	postBlockDiff, _ := statedb.Finalise(true, nil)
+
+	totalDiff := preTxDiff.Merge(postTxsDiff).Merge(postBlockDiff)
+	statedb.ApplyDiff(totalDiff)
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
