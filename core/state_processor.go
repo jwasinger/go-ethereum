@@ -48,6 +48,10 @@ func NewStateProcessor(config *params.ChainConfig, chain *HeaderChain) *StatePro
 	}
 }
 
+func validateTxStateDiff(expected, computed *bal.StateDiff) error {
+	return nil
+}
+
 // Process processes the state changes according to the Ethereum rules by running
 // the transaction messages using the statedb and applying any rewards to both
 // the processor (coinbase) and any included uncles.
@@ -103,12 +107,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if statedb.BlockAccessList() != nil {
 		statedb.BlockAccessList().EnableMutations()
 	}
-	preTxDiff, _ := statedb.Finalise(true, nil)
-	// create a number of diffs (one for each worker goroutine)
-	postTxsDiff := bal.NewIterator(statedb.ExecAccessList()).Iterate(uint16(len(block.Transactions())))
-
-	// TODO: if we are executing against a BAL, create the pre-tx-execution state diff here (produce this from invoking statedb.Finalise)
-	// then combine it with the state diff represented in the BAL (this will be used to initiate the trie root calc)
 
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
@@ -118,7 +116,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
-		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+		_, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
@@ -150,11 +148,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 	}
 
-	postBlockDiff, _ := statedb.Finalise(true, nil)
-
-	totalDiff := preTxDiff.Merge(postTxsDiff).Merge(postBlockDiff)
-	statedb.ApplyDiff(totalDiff)
-
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 
@@ -165,7 +158,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		GasUsed:  *usedGas,
 	}, nil
 }
-func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*bal.StateDiff, *ProcessResult, error) {
+func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*bal.StateDiff, *ProcessResult, error) {
 	var (
 		receipts    types.Receipts
 		usedGas     = new(uint64)
@@ -215,8 +208,8 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 	}
 	preTxDiff, _ := statedb.Finalise(true, nil)
 	// create a number of diffs (one for each worker goroutine)
-	txDiffIt := bal.NewIterator(statedb.ExecAccessList())
-	postTxDiff, err := txdiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+	txDiffIt := bal.NewIterator(statedb.ExecAccessList(), len(block.Transactions()))
+	postTxDiff, err := txDiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
 
 		// create the complete account tx post-state by filling in values that the BAL does not provide:
 		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
@@ -285,7 +278,7 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 	}
 	preTxDiff.Merge(postTxDiff)
 
-	txExecBALIt := bal.NewIterator(al)
+	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
@@ -294,9 +287,7 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
-		// TODO: return the tx state diff from the below method
-		var txStateDiff *bal.StateDiff
-		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+		txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
@@ -358,7 +349,7 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database
 // and uses the input parameters for its environment similar to ApplyTransaction. However,
 // this method takes an already created EVM instance as input.
-func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, blockTime uint64, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, accessList *bal.BlockAccessList) (receipt *types.Receipt, err error) {
+func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, blockTime uint64, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, accessList *bal.BlockAccessList) (diff *bal.StateDiff, receipt *types.Receipt, err error) {
 	if hooks := evm.Config.Tracer; hooks != nil {
 		if hooks.OnTxStart != nil {
 			hooks.OnTxStart(evm.GetVMContext(), tx, msg.From)
@@ -370,12 +361,13 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
 	// Update the state with pending changes.
 	var root []byte
 	if evm.ChainConfig().IsByzantium(blockNumber) {
-		evm.StateDB.Finalise(true, nil)
+		diff = evm.StateDB.Finalise(true)
 	} else {
 		root = statedb.IntermediateRoot(evm.ChainConfig().IsEIP158(blockNumber)).Bytes()
 	}
@@ -386,7 +378,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	if statedb.Database().TrieDB().IsVerkle() {
 		statedb.AccessEvents().Merge(evm.AccessEvents)
 	}
-	return MakeReceipt(evm, result, statedb, blockNumber, blockHash, blockTime, tx, *usedGas, root), nil
+	return diff, MakeReceipt(evm, result, statedb, blockNumber, blockHash, blockTime, tx, *usedGas, root), nil
 }
 
 // MakeReceipt generates the receipt object for a transaction given its execution result.

@@ -356,8 +356,27 @@ type AccountState struct {
 	// that can load the code when needed (or it might be already loaded in some state object).
 	Code *[]byte
 
-	Delegation    common.Hash
 	StorageWrites map[common.Hash]common.Hash
+}
+
+func (a *AccountState) Copy() (res AccountState) {
+	if a.Balance != nil {
+		var balanceCopy [16]byte
+		copy(balanceCopy[:], (*a.Balance)[:])
+		res.Balance = &balanceCopy
+	}
+	if a.Nonce != nil {
+		res.Nonce = new(uint64)
+		*res.Nonce = *a.Nonce
+	}
+	if a.Code != nil {
+		res.Code = new([]byte)
+		*res.Code = bytes.Clone(*a.Code)
+	}
+	if a.StorageWrites != nil {
+		res.StorageWrites = maps.Clone(a.StorageWrites)
+	}
+	return
 }
 
 type StateDiff struct {
@@ -368,7 +387,17 @@ type StateDiff struct {
 
 func (s *StateDiff) Merge(next *StateDiff) *StateDiff {
 	// merge the future state from next into the current diff
+	panic("not implemented!")
 	return nil
+}
+
+func (s *StateDiff) Copy() *StateDiff {
+	var res StateDiff
+	for addr, accountDiff := range s.Mutations {
+		cpy := accountDiff.Copy()
+		res.Mutations[addr] = &cpy
+	}
+	return &res
 }
 
 type AccountIterator struct {
@@ -395,7 +424,6 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 			Balance:       nil,
 			Nonce:         nil,
 			Code:          nil,
-			Delegation:    common.Hash{},
 			StorageWrites: make(map[common.Hash]common.Hash),
 		},
 		aa: accesses,
@@ -420,7 +448,8 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 	}
 
 	if it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx < uint16(it.curIdx) {
-		it.accum.Balance = it.aa.BalanceChanges[it.balanceChangeIdx].Balance
+		balance := it.aa.BalanceChanges[it.balanceChangeIdx].Balance
+		it.accum.Balance = &balance
 		it.balanceChangeIdx++
 	}
 
@@ -446,10 +475,10 @@ type BALIterator struct {
 	curIdx        uint16
 }
 
-func NewIterator(b *BlockAccessList) *BALIterator {
+func NewIterator(b *BlockAccessList, txCount int) *BALIterator {
 	accounts := make(map[common.Address]*AccountIterator)
 	for _, aa := range b.Accesses {
-		accounts[aa.Address] = NewAccountIterator()
+		accounts[aa.Address] = NewAccountIterator(&aa, txCount)
 	}
 	return &BALIterator{
 		b,
@@ -460,13 +489,15 @@ func NewIterator(b *BlockAccessList) *BALIterator {
 
 // Iterate one transaction into the BAL, returning the state diff from that tx
 func (it *BALIterator) Next() (mutations *StateDiff) {
+	// TODO: maintain a single StateDiff, and use this method to update it and return a pointer to it.
+	panic("implement me!!!")
 	return nil
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
 func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, error) {
 	if until < it.curIdx {
-		return nil
+		return nil, nil
 	}
 
 	var accumDiff *StateDiff

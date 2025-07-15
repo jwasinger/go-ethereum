@@ -2006,7 +2006,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}(time.Now(), throwaway, block)
 	}
 
-	constructBAL := bc.chainConfig.IsByzantium(block.Number()) && makeBAL && bc.cfg.VmConfig.BALConstruction
+	constructBAL := bc.chainConfig.IsByzantium(block.Number()) && makeBAL && bc.cfg.VmConfig.BALConstruction && block.Body().AccessList != nil
 	if constructBAL {
 		statedb.EnableBALConstruction()
 	}
@@ -2042,21 +2042,42 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}()
 	}
 
-	// Process block using the parent state as reference point
-	pstart := time.Now()
-	res, err := bc.processor.Process(block, statedb, bc.cfg.VmConfig)
-	if err != nil {
-		bc.reportBlock(block, res, err)
-		return nil, err
-	}
-	ptime := time.Since(pstart)
+	var ptime, vtime time.Duration
+	if block.Body().AccessList != nil {
+		// Process block using the parent state as reference point
+		pstart := time.Now()
+		res, diff, err := bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		if err != nil {
+			bc.reportBlock(block, res, err)
+			return nil, err
+		}
+		ptime = time.Since(pstart)
 
-	vstart := time.Now()
-	if err := bc.validator.ValidateState(block, statedb, res, false); err != nil {
-		bc.reportBlock(block, res, err)
-		return nil, err
+		vstart := time.Now()
+		if err := bc.validator.ValidateStateWithDiff(block, statedb, res, diff, false); err != nil {
+			bc.reportBlock(block, res, err)
+			return nil, err
+		}
+		vtime = time.Since(vstart)
+
+	} else {
+		// Process block using the parent state as reference point
+		pstart := time.Now()
+		res, err := bc.processor.Process(block, statedb, bc.cfg.VmConfig)
+		if err != nil {
+			bc.reportBlock(block, res, err)
+			return nil, err
+		}
+		ptime = time.Since(pstart)
+
+		vstart := time.Now()
+		if err := bc.validator.ValidateState(block, statedb, res, false); err != nil {
+			bc.reportBlock(block, res, err)
+			return nil, err
+		}
+		vtime = time.Since(vstart)
+
 	}
-	vtime := time.Since(vstart)
 
 	if constructBAL {
 		// very ugly... deep-copy the block body before setting the block access

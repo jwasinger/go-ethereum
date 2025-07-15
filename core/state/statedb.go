@@ -779,8 +779,9 @@ func (s *StateDB) GetRefund() uint64 {
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
 //
 // if accessList is provided, verify the post-tx state against the diff.
-func (s *StateDB) Finalise(deleteEmptyObjects bool, expectedPost *bal.StateDiff) (post *bal.StateDiff, err error) {
+func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (post *bal.StateDiff, err error) {
 
+	post = &bal.StateDiff{Mutations: make(map[common.Address]*bal.AccountState)}
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
 		obj, exist := s.stateObjects[addr]
@@ -825,11 +826,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, expectedPost *bal.StateDiff)
 				if obj.newContract {
 					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
 				}
-			} else if expectedPost != nil {
+			} else if balPost != nil {
 				// TODO: compute a bal.StateDiff from the finalized objects and do the comparison outside this func
 				// I will also call finalise after performing pre-tx-execution operations (withdrawals + beacon root)
 				// and in addition call it after post-tx system contracts have executed.
-				accountDiff, ok := expectedPost.Mutations[obj.address]
+				accountDiff, ok := balPost.Mutations[obj.address]
 				if !ok {
 					panic("TODO return error here, bad block")
 				}
@@ -841,6 +842,9 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, expectedPost *bal.StateDiff)
 						panic("TODO return error here, bad block")
 					}
 				}
+				if !obj.Balance().Eq(obj.txPreBalance) && (accountDiff.Balance == nil || !obj.Balance().Eq(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))) {
+					panic("TODO return error here, bad block")
+				}
 
 				if len(obj.dirtyStorage) > 0 {
 					if len(accountDiff.StorageWrites) != len(obj.dirtyStorage) {
@@ -850,9 +854,21 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, expectedPost *bal.StateDiff)
 						panic("TODO return error here, bad block")
 					}
 				}
-			} else {
-				// TODO: instantiate post[object.addr] as a new object, only set modified state values on objects in post
 			}
+
+			var accountPost bal.AccountState
+			if obj.newContract {
+				codeCopy := bytes.Clone(obj.code)
+				accountPost.Code = &codeCopy
+			}
+			if obj.Nonce() != obj.txPreNonce {
+				accountPost.Nonce = new(uint64)
+				*accountPost.Nonce = obj.Nonce()
+			}
+			if len(obj.dirtyStorage) > 0 {
+				accountPost.StorageWrites = maps.Clone(obj.dirtyStorage)
+			}
+			post.Mutations[obj.address] = &accountPost
 
 			obj.finalise()
 			s.markUpdate(addr)
@@ -1592,9 +1608,6 @@ func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
 			for slot, val := range accountDiff.StorageWrites {
 				stateObject.SetState(slot, val)
 			}
-		}
-		if accountDiff.Delegation != (common.Hash{}) {
-			panic("properly handle delegations")
 		}
 		// TODO: double-check that the origin is not set here (we can't revert across tx boundaries anyways)
 	}
