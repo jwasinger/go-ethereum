@@ -165,7 +165,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		GasUsed:  *usedGas,
 	}, nil
 }
-func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*ProcessResult, error) {
+func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*bal.StateDiff, *ProcessResult, error) {
 	var (
 		receipts    types.Receipts
 		usedGas     = new(uint64)
@@ -215,8 +215,8 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 	}
 	preTxDiff, _ := statedb.Finalise(true, nil)
 	// create a number of diffs (one for each worker goroutine)
-	postTxsDiff := bal.NewIterator(statedb.ExecAccessList())
-	postTxsDiff.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+	txDiffIt := bal.NewIterator(statedb.ExecAccessList())
+	postTxDiff, err := txdiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
 
 		// create the complete account tx post-state by filling in values that the BAL does not provide:
 		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
@@ -280,24 +280,36 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 
 		return nil
 	})
+	if err != nil {
+		panic("bad block error here")
+	}
+	preTxDiff.Merge(postTxDiff)
 
-	// TODO: if we are executing against a BAL, create the pre-tx-execution state diff here (produce this from invoking statedb.Finalise)
-	// then combine it with the state diff represented in the BAL (this will be used to initiate the trie root calc)
-
+	txExecBALIt := bal.NewIterator(al)
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
-			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			return nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
+		// TODO: return the tx state diff from the below method
+		var txStateDiff *bal.StateDiff
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
-			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			return nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
+
+		balStateTxStateDiff := txExecBALIt.Next()
+
+		// TODO validate the reported state diff with the produced one:
+		// every entry in the reported diff should be in the produced one
+		// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
+		_ = txStateDiff
+		_ = balStateTxStateDiff
 	}
 
 	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
@@ -324,20 +336,23 @@ func (p *StateProcessor) ParallelProcess(block *types.Block, statedb *state.Stat
 		}
 	}
 
+	// compute state diffs applied from requests above (not in BAL)
 	postBlockDiff, _ := statedb.Finalise(true, nil)
 
-	totalDiff := preTxDiff.Merge(postTxsDiff).Merge(postBlockDiff)
-	statedb.ApplyDiff(totalDiff)
+	preTxDiff.Merge(postBlockDiff)
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
+	// TODO: apply withdrawals state diff from the Finalize call
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 
-	return &ProcessResult{
+	processResult := &ProcessResult{
 		Receipts: receipts,
 		Requests: requests,
 		Logs:     allLogs,
 		GasUsed:  *usedGas,
-	}, nil
+	}
+
+	return preTxDiff, processResult, nil
 }
 
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database

@@ -1047,7 +1047,23 @@ func (s *StateDB) SetTxContext(thash common.Hash, ti int) {
 }
 
 func (s *StateDB) ApplyDiff(diff *bal.StateDiff) {
-
+	for addr, accountDiff := range diff.Mutations {
+		stateObject := s.getOrNewStateObject(addr)
+		if accountDiff.Code != nil {
+			stateObject.SetCode(crypto.Keccak256Hash(*accountDiff.Code), *accountDiff.Code)
+		}
+		if accountDiff.StorageWrites != nil {
+			for slot, value := range accountDiff.StorageWrites {
+				stateObject.SetState(slot, value)
+			}
+		}
+		if accountDiff.Nonce != nil {
+			stateObject.setNonce(*accountDiff.Nonce)
+		}
+		if accountDiff.Balance != nil {
+			stateObject.SetBalance(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))
+		}
+	}
 }
 
 func (s *StateDB) clearJournalAndRefund() {

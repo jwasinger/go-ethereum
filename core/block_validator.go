@@ -19,6 +19,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -117,6 +118,52 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 			return consensus.ErrUnknownAncestor
 		}
 		return consensus.ErrPrunedAncestor
+	}
+	return nil
+}
+
+func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, diff *bal.StateDiff, res *ProcessResult, stateless bool) error {
+	if res == nil {
+		return errors.New("nil ProcessResult value")
+	}
+	header := block.Header()
+	if block.GasUsed() != res.GasUsed {
+		return fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), res.GasUsed)
+	}
+	// Validate the received block's bloom with the one derived from the generated receipts.
+	// For valid blocks this should always validate to true.
+	//
+	// Receipts must go through MakeReceipt to calculate the receipt's bloom
+	// already. Merge the receipt's bloom together instead of recalculating
+	// everything.
+	rbloom := types.MergeBloom(res.Receipts)
+	if rbloom != header.Bloom {
+		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
+	}
+	// In stateless mode, return early because the receipt and state root are not
+	// provided through the witness, rather the cross validator needs to return it.
+	if stateless {
+		return nil
+	}
+	// The receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
+	receiptSha := types.DeriveSha(res.Receipts, trie.NewStackTrie(nil))
+	if receiptSha != header.ReceiptHash {
+		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+	}
+	// Validate the parsed requests match the expected header value.
+	if header.RequestsHash != nil {
+		reqhash := types.CalcRequestsHash(res.Requests)
+		if reqhash != *header.RequestsHash {
+			return fmt.Errorf("invalid requests hash (remote: %x local: %x)", *header.RequestsHash, reqhash)
+		}
+	} else if res.Requests != nil {
+		return errors.New("block has requests before prague fork")
+	}
+	// Validate the state root against the received state root and throw
+	// an error if they don't match.
+	prestate.ApplyDiff(diff)
+	if root := prestate.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, prestate.Error())
 	}
 	return nil
 }
