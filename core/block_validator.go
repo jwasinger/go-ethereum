@@ -122,7 +122,7 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	return nil
 }
 
-func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, diff *bal.StateDiff, res *ProcessResult, stateless bool) error {
+func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, res *ProcessResult, diff *bal.StateDiff, stateless bool) error {
 	if res == nil {
 		return errors.New("nil ProcessResult value")
 	}

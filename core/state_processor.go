@@ -48,10 +48,6 @@ func NewStateProcessor(config *params.ChainConfig, chain *HeaderChain) *StatePro
 	}
 }
 
-func validateTxStateDiff(expected, computed *bal.StateDiff) error {
-	return nil
-}
-
 // Process processes the state changes according to the Ethereum rules by running
 // the transaction messages using the statedb and applying any rewards to both
 // the processor (coinbase) and any included uncles.
@@ -208,6 +204,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	preTxDiff, _ := statedb.Finalise(true, nil)
 	// create a number of diffs (one for each worker goroutine)
 	txDiffIt := bal.NewIterator(statedb.ExecAccessList(), len(block.Transactions()))
+
 	postTxDiff, err := txDiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
 
 		// create the complete account tx post-state by filling in values that the BAL does not provide:
@@ -229,13 +226,11 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			// will be recorded in the BAL
 			if senderDiff.Nonce == nil {
 				// TODO: can infer the new nonce from the transaction
-				// TODO: only bump if the transaction could be successfuly applied
 				senderPostNonce := stateReader.GetNonce(sender) + 1
 				senderDiff.Nonce = &senderPostNonce
 			}
 		} else {
 			// TODO: can infer it from the transaction
-			// TODO: only bump if the transaction could be successfuly applied
 			senderPostNonce := stateReader.GetNonce(sender) + 1
 
 			txDiff.Mutations[sender] = &bal.AccountState{
@@ -246,10 +241,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			}
 		}
 
-		// TODO: only apply authorizations if their transaction could be successfuly applied
 		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
 		for _, delegation := range tx.SetCodeAuthorizations() {
-			// TODO: don't blindly-assume that the delegation will succeed
+			// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
 			// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
 
 			authority, err := delegation.Authority()
@@ -259,7 +253,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 			delegationCode := stateReader.GetCode(delegation.Address)
 			if accountDiff, ok := txDiff.Mutations[authority]; ok {
-				// TODO: elsewhere before delegations, validate that the tx diff does not have a code diff for that account (malformed BAL)
+				if accountDiff.Code != nil {
+					panic("bad block: BAL included a code change at the authority address for this tx")
+				}
 				accountDiff.Code = &delegationCode
 			} else {
 				txDiff.Mutations[authority] = &bal.AccountState{

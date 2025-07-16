@@ -1947,7 +1947,7 @@ type blockProcessingResult struct {
 
 // processBlock executes and validates the given block. If there was no error
 // it writes the block and associated state to database.
-func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool, makeBAL bool) (_ *blockProcessingResult, blockEndErr error) {
+func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool, makeBAL bool) (bpr *blockProcessingResult, blockEndErr error) {
 	var (
 		err       error
 		startTime = time.Now()
@@ -2042,11 +2042,12 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}()
 	}
 
+	var res *ProcessResult
 	var ptime, vtime time.Duration
 	if block.Body().AccessList != nil {
 		// Process block using the parent state as reference point
 		pstart := time.Now()
-		res, diff, err := bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		diff, res, err := bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
 		if err != nil {
 			bc.reportBlock(block, res, err)
 			return nil, err

@@ -408,7 +408,6 @@ type AccountIterator struct {
 
 	curIdx int
 	maxIdx int
-	accum  *AccountState
 	aa     *AccountAccess
 }
 
@@ -420,53 +419,54 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 		codeChangeIdx:    0,
 		curIdx:           0,
 		maxIdx:           txCount - 1,
-		accum: &AccountState{
-			Balance:       nil,
-			Nonce:         nil,
-			Code:          nil,
-			StorageWrites: make(map[common.Hash]common.Hash),
-		},
-		aa: accesses,
+		aa:               accesses,
 	}
 }
 
-// increment the account iterator by one, returning only the mutated state
-// TODO: only return the mutated state, don't return the accumulated mutations
+// increment the account iterator by one, returning only the mutated state by the new transaction
 func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 	if it.curIdx == it.maxIdx {
 		return nil, false
 	}
 
+	layerMut := AccountState{
+		Balance:       nil,
+		Nonce:         nil,
+		Code:          nil,
+		StorageWrites: make(map[common.Hash]common.Hash),
+	}
 	it.curIdx++
 	for i, slotIdxs := range it.slotWriteIndices {
 		for _, curSlotIdx := range slotIdxs {
-			storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
-			if storageWrite.TxIdx < uint16(it.curIdx) {
-				it.accum.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
+			if curSlotIdx == it.curIdx {
+				storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
+				if storageWrite.TxIdx == uint16(it.curIdx) {
+					layerMut.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
+				}
 			}
 		}
 	}
 
-	if it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx < uint16(it.curIdx) {
+	if it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx == uint16(it.curIdx) {
 		balance := it.aa.BalanceChanges[it.balanceChangeIdx].Balance
-		it.accum.Balance = &balance
+		layerMut.Balance = &balance
 		it.balanceChangeIdx++
 	}
 
-	if it.aa.Code[it.codeChangeIdx].TxIndex < uint16(it.curIdx) {
+	if it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curIdx) {
 		newCode := bytes.Clone(it.aa.Code[it.codeChangeIdx].Code)
-		it.accum.Code = &newCode
+		layerMut.Code = &newCode
 		it.codeChangeIdx++
 	}
 
-	if it.aa.NonceChanges[it.nonceChangeIdx].TxIdx < uint16(it.curIdx) {
-		it.accum.Nonce = new(uint64)
-		*it.accum.Nonce = it.aa.NonceChanges[it.nonceChangeIdx].Nonce
+	if it.aa.NonceChanges[it.nonceChangeIdx].TxIdx == uint16(it.curIdx) {
+		layerMut.Nonce = new(uint64)
+		*layerMut.Nonce = it.aa.NonceChanges[it.nonceChangeIdx].Nonce
 		it.nonceChangeIdx++
 	}
 
-	isMut := true          // TODO: determine this above
-	return it.accum, isMut // TODO: return deep-copy here?
+	isMut := len(layerMut.StorageWrites) > 0 || layerMut.Code != nil || layerMut.Nonce != nil || layerMut.Balance != nil
+	return &layerMut, isMut
 }
 
 type BALIterator struct {
