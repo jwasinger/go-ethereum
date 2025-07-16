@@ -302,11 +302,14 @@ func TestBALStateDiffAccumulation(t *testing.T) {
 	bal := cBAL.ToEncodingObj()
 
 	it := NewIterator(bal, 22)
-	diff, err := it.BuildStateDiff(3, func(txIndex uint16, accumDiff, txDiff *StateDiff) error {
+	diff, err := it.BuildStateDiff(22, func(txIndex uint16, accumDiff, txDiff *StateDiff) error {
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("received error when trying to get bal state diff: %v\n", err)
 	}
-	fmt.Println(diff)
+	var res bytes.Buffer
+	encoder := json.NewEncoder(&res)
+	encoder.Encode(diff)
+	fmt.Println(res.String())
 }

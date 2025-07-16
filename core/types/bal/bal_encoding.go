@@ -85,10 +85,16 @@ func encodeBalance(val *uint256.Int) [16]byte {
 	return enc
 }
 
+type Balance [16]byte
+
+func (b Balance) MarshalJSON() ([]byte, error) {
+	return json.Marshal(new(uint256.Int).SetBytes(b[:]).Uint64())
+}
+
 // encodingBalanceChange is the encoding format of BalanceChange.
 type encodingBalanceChange struct {
-	TxIdx   uint16   `ssz-size:"2" json:"txIndex"`
-	Balance [16]byte `ssz-size:"16" json:"balance"`
+	TxIdx   uint16  `ssz-size:"2" json:"txIndex"`
+	Balance Balance `ssz-size:"16" json:"balance"`
 }
 
 // encodingAccountNonce is the encoding format of NonceChange.
@@ -352,8 +358,8 @@ func (c *ContractCode) MarshalJSON() ([]byte, error) {
 }
 
 type AccountState struct {
-	Balance *[16]byte `json:"Balance,omitempty"`
-	Nonce   *uint64   `json:"Nonce,omitempty"`
+	Balance *Balance `json:"Balance,omitempty"`
+	Nonce   *uint64  `json:"Nonce,omitempty"`
 
 	// TODO: this can refer to the code of a delegated account.  as delegations
 	// are not dependent on the code size of the delegation target, naively including
@@ -369,7 +375,7 @@ type AccountState struct {
 
 func (a *AccountState) Copy() (res AccountState) {
 	if a.Balance != nil {
-		var balanceCopy [16]byte
+		var balanceCopy Balance
 		copy(balanceCopy[:], (*a.Balance)[:])
 		res.Balance = &balanceCopy
 	}
@@ -390,10 +396,28 @@ type StateDiff struct {
 	Mutations map[common.Address]*AccountState `json:"Mutations,omitempty"`
 }
 
-func (s *StateDiff) Merge(next *StateDiff) *StateDiff {
-	// merge the future state from next into the current diff
-	panic("not implemented!")
-	return nil
+// merge the future state from next into the current diff modifying the caller
+func (s *StateDiff) Merge(next *StateDiff) {
+	for account, diff := range next.Mutations {
+		if mut, ok := s.Mutations[account]; ok {
+			if diff.Balance != nil {
+				mut.Balance = diff.Balance
+			}
+			if diff.Code != nil {
+				mut.Code = diff.Code
+			}
+			if diff.Nonce != nil {
+				mut.Nonce = diff.Nonce
+			}
+			if len(diff.StorageWrites) > 0 {
+				for slot, val := range diff.StorageWrites {
+					mut.StorageWrites[slot] = val
+				}
+			}
+		} else {
+			s.Mutations[account] = diff
+		}
+	}
 }
 
 func (s *StateDiff) Copy() *StateDiff {
@@ -517,7 +541,9 @@ func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, ac
 		return nil, nil
 	}
 
-	var accumDiff *StateDiff
+	accumDiff := StateDiff{
+		make(map[common.Address]*AccountState),
+	}
 
 	for ; it.curIdx < until; it.curIdx++ {
 		// update accumDiff based on the BAL
@@ -534,13 +560,12 @@ func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, ac
 		// callback to fill in state mutations that can't be sourced from the BAL:
 		// * EOA tx sender nonce increments
 		// * 7702 delegations
-		if err := onTx(it.curIdx, accumDiff, &layerMutations); err != nil {
+		if err := onTx(it.curIdx, &accumDiff, &layerMutations); err != nil {
 			return nil, err
 		}
 
 		accumDiff.Merge(&layerMutations)
 	}
 
-	// TODO: return a copy of the accumed diff
-	return nil, nil
+	return &accumDiff, nil
 }
