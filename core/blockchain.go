@@ -2045,6 +2045,10 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	var res *ProcessResult
 	var ptime, vtime time.Duration
 	if block.Body().AccessList != nil {
+		if !bc.chainConfig.IsGlamsterdam(block.Number(), block.Time()) {
+			bc.reportBlock(block, res, fmt.Errorf("received block containing access list before glamsterdam activated"))
+			return nil, err
+		}
 		// Process block using the parent state as reference point
 		pstart := time.Now()
 		diff, res, err := bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)

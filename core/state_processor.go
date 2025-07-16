@@ -256,12 +256,12 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				if accountDiff.Code != nil {
 					panic("bad block: BAL included a code change at the authority address for this tx")
 				}
-				accountDiff.Code = &delegationCode
+				accountDiff.Code = delegationCode
 			} else {
 				txDiff.Mutations[authority] = &bal.AccountState{
 					Balance:       nil,
 					Nonce:         nil,
-					Code:          &delegationCode,
+					Code:          delegationCode,
 					StorageWrites: nil,
 				}
 			}

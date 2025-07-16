@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"testing"
@@ -293,4 +294,19 @@ func TestBALIteration(t *testing.T) {
 	if receivedRes != expectedRes {
 		t.Fatalf("bal iteration didn't produce expected output")
 	}
+}
+
+func TestBALStateDiffAccumulation(t *testing.T) {
+
+	cBAL := makeTestConstructionBAL()
+	bal := cBAL.ToEncodingObj()
+
+	it := NewIterator(bal, 22)
+	diff, err := it.BuildStateDiff(3, func(txIndex uint16, accumDiff, txDiff *StateDiff) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("received error when trying to get bal state diff: %v\n", err)
+	}
+	fmt.Println(diff)
 }
