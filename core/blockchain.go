@@ -2055,7 +2055,8 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		// Process block using the parent state as reference point
 		pstart := time.Now()
 		var diff *bal.StateDiff
-		diff, res, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		var prestate *state.StateDB
+		prestate, diff, res, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
 		if err != nil {
 			bc.reportBlock(block, res, err)
 			return nil, err
@@ -2063,7 +2064,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		ptime = time.Since(pstart)
 
 		vstart := time.Now()
-		if err := bc.validator.ValidateStateWithDiff(block, statedb, res, diff, false); err != nil {
+		if err := bc.validator.ValidateStateWithDiff(block, prestate, res, diff, false); err != nil {
 			bc.reportBlock(block, res, err)
 			return nil, err
 		}
@@ -2087,8 +2088,6 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		vtime = time.Since(vstart)
 
 	}
-	fmt.Println(res)
-	fmt.Println("done")
 
 	if constructBAL {
 		// very ugly... deep-copy the block body before setting the block access

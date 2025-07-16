@@ -153,7 +153,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		GasUsed:  *usedGas,
 	}, nil
 }
-func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*bal.StateDiff, *ProcessResult, error) {
+func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, *ProcessResult, error) {
 	var (
 		receipts    types.Receipts
 		usedGas     = new(uint64)
@@ -202,11 +202,11 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		statedb.BlockAccessList().EnableMutations()
 	}
 	preTxDiff, _ := statedb.Finalise(true, nil)
+	prestate := statedb.Copy()
 	// create a number of diffs (one for each worker goroutine)
 	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
 
 	postTxDiff, err := txDiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
-
 		// create the complete account tx post-state by filling in values that the BAL does not provide:
 		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
 		// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
@@ -279,13 +279,13 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
-			return nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
 		txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
@@ -311,15 +311,15 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		requests = [][]byte{}
 		// EIP-6110
 		if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// EIP-7002
 		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// EIP-7251
 		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -339,7 +339,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		GasUsed:  *usedGas,
 	}
 
-	return preTxDiff, processResult, nil
+	return prestate, preTxDiff, processResult, nil
 }
 
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database

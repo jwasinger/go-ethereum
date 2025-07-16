@@ -219,7 +219,6 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, bal bool,
 		if err = chain.SetHead(0); err != nil {
 			return err
 		}
-		fmt.Println("inserting bal chain")
 		amt, err := chain.InsertChain(blocksWithBAL)
 		if err != nil {
 			return err
@@ -227,7 +226,6 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, bal bool,
 		if amt != len(blocksWithBAL) {
 			panic("dang")
 		}
-		fmt.Printf("\n\n\n")
 	}
 	return nil
 }

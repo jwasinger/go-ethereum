@@ -51,7 +51,7 @@ type Processor interface {
 	// the transaction messages using the statedb and applying any rewards to both
 	// the processor (coinbase) and any included uncles.
 	Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (*ProcessResult, error)
-	ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*bal.StateDiff, *ProcessResult, error)
+	ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, *ProcessResult, error)
 }
 
 // ProcessResult contains the values computed by Process.

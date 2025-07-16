@@ -44,6 +44,15 @@ type BlockAccessList struct {
 	Accesses []AccountAccess `ssz-max:"300000" json:"accesses"`
 }
 
+func (a *BlockAccessList) String() string {
+	var res bytes.Buffer
+	enc := json.NewEncoder(&res)
+	enc.SetIndent("", "    ")
+	// TODO: check error
+	enc.Encode(a)
+	return res.String()
+}
+
 // Validate returns an error if the contents of the access list are not ordered
 // according to the spec or any code changes are contained which exceed protocol
 // max code size.
@@ -396,6 +405,14 @@ type StateDiff struct {
 	Mutations map[common.Address]*AccountState `json:"Mutations,omitempty"`
 }
 
+func (s *StateDiff) String() string {
+	var res bytes.Buffer
+	enc := json.NewEncoder(&res)
+	enc.SetIndent("", "    ")
+	enc.Encode(s)
+	return res.String()
+}
+
 // merge the future state from next into the current diff modifying the caller
 func (s *StateDiff) Merge(next *StateDiff) {
 	for account, diff := range next.Mutations {
@@ -460,7 +477,7 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 
 // increment the account iterator by one, returning only the mutated state by the new transaction
 func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
-	if it.curTxIdx == it.maxIdx {
+	if it.curTxIdx > it.maxIdx {
 		return nil, false
 	}
 
