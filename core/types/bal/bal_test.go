@@ -19,6 +19,8 @@ package bal
 import (
 	"bytes"
 	"cmp"
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"testing"
@@ -250,4 +252,19 @@ func TestBlockAccessListValidation(t *testing.T) {
 	if err := listB.Validate(); err != nil {
 		t.Fatalf("Unexpected validation error: %v", err)
 	}
+}
+
+func TestBALIteration(t *testing.T) {
+	cBAL := makeTestConstructionBAL()
+	bal := cBAL.ToEncodingObj()
+
+	it := NewIterator(bal, 5)
+	for i := 0; i < 5; i++ {
+		mut := it.Next()
+		var res bytes.Buffer
+		encoder := json.NewEncoder(&res)
+		encoder.Encode(&mut)
+		fmt.Printf(res.String())
+	}
+
 }

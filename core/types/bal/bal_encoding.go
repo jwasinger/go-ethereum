@@ -19,6 +19,7 @@ package bal
 import (
 	"bytes"
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -343,9 +344,16 @@ func (e *BlockAccessList) Copy() (res BlockAccessList) {
 	return
 }
 
+type ContractCode []byte
+
+func (c *ContractCode) MarshalJSON() ([]byte, error) {
+	hexStr := fmt.Sprintf("%x", *c)
+	return json.Marshal(hexStr)
+}
+
 type AccountState struct {
-	Balance *[16]byte
-	Nonce   *uint64
+	Balance *[16]byte `json:"Balance,omitempty"`
+	Nonce   *uint64   `json:"Nonce,omitempty"`
 
 	// TODO: this can refer to the code of a delegated account.  as delegations
 	// are not dependent on the code size of the delegation target, naively including
@@ -354,9 +362,9 @@ type AccountState struct {
 	//
 	// Instead of having a pointer to the bytes here, we should have this refer to a resolver
 	// that can load the code when needed (or it might be already loaded in some state object).
-	Code *[]byte
+	Code ContractCode `json:"Code,omitempty"`
 
-	StorageWrites map[common.Hash]common.Hash
+	StorageWrites map[common.Hash]common.Hash `json:"StorageWrites,omitempty"`
 }
 
 func (a *AccountState) Copy() (res AccountState) {
@@ -370,8 +378,7 @@ func (a *AccountState) Copy() (res AccountState) {
 		*res.Nonce = *a.Nonce
 	}
 	if a.Code != nil {
-		res.Code = new([]byte)
-		*res.Code = bytes.Clone(*a.Code)
+		res.Code = bytes.Clone(a.Code)
 	}
 	if a.StorageWrites != nil {
 		res.StorageWrites = maps.Clone(a.StorageWrites)
@@ -401,6 +408,7 @@ func (s *StateDiff) Copy() *StateDiff {
 }
 
 type AccountIterator struct {
+	address          common.Address
 	slotWriteIndices [][]int
 	balanceChangeIdx int
 	nonceChangeIdx   int
@@ -412,8 +420,13 @@ type AccountIterator struct {
 }
 
 func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
+	slotWriteIndices := make([][]int, len(accesses.StorageWrites))
+	for i, slotWrites := range accesses.StorageWrites {
+		slotWriteIndices[i] = make([]int, len(slotWrites.Accesses))
+	}
 	return &AccountIterator{
-		slotWriteIndices: make([][]int, len(accesses.StorageWrites)),
+		address:          accesses.Address,
+		slotWriteIndices: slotWriteIndices,
 		balanceChangeIdx: 0,
 		nonceChangeIdx:   0,
 		codeChangeIdx:    0,
@@ -435,35 +448,39 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 		Code:          nil,
 		StorageWrites: make(map[common.Hash]common.Hash),
 	}
-	it.curIdx++
 	for i, slotIdxs := range it.slotWriteIndices {
-		for _, curSlotIdx := range slotIdxs {
+		for j, curSlotIdx := range slotIdxs {
 			if curSlotIdx == it.curIdx {
 				storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
 				if storageWrite.TxIdx == uint16(it.curIdx) {
 					layerMut.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
 				}
 			}
+			if curSlotIdx != len(slotIdxs) {
+				fmt.Println("bar")
+				slotIdxs[j]++
+			}
 		}
 	}
 
-	if it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx == uint16(it.curIdx) {
+	if it.balanceChangeIdx < len(it.aa.BalanceChanges) && it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx == uint16(it.curIdx) {
 		balance := it.aa.BalanceChanges[it.balanceChangeIdx].Balance
 		layerMut.Balance = &balance
 		it.balanceChangeIdx++
 	}
 
-	if it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curIdx) {
+	if it.codeChangeIdx < len(it.aa.Code) && it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curIdx) {
 		newCode := bytes.Clone(it.aa.Code[it.codeChangeIdx].Code)
-		layerMut.Code = &newCode
+		layerMut.Code = newCode
 		it.codeChangeIdx++
 	}
 
-	if it.aa.NonceChanges[it.nonceChangeIdx].TxIdx == uint16(it.curIdx) {
+	if it.nonceChangeIdx < len(it.aa.NonceChanges) && it.aa.NonceChanges[it.nonceChangeIdx].TxIdx == uint16(it.curIdx) {
 		layerMut.Nonce = new(uint64)
 		*layerMut.Nonce = it.aa.NonceChanges[it.nonceChangeIdx].Nonce
 		it.nonceChangeIdx++
 	}
+	it.curIdx++
 
 	isMut := len(layerMut.StorageWrites) > 0 || layerMut.Code != nil || layerMut.Nonce != nil || layerMut.Balance != nil
 	return &layerMut, isMut
@@ -489,9 +506,14 @@ func NewIterator(b *BlockAccessList, txCount int) *BALIterator {
 
 // Iterate one transaction into the BAL, returning the state diff from that tx
 func (it *BALIterator) Next() (mutations *StateDiff) {
-	// TODO: maintain a single StateDiff, and use this method to update it and return a pointer to it.
-	panic("implement me!!!")
-	return nil
+	diff := StateDiff{Mutations: make(map[common.Address]*AccountState)}
+	for addr, acctIt := range it.acctIterators {
+		acctMut, isMut := acctIt.Increment()
+		if isMut {
+			diff.Mutations[addr] = acctMut
+		}
+	}
+	return &diff
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
