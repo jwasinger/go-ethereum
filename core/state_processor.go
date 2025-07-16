@@ -203,7 +203,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	}
 	preTxDiff, _ := statedb.Finalise(true, nil)
 	// create a number of diffs (one for each worker goroutine)
-	txDiffIt := bal.NewIterator(statedb.ExecAccessList(), len(block.Transactions()))
+	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
 
 	postTxDiff, err := txDiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
 

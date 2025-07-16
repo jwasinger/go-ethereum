@@ -200,7 +200,36 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, bal bool,
 			}
 		}
 	}
-	return t.validateImportedHeaders(chain, validBlocks)
+	err = t.validateImportedHeaders(chain, validBlocks)
+	if err != nil {
+		return err
+	}
+
+	if bal {
+		chain.GetVMConfig().BALConstruction = false
+		var blocksWithBAL types.Blocks
+		for i := uint64(1); i <= chain.CurrentBlock().Number.Uint64(); i++ {
+			// TODO: check block is not nil and has a BAL
+			block := chain.GetBlockByNumber(i)
+			if block.Body().AccessList == nil {
+				return fmt.Errorf("block missing BAL")
+			}
+			blocksWithBAL = append(blocksWithBAL, block)
+		}
+		if err = chain.SetHead(0); err != nil {
+			return err
+		}
+		fmt.Println("inserting bal chain")
+		amt, err := chain.InsertChain(blocksWithBAL)
+		if err != nil {
+			return err
+		}
+		if amt != len(blocksWithBAL) {
+			panic("dang")
+		}
+		fmt.Printf("\n\n\n")
+	}
+	return nil
 }
 
 func (t *BlockTest) genesis(config *params.ChainConfig) *core.Genesis {
@@ -220,6 +249,10 @@ func (t *BlockTest) genesis(config *params.ChainConfig) *core.Genesis {
 		BlobGasUsed:   t.json.Genesis.BlobGasUsed,
 		ExcessBlobGas: t.json.Genesis.ExcessBlobGas,
 	}
+}
+
+func execBAL() {
+
 }
 
 /*

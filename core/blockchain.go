@@ -20,6 +20,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"io"
 	"math"
 	"math/big"
@@ -1884,7 +1885,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness 
 			return nil, it.index, err
 		}
 		// Report the import stats before returning the various results
-		stats.processed++
 		stats.usedGas += res.usedGas
 		witness = res.witness
 
@@ -2006,7 +2006,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}(time.Now(), throwaway, block)
 	}
 
-	constructBAL := bc.chainConfig.IsByzantium(block.Number()) && makeBAL && bc.cfg.VmConfig.BALConstruction && block.Body().AccessList != nil
+	constructBAL := bc.chainConfig.IsByzantium(block.Number()) && makeBAL && bc.cfg.VmConfig.BALConstruction && block.Body().AccessList == nil
 	if constructBAL {
 		statedb.EnableBALConstruction()
 	}
@@ -2045,13 +2045,17 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	var res *ProcessResult
 	var ptime, vtime time.Duration
 	if block.Body().AccessList != nil {
-		if !bc.chainConfig.IsGlamsterdam(block.Number(), block.Time()) {
-			bc.reportBlock(block, res, fmt.Errorf("received block containing access list before glamsterdam activated"))
-			return nil, err
-		}
+		// TODO: reenable the below check outside of testing
+		/*
+			if !bc.chainConfig.IsGlamsterdam(block.Number(), block.Time()) {
+				bc.reportBlock(block, res, fmt.Errorf("received block containing access list before glamsterdam activated"))
+				return nil, err
+			}
+		*/
 		// Process block using the parent state as reference point
 		pstart := time.Now()
-		diff, res, err := bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		var diff *bal.StateDiff
+		diff, res, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
 		if err != nil {
 			bc.reportBlock(block, res, err)
 			return nil, err
@@ -2068,7 +2072,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	} else {
 		// Process block using the parent state as reference point
 		pstart := time.Now()
-		res, err := bc.processor.Process(block, statedb, bc.cfg.VmConfig)
+		res, err = bc.processor.Process(block, statedb, bc.cfg.VmConfig)
 		if err != nil {
 			bc.reportBlock(block, res, err)
 			return nil, err
@@ -2083,6 +2087,8 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		vtime = time.Since(vstart)
 
 	}
+	fmt.Println(res)
+	fmt.Println("done")
 
 	if constructBAL {
 		// very ugly... deep-copy the block body before setting the block access

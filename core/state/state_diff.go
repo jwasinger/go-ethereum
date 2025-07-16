@@ -41,7 +41,7 @@ func (s *balStateReader) GetNonce(address common.Address) uint64 {
 func (s *balStateReader) GetCode(address common.Address) []byte {
 	if accountDiff, ok := s.diff.Mutations[address]; ok {
 		if accountDiff.Code != nil {
-			return *accountDiff.Code
+			return accountDiff.Code
 		}
 	}
 

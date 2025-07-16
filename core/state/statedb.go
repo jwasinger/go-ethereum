@@ -144,8 +144,7 @@ type StateDB struct {
 	constructionBAL *bal.ConstructionBlockAccessList
 
 	// block access list we are executing against
-	execBAL *bal.BlockAccessList
-	balIt   *bal.BALIterator
+	balIt *bal.BALIterator
 
 	// Measurements gathered during execution for debugging purposes
 	AccountReads    time.Duration
@@ -177,10 +176,6 @@ func (s *StateDB) EnableBALConstruction() {
 // by the StateDB instance, or nil if BAL construction was not enabled.
 func (s *StateDB) BlockAccessList() *bal.ConstructionBlockAccessList {
 	return s.constructionBAL
-}
-
-func (s *StateDB) ExecAccessList() *bal.BlockAccessList {
-	return s.execBAL
 }
 
 // New creates a new state from a given trie.
@@ -834,7 +829,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				if !ok {
 					panic("TODO return error here, bad block")
 				}
-				if obj.newContract && (accountDiff.Code == nil || bytes.Compare(*accountDiff.Code, obj.code) != 0) {
+				if obj.newContract && (accountDiff.Code == nil || bytes.Compare(accountDiff.Code, obj.code) != 0) {
 					panic("TODO return error here, bad block")
 				}
 				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
@@ -859,7 +854,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			var accountPost bal.AccountState
 			if obj.newContract {
 				codeCopy := bytes.Clone(obj.code)
-				accountPost.Code = &codeCopy
+				accountPost.Code = codeCopy
 			}
 			if obj.Nonce() != obj.txPreNonce {
 				accountPost.Nonce = new(uint64)
@@ -1066,7 +1061,7 @@ func (s *StateDB) ApplyDiff(diff *bal.StateDiff) {
 	for addr, accountDiff := range diff.Mutations {
 		stateObject := s.getOrNewStateObject(addr)
 		if accountDiff.Code != nil {
-			stateObject.SetCode(crypto.Keccak256Hash(*accountDiff.Code), *accountDiff.Code)
+			stateObject.SetCode(crypto.Keccak256Hash(accountDiff.Code), accountDiff.Code)
 		}
 		if accountDiff.StorageWrites != nil {
 			for slot, value := range accountDiff.StorageWrites {
@@ -1596,7 +1591,7 @@ func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
 	for addr, accountDiff := range diff.Mutations {
 		stateObject := s.getOrNewStateObject(addr)
 		if accountDiff.Code != nil {
-			stateObject.setCode(crypto.Keccak256Hash(*accountDiff.Code), *accountDiff.Code)
+			stateObject.setCode(crypto.Keccak256Hash(accountDiff.Code), accountDiff.Code)
 		}
 		if accountDiff.Nonce != nil {
 			stateObject.SetNonce(*accountDiff.Nonce)
