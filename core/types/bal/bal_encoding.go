@@ -387,9 +387,7 @@ func (a *AccountState) Copy() (res AccountState) {
 }
 
 type StateDiff struct {
-	Mutations map[common.Address]*AccountState
-	// TODO: this diff will be augmented with 7702 delegations.  Do we store the delegation code directly in the diff or resolve it as needed?
-	// I lean towards, resolve as needed (at least initially), or only resolve if the delegation code will be used further on in the block.
+	Mutations map[common.Address]*AccountState `json:"Mutations,omitempty"`
 }
 
 func (s *StateDiff) Merge(next *StateDiff) *StateDiff {
@@ -414,9 +412,9 @@ type AccountIterator struct {
 	nonceChangeIdx   int
 	codeChangeIdx    int
 
-	curIdx int
-	maxIdx int
-	aa     *AccountAccess
+	curTxIdx int
+	maxIdx   int
+	aa       *AccountAccess
 }
 
 func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
@@ -430,7 +428,7 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 		balanceChangeIdx: 0,
 		nonceChangeIdx:   0,
 		codeChangeIdx:    0,
-		curIdx:           0,
+		curTxIdx:         0,
 		maxIdx:           txCount - 1,
 		aa:               accesses,
 	}
@@ -438,7 +436,7 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 
 // increment the account iterator by one, returning only the mutated state by the new transaction
 func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
-	if it.curIdx == it.maxIdx {
+	if it.curTxIdx == it.maxIdx {
 		return nil, false
 	}
 
@@ -448,39 +446,36 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 		Code:          nil,
 		StorageWrites: make(map[common.Hash]common.Hash),
 	}
-	for i, slotIdxs := range it.slotWriteIndices {
-		for j, curSlotIdx := range slotIdxs {
-			if curSlotIdx == it.curIdx {
+	for i, accountSlotsIdxs := range it.slotWriteIndices {
+		for j, curSlotIdx := range accountSlotsIdxs {
+			if curSlotIdx < len(it.aa.StorageWrites[i].Accesses) {
 				storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
-				if storageWrite.TxIdx == uint16(it.curIdx) {
+				if storageWrite.TxIdx == uint16(it.curTxIdx) {
 					layerMut.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
+					accountSlotsIdxs[j]++
 				}
-			}
-			if curSlotIdx != len(slotIdxs) {
-				fmt.Println("bar")
-				slotIdxs[j]++
 			}
 		}
 	}
 
-	if it.balanceChangeIdx < len(it.aa.BalanceChanges) && it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx == uint16(it.curIdx) {
+	if it.balanceChangeIdx < len(it.aa.BalanceChanges) && it.aa.BalanceChanges[it.balanceChangeIdx].TxIdx == uint16(it.curTxIdx) {
 		balance := it.aa.BalanceChanges[it.balanceChangeIdx].Balance
 		layerMut.Balance = &balance
 		it.balanceChangeIdx++
 	}
 
-	if it.codeChangeIdx < len(it.aa.Code) && it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curIdx) {
+	if it.codeChangeIdx < len(it.aa.Code) && it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curTxIdx) {
 		newCode := bytes.Clone(it.aa.Code[it.codeChangeIdx].Code)
 		layerMut.Code = newCode
 		it.codeChangeIdx++
 	}
 
-	if it.nonceChangeIdx < len(it.aa.NonceChanges) && it.aa.NonceChanges[it.nonceChangeIdx].TxIdx == uint16(it.curIdx) {
+	if it.nonceChangeIdx < len(it.aa.NonceChanges) && it.aa.NonceChanges[it.nonceChangeIdx].TxIdx == uint16(it.curTxIdx) {
 		layerMut.Nonce = new(uint64)
 		*layerMut.Nonce = it.aa.NonceChanges[it.nonceChangeIdx].Nonce
 		it.nonceChangeIdx++
 	}
-	it.curIdx++
+	it.curTxIdx++
 
 	isMut := len(layerMut.StorageWrites) > 0 || layerMut.Code != nil || layerMut.Nonce != nil || layerMut.Balance != nil
 	return &layerMut, isMut
