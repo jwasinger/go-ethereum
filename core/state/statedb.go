@@ -897,9 +897,10 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				accountPost.StorageWrites = maps.Clone(obj.pendingStorage)
 			}
 
-			// TODO: ascertain that entries in here can never be empty
-			post.Mutations[obj.address] = &accountPost
-
+			// if the account executed SENDALL but did not send a balance, don't include it in the diff
+			if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {
+				post.Mutations[obj.address] = &accountPost
+			}
 			s.markUpdate(addr)
 		}
 		// At this point, also ship the address off to the precacher. The precacher
