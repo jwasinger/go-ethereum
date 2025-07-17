@@ -143,8 +143,8 @@ type StateDB struct {
 	// block access list, if bal construction is specified
 	constructionBAL *bal.ConstructionBlockAccessList
 
-	// block access list we are executing against
-	balIt *bal.BALIterator
+	// accumulated state changes from the block through the last call to Finalise
+	diff *bal.StateDiff
 
 	// Measurements gathered during execution for debugging purposes
 	AccountReads    time.Duration
@@ -202,11 +202,16 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 		journal:              newJournal(),
 		accessList:           newAccessList(),
 		transientStorage:     newTransientStorage(),
+		diff:                 &bal.StateDiff{make(map[common.Address]*bal.AccountState)},
 	}
 	if db.TrieDB().IsVerkle() {
 		sdb.accessEvents = NewAccessEvents(db.PointCache())
 	}
 	return sdb, nil
+}
+
+func (s *StateDB) GetStateDiff() *bal.StateDiff {
+	return s.diff
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
@@ -720,6 +725,8 @@ func (s *StateDB) Copy() *StateDB {
 		accessList:       s.accessList.Copy(),
 		transientStorage: s.transientStorage.Copy(),
 		journal:          s.journal.copy(),
+
+		diff: s.diff.Copy(),
 	}
 	if s.trie != nil {
 		state.trie = mustCopyTrie(s.trie)
@@ -775,8 +782,7 @@ func (s *StateDB) GetRefund() uint64 {
 //
 // if accessList is provided, verify the post-tx state against the diff.
 func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (post *bal.StateDiff, err error) {
-
-	post = &bal.StateDiff{Mutations: make(map[common.Address]*bal.AccountState)}
+	post = &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
 	for addr := range s.journal.dirties {
 		obj, exist := s.stateObjects[addr]
@@ -801,9 +807,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 		} else {
 			if s.constructionBAL != nil {
 				// add written storage keys/values
-				for key, val := range obj.dirtyStorage {
-					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
-				}
+				// TODO: clarify the sematic difference between pending and dirty storage
 
 				// for addresses that changed balance, add the post-change value
 				if obj.Balance().Cmp(obj.txPreBalance) != 0 {
@@ -841,31 +845,49 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 					panic("TODO return error here, bad block")
 				}
 
-				if len(obj.dirtyStorage) > 0 {
-					if len(accountDiff.StorageWrites) != len(obj.dirtyStorage) {
-						panic("TODO return error here, bad block")
-					}
-					if !maps.Equal(accountDiff.StorageWrites, obj.dirtyStorage) {
-						panic("TODO return error here, bad block")
-					}
-				}
 			}
 
 			var accountPost bal.AccountState
 			if obj.newContract {
-				codeCopy := bytes.Clone(obj.code)
-				accountPost.Code = codeCopy
+				accountPost.Code = bytes.Clone(obj.code)
 			}
 			if obj.Nonce() != obj.txPreNonce {
 				accountPost.Nonce = new(uint64)
 				*accountPost.Nonce = obj.Nonce()
 			}
-			if len(obj.dirtyStorage) > 0 {
-				accountPost.StorageWrites = maps.Clone(obj.dirtyStorage)
+			if !obj.Balance().Eq(obj.txPreBalance) {
+				var postBalance bal.Balance
+				postBalanceBytes := obj.Balance().Bytes()
+				copy(postBalance[16-len(postBalanceBytes):], postBalanceBytes[:])
+				accountPost.Balance = &postBalance
 			}
-			post.Mutations[obj.address] = &accountPost
 
 			obj.finalise()
+
+			// compute bal storage mutations after finalisation
+			if s.constructionBAL != nil {
+				for key, val := range obj.pendingStorage {
+					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
+				}
+			} else if balPost != nil {
+				accountDiff, _ := balPost.Mutations[obj.address]
+				if len(obj.pendingStorage) > 0 {
+					if len(accountDiff.StorageWrites) != len(obj.pendingStorage) {
+						panic("TODO return error here, bad block")
+					}
+					if !maps.Equal(accountDiff.StorageWrites, obj.pendingStorage) {
+						panic("TODO return error here, bad block")
+					}
+				}
+			}
+
+			if len(obj.pendingStorage) > 0 {
+				accountPost.StorageWrites = maps.Clone(obj.pendingStorage)
+			}
+
+			// TODO: ascertain that entries in here can never be empty
+			post.Mutations[obj.address] = &accountPost
+
 			s.markUpdate(addr)
 		}
 		// At this point, also ship the address off to the precacher. The precacher
@@ -881,7 +903,9 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
 
-	return post, nil
+	s.diff.Merge(post)
+
+	return s.diff, nil
 }
 
 // IntermediateRoot computes the current root hash of the state trie.

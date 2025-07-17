@@ -74,6 +74,68 @@ func TestBlockchain(t *testing.T) {
 	// which run natively, so there's no reason to run them here.
 }
 
+func TestBlockchainBAL(t *testing.T) {
+	bt := new(testMatcher)
+
+	// We are running most of GeneralStatetests to tests witness support, even
+	// though they are ran as state tests too. Still, the performance tests are
+	// less about state andmore about EVM number crunching, so skip those.
+	bt.skipLoad(`^GeneralStateTests/VMTests/vmPerformance`)
+
+	// Skip random failures due to selfish mining test
+	bt.skipLoad(`.*bcForgedTest/bcForkUncle\.json`)
+
+	// Slow tests
+	bt.slow(`.*bcExploitTest/DelegateCallSpam.json`)
+	bt.slow(`.*bcExploitTest/ShanghaiLove.json`)
+	bt.slow(`.*bcExploitTest/SuicideIssue.json`)
+	bt.slow(`.*/bcForkStressTest/`)
+	bt.slow(`.*/bcGasPricerTest/RPC_API_Test.json`)
+	bt.slow(`.*/bcWalletTest/`)
+
+	// Very slow test
+	bt.skipLoad(`.*/stTimeConsuming/.*`)
+	// test takes a lot for time and goes easily OOM because of sha3 calculation on a huge range,
+	// using 4.6 TGas
+	bt.skipLoad(`.*randomStatetest94.json.*`)
+
+	// After the merge we would accept side chains as canonical even if they have lower td
+	bt.skipLoad(`.*bcMultiChainTest/ChainAtoChainB_difficultyB.json`)
+	bt.skipLoad(`.*bcMultiChainTest/CallContractFromNotBestBlock.json`)
+	bt.skipLoad(`.*bcTotalDifficultyTest/uncleBlockAtBlock3afterBlock4.json`)
+	bt.skipLoad(`.*bcTotalDifficultyTest/lotsOfBranchesOverrideAtTheMiddle.json`)
+	bt.skipLoad(`.*bcTotalDifficultyTest/sideChainWithMoreTransactions.json`)
+	bt.skipLoad(`.*bcForkStressTest/ForkStressTest.json`)
+	bt.skipLoad(`.*bcMultiChainTest/lotsOfLeafs.json`)
+	bt.skipLoad(`.*bcFrontierToHomestead/blockChainFrontierWithLargerTDvsHomesteadBlockchain.json`)
+	bt.skipLoad(`.*bcFrontierToHomestead/blockChainFrontierWithLargerTDvsHomesteadBlockchain2.json`)
+
+	// With chain history removal, TDs become unavailable, this transition tests based on TTD are unrunnable
+	bt.skipLoad(`.*bcArrowGlacierToParis/powToPosBlockRejection.json`)
+
+	// This directory contains no test.
+	bt.skipLoad(`.*\.meta/.*`)
+
+	// skip tests which use large balances (greater than 16 bytes)
+	bt.skipLoad(`.*/stStaticCall/static_RETURN_BoundsOOG.json`)
+	bt.skipLoad(`.*/stStaticCall/static_RETURN_Bounds.json`)
+	bt.skipLoad(`.*/stStaticCall/static_RETURN_Bounds.json`)
+	bt.skipLoad(`.*/stStaticCall/static_Call1024PreCalls.json`)
+	bt.skipLoad(`.*/stStaticCall/static_Call1024PreCalls2.json`)
+	bt.skipLoad(`.*/stStaticCall/static_Call1024PreCalls3.json`)
+	bt.skipLoad(`.*/stStaticCall/static_CheckOpcodes5.json`)
+	bt.skipLoad(`.*/stStaticCall/static_CallContractToCreateContractWhichWouldCreateContractIfCalled.json`)
+	bt.skipLoad(`.*/stStaticCall/static_log0_logMemStartTooHigh.json`)
+	bt.skipLoad(`.*/stStaticCall/static_Call50000_ecrec.json`)
+
+	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
+		execBlockTest(t, bt, test)
+	})
+	// There is also a LegacyTests folder, containing blockchain tests generated
+	// prior to Istanbul. However, they are all derived from GeneralStateTests,
+	// which run natively, so there's no reason to run them here.
+}
+
 // TestExecutionSpecBlocktests runs the test fixtures from execution-spec-tests.
 func TestExecutionSpecBlocktests(t *testing.T) {
 	if !common.FileExist(executionSpecBlockchainTestDir) {
@@ -103,6 +165,7 @@ func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
 		snapshotConf = []bool{snapshotConf[rand.Int()%2]}
 		dbschemeConf = []string{dbschemeConf[rand.Int()%2]}
 	}
+
 	for _, snapshot := range snapshotConf {
 		for _, dbscheme := range dbschemeConf {
 			if err := bt.checkFailure(t, test.Run(snapshot, dbscheme, false, true, nil, nil)); err != nil {

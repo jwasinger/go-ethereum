@@ -240,6 +240,16 @@ func (s *stateObject) setState(key common.Hash, value common.Hash, origin common
 	s.dirtyStorage[key] = value
 }
 
+func (s *stateObject) PrettyPrint() {
+	fmt.Printf("balance: %s\n", s.Balance().String())
+	fmt.Printf("nonce: %d\n", s.Nonce())
+	fmt.Printf("code: %x\n", s.code)
+	fmt.Printf("dirty storage:\n")
+	for slot, val := range s.pendingStorage {
+		fmt.Printf("    %x: %x\n", slot, val)
+	}
+}
+
 // finalise moves all dirty storage slots into the pending area to be hashed or
 // committed later. It is invoked at the end of every transaction.
 func (s *stateObject) finalise() {

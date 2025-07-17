@@ -164,6 +164,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		gp          = new(GasPool).AddGas(block.GasLimit())
 	)
 
+	prestate := statedb.Copy()
+
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -191,6 +193,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if statedb.BlockAccessList() != nil {
 		statedb.BlockAccessList().DisableMutations()
 	}
+
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
@@ -201,17 +204,18 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if statedb.BlockAccessList() != nil {
 		statedb.BlockAccessList().EnableMutations()
 	}
-	preTxDiff, _ := statedb.Finalise(true, nil)
-	prestate := statedb.Copy()
+
+	preTxDiff := statedb.GetStateDiff()
+
 	// create a number of diffs (one for each worker goroutine)
 	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
 
-	postTxDiff, err := txDiffIt.BuildStateDiff(uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+	postTxDiff, err := txDiffIt.BuildStateDiff(preTxDiff, uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
 		// create the complete account tx post-state by filling in values that the BAL does not provide:
 		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
 		// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
 
-		stateReader := state.NewBALStateReader(statedb, txDiff)
+		stateReader := state.NewBALStateReader(statedb, accumDiff)
 
 		tx := block.Transactions()[txIndex]
 		sender, err := types.Sender(signer, tx)
@@ -251,6 +255,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				continue
 			}
 
+			// TODO: what do if delegate target is empty? code should remain nil?
 			delegationCode := stateReader.GetCode(delegation.Address)
 			if accountDiff, ok := txDiff.Mutations[authority]; ok {
 				if accountDiff.Code != nil {
@@ -272,6 +277,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if err != nil {
 		panic("bad block error here")
 	}
+
 	preTxDiff.Merge(postTxDiff)
 
 	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
@@ -323,14 +329,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		}
 	}
 
-	// compute state diffs applied from requests above (not in BAL)
-	postBlockDiff, _ := statedb.Finalise(true, nil)
-
-	preTxDiff.Merge(postBlockDiff)
-
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	// TODO: apply withdrawals state diff from the Finalize call
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
+	preTxDiff.Merge(statedb.GetStateDiff())
 
 	processResult := &ProcessResult{
 		Receipts: receipts,
@@ -428,7 +430,7 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 
 // ProcessBeaconBlockRoot applies the EIP-4788 system call to the beacon block root
 // contract. This method is exported to be used in tests.
-func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
+func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) *bal.StateDiff {
 	if tracer := evm.Config.Tracer; tracer != nil {
 		onSystemCallStart(tracer, evm.GetVMContext())
 		if tracer.OnSystemCallEnd != nil {
@@ -447,12 +449,13 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.BeaconRootsAddress)
 	_, _, _ = evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
-	evm.StateDB.Finalise(true, nil)
+	diff, _ := evm.StateDB.Finalise(true, nil)
+	return diff
 }
 
 // ProcessParentBlockHash stores the parent block hash in the history storage contract
 // as per EIP-2935/7709.
-func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
+func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) *bal.StateDiff {
 	if tracer := evm.Config.Tracer; tracer != nil {
 		onSystemCallStart(tracer, evm.GetVMContext())
 		if tracer.OnSystemCallEnd != nil {
@@ -477,7 +480,8 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 	if evm.StateDB.AccessEvents() != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
-	evm.StateDB.Finalise(true, nil)
+	diff, _ := evm.StateDB.Finalise(true, nil)
+	return diff
 }
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.

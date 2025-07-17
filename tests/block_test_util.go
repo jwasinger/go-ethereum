@@ -131,6 +131,11 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, bal bool,
 	// Commit genesis state
 	gspec := t.genesis(config)
 
+	// skip any tests which are not past the cancun fork (selfdestruct removal)
+	if gspec.Config.CancunTime == nil || *gspec.Config.CancunTime != 0 {
+		return nil
+	}
+
 	// if ttd is not specified, set an arbitrary huge value
 	if gspec.Config.TerminalTotalDifficulty == nil {
 		gspec.Config.TerminalTotalDifficulty = big.NewInt(stdmath.MaxInt64)
@@ -219,6 +224,7 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, bal bool,
 		if err = chain.SetHead(0); err != nil {
 			return err
 		}
+
 		amt, err := chain.InsertChain(blocksWithBAL)
 		if err != nil {
 			return err

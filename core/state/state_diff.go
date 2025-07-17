@@ -51,7 +51,9 @@ func (s *balStateReader) GetCode(address common.Address) []byte {
 func (s *balStateReader) GetBalance(address common.Address) *uint256.Int {
 	if accountDiff, ok := s.diff.Mutations[address]; ok {
 		if accountDiff.Balance != nil {
-			return new(uint256.Int).SetBytes((*accountDiff.Balance)[:])
+			panic("uh oh")
+			res := new(uint256.Int).SetBytes((*accountDiff.Balance)[:])
+			return res
 		}
 	}
 

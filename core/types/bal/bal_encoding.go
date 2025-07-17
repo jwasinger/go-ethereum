@@ -97,7 +97,8 @@ func encodeBalance(val *uint256.Int) [16]byte {
 type Balance [16]byte
 
 func (b Balance) MarshalJSON() ([]byte, error) {
-	return json.Marshal(new(uint256.Int).SetBytes(b[:]).Uint64())
+	//return json.Marshal(new(uint256.Int).SetBytes(b[:]).Uint64())
+	return json.Marshal(fmt.Sprintf("%x", b))
 }
 
 // encodingBalanceChange is the encoding format of BalanceChange.
@@ -438,12 +439,12 @@ func (s *StateDiff) Merge(next *StateDiff) {
 }
 
 func (s *StateDiff) Copy() *StateDiff {
-	var res StateDiff
+	res := &StateDiff{make(map[common.Address]*AccountState)}
 	for addr, accountDiff := range s.Mutations {
 		cpy := accountDiff.Copy()
 		res.Mutations[addr] = &cpy
 	}
-	return &res
+	return res
 }
 
 type AccountIterator struct {
@@ -553,13 +554,16 @@ func (it *BALIterator) Next() (mutations *StateDiff) {
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
-func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, error) {
+func (it *BALIterator) BuildStateDiff(initialDiff *StateDiff, until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, error) {
 	if until < it.curIdx {
 		return nil, nil
 	}
 
-	accumDiff := StateDiff{
+	accumDiff := &StateDiff{
 		make(map[common.Address]*AccountState),
+	}
+	if initialDiff != nil {
+		accumDiff = initialDiff
 	}
 
 	for ; it.curIdx < until; it.curIdx++ {
@@ -577,12 +581,12 @@ func (it *BALIterator) BuildStateDiff(until uint16, onTx func(txIndex uint16, ac
 		// callback to fill in state mutations that can't be sourced from the BAL:
 		// * EOA tx sender nonce increments
 		// * 7702 delegations
-		if err := onTx(it.curIdx, &accumDiff, &layerMutations); err != nil {
+		if err := onTx(it.curIdx, accumDiff, &layerMutations); err != nil {
 			return nil, err
 		}
 
 		accumDiff.Merge(&layerMutations)
 	}
 
-	return &accumDiff, nil
+	return accumDiff, nil
 }
