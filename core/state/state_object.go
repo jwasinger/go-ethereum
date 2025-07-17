@@ -248,6 +248,7 @@ func (s *stateObject) PrettyPrint() {
 	for slot, val := range s.pendingStorage {
 		fmt.Printf("    %x: %x\n", slot, val)
 	}
+	fmt.Println()
 }
 
 // finalise moves all dirty storage slots into the pending area to be hashed or

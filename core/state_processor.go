@@ -301,8 +301,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		// TODO validate the reported state diff with the produced one:
 		// every entry in the reported diff should be in the produced one
 		// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
-		_ = txStateDiff
-		_ = balStateTxStateDiff
+		sender, _ := types.Sender(signer, tx)
+		if err := bal.ValidateTxStateDiff(balStateTxStateDiff, txStateDiff, sender, statedb.GetNonce(sender)); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
@@ -333,6 +335,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// TODO: apply withdrawals state diff from the Finalize call
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 	preTxDiff.Merge(statedb.GetStateDiff())
+
+	fmt.Printf("final state diff is:\n%s\n", preTxDiff.String())
 
 	processResult := &ProcessResult{
 		Receipts: receipts,

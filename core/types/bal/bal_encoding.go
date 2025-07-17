@@ -383,6 +383,49 @@ type AccountState struct {
 	StorageWrites map[common.Hash]common.Hash `json:"StorageWrites,omitempty"`
 }
 
+func (a *AccountState) Eq(other *AccountState) bool {
+	if a.Balance != nil || other.Balance != nil {
+		if a.Balance == nil || other.Balance == nil {
+			return false
+		}
+
+		if !bytes.Equal(a.Balance[:], other.Balance[:]) {
+			return false
+		}
+	}
+
+	if a.Code != nil || other.Code != nil {
+		if a.Code == nil || other.Code == nil {
+			return false
+		}
+
+		if !bytes.Equal(a.Code, other.Code) {
+			return false
+		}
+	}
+
+	if a.Nonce != nil || other.Nonce != nil {
+		if a.Nonce == nil || other.Nonce == nil {
+			return false
+		}
+
+		if *a.Nonce != *other.Nonce {
+			return false
+		}
+	}
+
+	if a.StorageWrites != nil || other.StorageWrites != nil {
+		if a.StorageWrites == nil || other.StorageWrites == nil {
+			return false
+		}
+
+		if !maps.Equal(a.StorageWrites, other.StorageWrites) {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *AccountState) Copy() (res AccountState) {
 	if a.Balance != nil {
 		var balanceCopy Balance
@@ -404,6 +447,42 @@ func (a *AccountState) Copy() (res AccountState) {
 
 type StateDiff struct {
 	Mutations map[common.Address]*AccountState `json:"Mutations,omitempty"`
+}
+
+// TODO: augment this to account for delegation changes in the totalDiff but not in the balDiff
+func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, senderPreNonce uint64) error {
+	if len(balDiff.Mutations) != len(totalDiff.Mutations) || len(balDiff.Mutations) != len(totalDiff.Mutations)-1 {
+		return fmt.Errorf("invalid number of mutated accounts in the diff")
+	}
+	for addr, balAS := range balDiff.Mutations {
+		actualAS, ok := totalDiff.Mutations[addr]
+		if !ok {
+			return fmt.Errorf("BAL contained account state diff that wasn't present in the computed diff")
+		}
+
+		if addr == sender {
+			// if tx sender nonce was only incremented by one, the nonce update must not be in the BAL
+			if *actualAS.Nonce != senderPreNonce+1 {
+				if balAS.Nonce != nil {
+					return fmt.Errorf("sender nonce update must not be in BAL if sender was non-delegated EOA (nonce only incremented by one for the tx)")
+				}
+			} else {
+				// if nonce not incremented, transaction was not valid for inclusion.  Bad block (?)
+
+				// if nonce was incremented by more than one, the sender is a delegated EOA that performed creations
+				// the sender diff from the BAL must match the computed state exactly
+			}
+
+			continue
+		}
+
+		// all account diffs that weren't the tx sender must match the BAL exactly
+		if !balAS.Eq(actualAS) {
+			return fmt.Errorf("")
+		}
+	}
+
+	return nil
 }
 
 func (s *StateDiff) String() string {
