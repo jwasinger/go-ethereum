@@ -237,12 +237,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			// TODO: can infer it from the transaction
 			senderPostNonce := stateReader.GetNonce(sender) + 1
 
-			txDiff.Mutations[sender] = &bal.AccountState{
-				Balance:       nil,
-				Nonce:         &senderPostNonce,
-				Code:          nil,
-				StorageWrites: nil,
-			}
+			as := bal.NewEmptyAccountState()
+			as.Nonce = &senderPostNonce
+			txDiff.Mutations[sender] = as
 		}
 
 		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
@@ -263,12 +260,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				}
 				accountDiff.Code = delegationCode
 			} else {
-				txDiff.Mutations[authority] = &bal.AccountState{
-					Balance:       nil,
-					Nonce:         nil,
-					Code:          delegationCode,
-					StorageWrites: nil,
-				}
+				as := bal.NewEmptyAccountState()
+				as.Code = delegationCode
+				txDiff.Mutations[authority] = as
 			}
 		}
 
@@ -277,6 +271,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if err != nil {
 		panic("bad block error here")
 	}
+
+	// TODO: validate that system address execution changes aren't recorded in the BAL
+	// unless triggered by a non-system contract (sending a balance to a sys address for example)
 
 	preTxDiff.Merge(postTxDiff)
 
@@ -289,6 +286,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
+		sender, _ := types.Sender(signer, tx)
+		senderPreNonce := statedb.GetNonce(sender)
 		txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
@@ -301,8 +300,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		// TODO validate the reported state diff with the produced one:
 		// every entry in the reported diff should be in the produced one
 		// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
-		sender, _ := types.Sender(signer, tx)
-		if err := bal.ValidateTxStateDiff(balStateTxStateDiff, txStateDiff, sender, statedb.GetNonce(sender)); err != nil {
+
+		if err := bal.ValidateTxStateDiff(balStateTxStateDiff, txStateDiff, sender, senderPreNonce); err != nil {
+			fmt.Printf("mismatch.  bal tx state diff:\n%s\n\ncomputed diff:\n%s\n\n", balStateTxStateDiff.String(), txStateDiff.String())
 			return nil, nil, nil, err
 		}
 	}

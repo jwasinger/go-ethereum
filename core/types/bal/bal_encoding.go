@@ -383,7 +383,16 @@ type AccountState struct {
 	StorageWrites map[common.Hash]common.Hash `json:"StorageWrites,omitempty"`
 }
 
-func (a *AccountState) Eq(other *AccountState) bool {
+func NewEmptyAccountState() *AccountState {
+	return &AccountState{
+		nil,
+		nil,
+		nil,
+		nil,
+	}
+}
+
+func (a *AccountState) Eq(other *AccountState, ignoreNonce bool) bool {
 	if a.Balance != nil || other.Balance != nil {
 		if a.Balance == nil || other.Balance == nil {
 			return false
@@ -404,7 +413,7 @@ func (a *AccountState) Eq(other *AccountState) bool {
 		}
 	}
 
-	if a.Nonce != nil || other.Nonce != nil {
+	if !ignoreNonce && (a.Nonce != nil || other.Nonce != nil) {
 		if a.Nonce == nil || other.Nonce == nil {
 			return false
 		}
@@ -451,35 +460,68 @@ type StateDiff struct {
 
 // TODO: augment this to account for delegation changes in the totalDiff but not in the balDiff
 func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, senderPreNonce uint64) error {
-	if len(balDiff.Mutations) != len(totalDiff.Mutations) || len(balDiff.Mutations) != len(totalDiff.Mutations)-1 {
-		return fmt.Errorf("invalid number of mutated accounts in the diff")
-	}
-	for addr, balAS := range balDiff.Mutations {
-		actualAS, ok := totalDiff.Mutations[addr]
-		if !ok {
-			return fmt.Errorf("BAL contained account state diff that wasn't present in the computed diff")
-		}
+	// if the number of account mutations was equal:
+	// * the tx sender was modified other than the nonce (e.g.balance), or it was a delegated EOA that performed creations
+	// * each
 
+	expectedBALAddrs := len(totalDiff.Mutations)
+	for addr, computedDiff := range totalDiff.Mutations {
+		// if it's the sender:
+		// if only the nonce changed by one, ensure it's not present in the BAL
+		// if the nonce changed by more than one, it's a delegated EOA and must be in the BAL
 		if addr == sender {
-			// if tx sender nonce was only incremented by one, the nonce update must not be in the BAL
-			if *actualAS.Nonce != senderPreNonce+1 {
-				if balAS.Nonce != nil {
-					return fmt.Errorf("sender nonce update must not be in BAL if sender was non-delegated EOA (nonce only incremented by one for the tx)")
+			// TODO: check computed diff must contain nonce, otherwise the tx could not be applied and we would have failed before this at execution
+			if *computedDiff.Nonce == senderPreNonce+1 {
+				// if no state values changed other than nonce, it must not be present in the BAL
+				if computedDiff.Code == nil && computedDiff.Balance == nil && computedDiff.StorageWrites == nil {
+					if _, ok := balDiff.Mutations[addr]; ok {
+						return fmt.Errorf("should not be in BAL")
+					}
+					expectedBALAddrs--
+				} else {
+					// otherwise non-nonce fields must match BAL exactly
+					balAccountDiff, ok := balDiff.Mutations[addr]
+					if !ok {
+						return fmt.Errorf("missing from BAL")
+					}
+
+					if balAccountDiff.Nonce != nil || !computedDiff.Eq(balAccountDiff, true) {
+						fmt.Println(computedDiff.StorageWrites)
+						fmt.Println(balAccountDiff.StorageWrites)
+						return fmt.Errorf("nonce was set in BAL or bal account diff didn't match computed")
+					}
 				}
 			} else {
-				// if nonce not incremented, transaction was not valid for inclusion.  Bad block (?)
+				// delegated EOA which performed creations, must match BAL value exactly
+				balAccountDiff, ok := balDiff.Mutations[addr]
+				if !ok {
+					return fmt.Errorf("missing from BAL")
+				}
 
-				// if nonce was incremented by more than one, the sender is a delegated EOA that performed creations
-				// the sender diff from the BAL must match the computed state exactly
+				if !computedDiff.Eq(balAccountDiff, false) {
+					return fmt.Errorf("mismatch between BAl and computed for delegated EOA which performed creations")
+				}
 			}
-
 			continue
 		}
 
-		// all account diffs that weren't the tx sender must match the BAL exactly
-		if !balAS.Eq(actualAS) {
-			return fmt.Errorf("")
+		// TODO: if it's not present in the BAL:
+		// * ensure it was a delegated EOA and only the code changed
+
+		balAccountDiff, ok := balDiff.Mutations[addr]
+		if !ok {
+			return fmt.Errorf("missing from BAL")
 		}
+
+		if !computedDiff.Eq(balAccountDiff, false) {
+			return fmt.Errorf("mismatch between BAl and computed for delegated EOA which performed creations")
+		}
+	}
+
+	// assert that the BAL contains exactly the computed addresses minus the allowed excludeable
+	// only check length because we already checked inclusion above
+	if len(balDiff.Mutations) != expectedBALAddrs {
+		return fmt.Errorf("BAL contained unexpected mutations compared to computed")
 	}
 
 	return nil
@@ -561,17 +603,16 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 		return nil, false
 	}
 
-	layerMut := AccountState{
-		Balance:       nil,
-		Nonce:         nil,
-		Code:          nil,
-		StorageWrites: make(map[common.Hash]common.Hash),
-	}
+	layerMut := NewEmptyAccountState()
+
 	for i, accountSlotsIdxs := range it.slotWriteIndices {
 		for j, curSlotIdx := range accountSlotsIdxs {
 			if curSlotIdx < len(it.aa.StorageWrites[i].Accesses) {
 				storageWrite := it.aa.StorageWrites[i].Accesses[curSlotIdx]
 				if storageWrite.TxIdx == uint16(it.curTxIdx) {
+					if layerMut.StorageWrites == nil {
+						layerMut.StorageWrites = make(map[common.Hash]common.Hash)
+					}
 					layerMut.StorageWrites[it.aa.StorageWrites[i].Slot] = storageWrite.ValueAfter
 					accountSlotsIdxs[j]++
 				}
@@ -599,7 +640,7 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 	it.curTxIdx++
 
 	isMut := len(layerMut.StorageWrites) > 0 || layerMut.Code != nil || layerMut.Nonce != nil || layerMut.Balance != nil
-	return &layerMut, isMut
+	return layerMut, isMut
 }
 
 type BALIterator struct {

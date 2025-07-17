@@ -905,7 +905,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 	s.diff.Merge(post)
 
-	return s.diff, nil
+	return post, nil
 }
 
 // IntermediateRoot computes the current root hash of the state trie.
