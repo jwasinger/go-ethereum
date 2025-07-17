@@ -107,8 +107,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	for i, tx := range block.Transactions() {
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
+
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+
+		sender, _ := types.Sender(signer, tx)
+		statedb.SetTxSender(sender)
 		statedb.SetTxContext(tx.Hash(), i)
 
 		_, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
@@ -284,9 +288,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+		sender, _ := types.Sender(signer, tx)
+		statedb.SetTxSender(sender)
 		statedb.SetTxContext(tx.Hash(), i)
 
-		sender, _ := types.Sender(signer, tx)
 		senderPreNonce := statedb.GetNonce(sender)
 		txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 		if err != nil {
@@ -302,7 +307,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
 
 		if err := bal.ValidateTxStateDiff(balStateTxStateDiff, txStateDiff, sender, senderPreNonce); err != nil {
-			fmt.Printf("mismatch.  bal tx state diff:\n%s\n\ncomputed diff:\n%s\n\n", balStateTxStateDiff.String(), txStateDiff.String())
+			//fmt.Printf("bal:\n%s\n\ncomputed:\n%s\n\n", balStateTxStateDiff.String(), txStateDiff.String())
+			//fmt.Printf("------bal------\n%s\n\n", block.Body().AccessList.String())
 			return nil, nil, nil, err
 		}
 	}
@@ -335,8 +341,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// TODO: apply withdrawals state diff from the Finalize call
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 	preTxDiff.Merge(statedb.GetStateDiff())
-
-	fmt.Printf("final state diff is:\n%s\n", preTxDiff.String())
 
 	processResult := &ProcessResult{
 		Receipts: receipts,

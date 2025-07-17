@@ -120,6 +120,8 @@ type StateDB struct {
 	// The tx context and all occurred logs in the scope of transaction.
 	thash   common.Hash
 	txIndex int
+	sender  common.Address
+
 	logs    map[common.Hash][]*types.Log
 	logSize uint
 
@@ -816,13 +818,23 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 				// include nonces for any contracts which incremented them.
 				// newly-delegated contracts are not included
-				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce && !obj.isNewlyDelegated() {
+				// consider contract creation execution which executes a
+
+				// only include nonce changes in the BAL if:
+				// * the object was a contract
+				// OR
+				// * the object was the tx sender, is a delegated EOA, and had its nonce bumped by more than 1
+				if s.sender == obj.address {
+					if obj.Nonce() != obj.txPreNonce+1 {
+						s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
+					}
+				} else if obj.Nonce() != obj.txPreNonce {
 					s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
 				}
 
 				// include code of created contracts
-				// delegations are not included because they can be statically inferred from the tx and its prestate
-				if obj.newContract {
+				// Delegations are not included because they can be statically inferred from the tx and its prestate.
+				if obj.newContract && len(obj.code) != 0 {
 					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
 				}
 			} else if balPost != nil {
@@ -1081,6 +1093,11 @@ func (s *StateDB) SetTxContext(thash common.Hash, ti int) {
 	s.txIndex = ti
 }
 
+// TODO: combine this into set tx context
+func (s *StateDB) SetTxSender(sender common.Address) {
+	s.sender = sender
+}
+
 func (s *StateDB) ApplyDiff(diff *bal.StateDiff) {
 	for addr, accountDiff := range diff.Mutations {
 		stateObject := s.getOrNewStateObject(addr)
@@ -1301,18 +1318,8 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateU
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 
-	fmt.Println("COMMIT")
-	s.PrintStateObjects()
-	fmt.Println("COMMIT-END")
 	// Finalize any pending changes and merge everything into the tries
 	s.IntermediateRoot(deleteEmptyObjects)
-
-	fmt.Println("state objects upon commit")
-	for addr, stateObject := range s.stateObjects {
-		fmt.Println(addr)
-		stateObject.PrettyPrint()
-	}
-	fmt.Printf("done\n\n\n")
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {

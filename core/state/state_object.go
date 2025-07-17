@@ -86,6 +86,8 @@ type stateObject struct {
 	// the contract is just created within the current transaction, or when the
 	// object was previously existent and is being deployed as a contract within
 	// the current transaction.
+	//
+	// the flag is set upon beginning of contract initcode execution, not when the code is actually deployed to the address.
 	newContract bool
 }
 

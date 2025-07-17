@@ -486,8 +486,6 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 					}
 
 					if balAccountDiff.Nonce != nil || !computedDiff.Eq(balAccountDiff, true) {
-						fmt.Println(computedDiff.StorageWrites)
-						fmt.Println(balAccountDiff.StorageWrites)
 						return fmt.Errorf("nonce was set in BAL or bal account diff didn't match computed")
 					}
 				}
@@ -505,6 +503,8 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 			continue
 		}
 
+		// if it's a newly-created contract, it should
+
 		// TODO: if it's not present in the BAL:
 		// * ensure it was a delegated EOA and only the code changed
 
@@ -514,7 +514,7 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 		}
 
 		if !computedDiff.Eq(balAccountDiff, false) {
-			return fmt.Errorf("mismatch between BAl and computed for delegated EOA which performed creations")
+			return fmt.Errorf("mismatch between BAl value and computed value")
 		}
 	}
 

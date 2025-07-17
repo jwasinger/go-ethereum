@@ -187,7 +187,7 @@ func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
 	// good test to ensure that we don't break it.
 	var (
 		snapshotConf = []bool{false, true}
-		dbschemeConf = []string{rawdb.PathScheme}
+		dbschemeConf = []string{rawdb.HashScheme, rawdb.PathScheme}
 	)
 	if testing.Short() {
 		snapshotConf = []bool{snapshotConf[rand.Int()%2]}
