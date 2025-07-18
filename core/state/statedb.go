@@ -1111,7 +1111,7 @@ func (s *StateDB) ApplyDiff(diff *bal.StateDiff) {
 			}
 		}
 		if accountDiff.Nonce != nil {
-			stateObject.setNonce(*accountDiff.Nonce)
+			stateObject.SetNonce(*accountDiff.Nonce)
 		}
 		if accountDiff.Balance != nil {
 			stateObject.SetBalance(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))

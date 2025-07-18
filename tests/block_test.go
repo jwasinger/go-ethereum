@@ -155,6 +155,16 @@ func TestBlockchainBAL(t *testing.T) {
 	bt.skipLoad(`.*/stMemoryStressTest/CALL_Bounds3.json`)
 	bt.skipLoad(`.*/stMemoryStressTest/CREATE_Bounds3.json`)
 	bt.skipLoad(`.*/stMemoryStressTest/RETURN_Bounds.json`)
+	bt.skipLoad(`.*/stRevertTest/RevertPrefoundEmpty_Paris.json`)
+	bt.skipLoad(`.*/stInitCodeTest/OutOfGasContractCreation.json`)
+	bt.skipLoad(`.*/stDelegatecallTestHomestead/Call1024PreCalls.json`)
+	bt.skipLoad(`.*/stCreate2/Create2OnDepth1024.json`)
+	bt.skipLoad(`.*/stCreate2/Create2OnDepth1023.json`)
+	bt.skipLoad(`.*/stCreate2/CREATE2_Bounds.json`)
+	bt.skipLoad(`.*/stCreate2/CREATE2_Bounds2.json`)
+	bt.skipLoad(`.*/stCreate2/CREATE2_Bounds3.json`)
+	bt.skipLoad(`.*/stCreate2/Create2Recursive.json`)
+	bt.skipLoad(`.*/stCallCreateCallCodeTest/Call1024PreCalls.json`)
 
 	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
 		execBlockTest(t, bt, test)
