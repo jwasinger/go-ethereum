@@ -183,6 +183,21 @@ func TestBlockchainBAL(t *testing.T) {
 }
 
 // TestExecutionSpecBlocktests runs the test fixtures from execution-spec-tests.
+func TestExecutionSpecBlocktestsBAL(t *testing.T) {
+	if !common.FileExist(executionSpecBlockchainTestDir) {
+		t.Skipf("directory %s does not exist", executionSpecBlockchainTestDir)
+	}
+	bt := new(testMatcher)
+
+	bt.skipLoad(".*prague/eip7251_consolidations/contract_deployment/system_contract_deployment.json")
+	bt.skipLoad(".*prague/eip7002_el_triggerable_withdrawals/contract_deployment/system_contract_deployment.json")
+
+	bt.walk(t, executionSpecBlockchainTestDir, func(t *testing.T, name string, test *BlockTest) {
+		execBlockTest(t, bt, test)
+	})
+}
+
+// TestExecutionSpecBlocktests runs the test fixtures from execution-spec-tests.
 func TestExecutionSpecBlocktests(t *testing.T) {
 	if !common.FileExist(executionSpecBlockchainTestDir) {
 		t.Skipf("directory %s does not exist", executionSpecBlockchainTestDir)

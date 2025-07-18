@@ -549,6 +549,9 @@ func (s *StateDiff) Merge(next *StateDiff) {
 				mut.Nonce = diff.Nonce
 			}
 			if len(diff.StorageWrites) > 0 {
+				if mut.StorageWrites == nil {
+					mut.StorageWrites = make(map[common.Hash]common.Hash)
+				}
 				for slot, val := range diff.StorageWrites {
 					mut.StorageWrites[slot] = val
 				}

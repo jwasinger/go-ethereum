@@ -834,7 +834,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 				// include code of created contracts
 				// Delegations are not included because they can be statically inferred from the tx and its prestate.
-				if obj.newContract && len(obj.code) != 0 {
+				if obj.newContract && len(obj.code) != 0 && !obj.isDelegated() {
 					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
 				}
 			} else if balPost != nil {

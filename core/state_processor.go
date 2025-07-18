@@ -253,19 +253,35 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 			authority, err := delegation.Authority()
 			if err != nil {
+				panic(err)
 				continue
 			}
 
-			// TODO: what do if delegate target is empty? code should remain nil?
-			delegationCode := stateReader.GetCode(delegation.Address)
 			if accountDiff, ok := txDiff.Mutations[authority]; ok {
 				if accountDiff.Code != nil {
 					panic("bad block: BAL included a code change at the authority address for this tx")
 				}
-				accountDiff.Code = delegationCode
+				if delegation.Address == (common.Address{}) {
+					accountDiff.Code = make(bal.ContractCode, 0)
+				} else {
+					accountDiff.Code = types.AddressToDelegation(delegation.Address)
+				}
+
+				if accountDiff.Nonce == nil {
+					newNonce := delegation.Nonce + 1
+					accountDiff.Nonce = &newNonce
+				} else {
+					// TODO: Check something here?  that the nonce is greater than the minimum?
+				}
 			} else {
 				as := bal.NewEmptyAccountState()
-				as.Code = delegationCode
+				if delegation.Address == (common.Address{}) {
+					accountDiff.Code = make(bal.ContractCode, 0)
+				} else {
+					accountDiff.Code = types.AddressToDelegation(delegation.Address)
+				}
+				newNonce := delegation.Nonce + 1
+				as.Nonce = &newNonce
 				txDiff.Mutations[authority] = as
 			}
 		}
