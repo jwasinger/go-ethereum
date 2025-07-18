@@ -340,6 +340,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	// TODO: apply withdrawals state diff from the Finalize call
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
+	// invoke Finalise so that withdrawals are accounted for in the state diff
+	statedb.Finalise(true, nil)
+
 	preTxDiff.Merge(statedb.GetStateDiff())
 
 	processResult := &ProcessResult{
