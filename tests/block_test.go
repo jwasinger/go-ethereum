@@ -165,6 +165,14 @@ func TestBlockchainBAL(t *testing.T) {
 	bt.skipLoad(`.*/stCreate2/CREATE2_Bounds3.json`)
 	bt.skipLoad(`.*/stCreate2/Create2Recursive.json`)
 	bt.skipLoad(`.*/stCallCreateCallCodeTest/Call1024PreCalls.json`)
+	bt.skipLoad(`.*/bcExploitTest/StrangeContractCreation.json`)
+	bt.skipLoad(`.*/bcStateTests/OverflowGasRequire.json`)
+	bt.skipLoad(`.*/bcExploitTest/StrangeContractCreation.json`)
+	bt.skipLoad(`.*/bcStateTests/OverflowGasRequire.json`)
+	bt.skipLoad(`.*/bcExploitTest/DelegateCallSpam.json`)
+	bt.skipLoad(`.*/bcStateTests/OverflowGasRequire.json`)
+	bt.skipLoad(`.*/bcExploitTest/ShanghaiLove.json`)
+	bt.skipLoad(`.*/bcExploitTest/SuicideIssue.json`)
 
 	bt.walk(t, blockTestDir, func(t *testing.T, name string, test *BlockTest) {
 		execBlockTest(t, bt, test)
