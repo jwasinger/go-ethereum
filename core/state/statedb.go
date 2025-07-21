@@ -18,6 +18,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -1131,6 +1132,22 @@ func (s *StateDB) GetTrie() Trie {
 	return s.trie
 }
 
+func (s *StateDB) PrintStateObjects() {
+	var sObjectAddrs []common.Address
+
+	for addr, _ := range s.stateObjects {
+		sObjectAddrs = append(sObjectAddrs, addr)
+	}
+	slices.SortFunc(sObjectAddrs, func(i, j common.Address) int {
+		return bytes.Compare(i[:], j[:])
+	})
+
+	for _, addr := range sObjectAddrs {
+		fmt.Println(addr)
+		s.stateObjects[addr].PrettyPrint()
+	}
+}
+
 // commit gathers the state mutations accumulated along with the associated
 // trie changes, resetting all internal flags with the new state as the base.
 func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateUpdate, error) {
@@ -1138,8 +1155,22 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateU
 	if s.dbErr != nil {
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
+
+	fmt.Println("state objects:")
+	s.PrintStateObjects()
+	fmt.Println("--------------")
+
 	// Finalize any pending changes and merge everything into the tries
-	s.IntermediateRoot(deleteEmptyObjects)
+	iRoot := s.IntermediateRoot(deleteEmptyObjects)
+
+	fmt.Printf("INTERMEDIATE ROOT IS %x\n", iRoot)
+
+	fmt.Println("state objects upon commit")
+	for addr, stateObject := range s.stateObjects {
+		fmt.Println(addr)
+		stateObject.PrettyPrint()
+	}
+	fmt.Printf("done\n\n\n")
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {

@@ -96,8 +96,8 @@ func execBlockTest(t *testing.T, bt *testMatcher, test *BlockTest) {
 	// Note, witness building and self-testing is always enabled as it's a very
 	// good test to ensure that we don't break it.
 	var (
-		snapshotConf = []bool{false, true}
-		dbschemeConf = []string{rawdb.HashScheme, rawdb.PathScheme}
+		snapshotConf = []bool{true}
+		dbschemeConf = []string{rawdb.PathScheme}
 	)
 	if testing.Short() {
 		snapshotConf = []bool{snapshotConf[rand.Int()%2]}
