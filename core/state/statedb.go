@@ -798,6 +798,35 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			continue
 		}
 		if obj.selfDestructed || (deleteEmptyObjects && obj.empty()) {
+			if obj.selfDestructed {
+				// an object that was not created in the current transaction
+				// can only become empty and be removed if only the balance
+				// was non-zero before, the account was the target of a create
+				// whose initcode called SENDALL leaving the account empty at
+				// the end of the transaction.
+
+				// an account with a preexisting balance will not have its nonce set to 1 upon being the target of a CREATE
+
+				// TODO: why is the nonce set here (thus making empty() false)
+
+				// TODO: for testing purposes we should probably have tests that create/destroy the same account multiple times via this same edge-case with create2
+				if s.constructionBAL != nil {
+					s.constructionBAL.BalanceChange(uint16(s.txIndex), obj.address, uint256.NewInt(0))
+				} else if balPost != nil {
+					balDiff, ok := balPost.Mutations[obj.address]
+					if !ok {
+						panic("account not found in bal post mutations")
+					}
+					if balDiff.Nonce != nil || balDiff.Code != nil || balDiff.StorageWrites != nil || balDiff.Balance == nil || !new(uint256.Int).SetBytes(balDiff.Balance[:]).IsZero() {
+						panic("crap")
+					}
+				}
+
+				// overrite any previous state (only storage reads possible here)
+				postState := bal.NewEmptyAccountState()
+				postState.Balance = &bal.Balance{}
+				post.Mutations[obj.address] = postState
+			}
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
 			// We need to maintain account deletions explicitly (will remain
@@ -832,6 +861,9 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 					s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
 				}
 
+				// TODO: newContract will be set regardless of whether the creation initcode succeeded
+				// ensure that if an initcode was run, the object was deleted before here.
+
 				// include code of created contracts
 				// Delegations are not included because they can be statically inferred from the tx and its prestate.
 				if obj.newContract && len(obj.code) != 0 && !obj.isDelegated() {
@@ -856,7 +888,6 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				if !obj.Balance().Eq(obj.txPreBalance) && (accountDiff.Balance == nil || !obj.Balance().Eq(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))) {
 					panic("TODO return error here, bad block")
 				}
-
 			}
 
 			var accountPost bal.AccountState
@@ -1319,21 +1350,8 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateU
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 
-	fmt.Println("state objects:")
-	s.PrintStateObjects()
-	fmt.Println("--------------")
-
 	// Finalize any pending changes and merge everything into the tries
-	iRoot := s.IntermediateRoot(deleteEmptyObjects)
-
-	fmt.Printf("INTERMEDIATE ROOT IS %x\n", iRoot)
-
-	fmt.Println("state objects upon commit")
-	for addr, stateObject := range s.stateObjects {
-		fmt.Println(addr)
-		stateObject.PrettyPrint()
-	}
-	fmt.Printf("done\n\n\n")
+	s.IntermediateRoot(deleteEmptyObjects)
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {
@@ -1657,25 +1675,4 @@ func (s *StateDB) Witness() *stateless.Witness {
 
 func (s *StateDB) AccessEvents() *AccessEvents {
 	return s.accessEvents
-}
-
-func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
-	for addr, accountDiff := range diff.Mutations {
-		stateObject := s.getOrNewStateObject(addr)
-		if accountDiff.Code != nil {
-			stateObject.setCode(crypto.Keccak256Hash(accountDiff.Code), accountDiff.Code)
-		}
-		if accountDiff.Nonce != nil {
-			stateObject.SetNonce(*accountDiff.Nonce)
-		}
-		if accountDiff.Balance != nil {
-			stateObject.SetBalance(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))
-		}
-		if accountDiff.StorageWrites != nil {
-			for slot, val := range accountDiff.StorageWrites {
-				stateObject.SetState(slot, val)
-			}
-		}
-		// TODO: double-check that the origin is not set here (we can't revert across tx boundaries anyways)
-	}
 }

@@ -117,17 +117,6 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 	}
 }
 
-func (s *stateObject) PrettyPrint() {
-	fmt.Printf("balance: %s\n", s.Balance().String())
-	fmt.Printf("nonce: %d\n", s.Nonce())
-	fmt.Printf("code: %x\n", s.code)
-	fmt.Printf("dirty storage:\n")
-	for slot, val := range s.pendingStorage {
-		fmt.Printf("    %x: %x\n", slot, val)
-	}
-	fmt.Println()
-}
-
 func (s *stateObject) markSelfdestructed() {
 	s.selfDestructed = true
 }
@@ -254,7 +243,7 @@ func (s *stateObject) setState(key common.Hash, value common.Hash, origin common
 }
 
 func (s *stateObject) PrettyPrint() {
-	fmt.Printf("balance: %s\n", s.Balance().String())
+	fmt.Printf("balance: %d\n", s.Balance().Uint64())
 	fmt.Printf("nonce: %d\n", s.Nonce())
 	fmt.Printf("code: %x\n", s.code)
 	fmt.Printf("dirty storage:\n")
