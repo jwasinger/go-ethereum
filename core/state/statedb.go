@@ -1319,8 +1319,21 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool) (*stateU
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 
+	fmt.Println("state objects:")
+	s.PrintStateObjects()
+	fmt.Println("--------------")
+
 	// Finalize any pending changes and merge everything into the tries
-	s.IntermediateRoot(deleteEmptyObjects)
+	iRoot := s.IntermediateRoot(deleteEmptyObjects)
+
+	fmt.Printf("INTERMEDIATE ROOT IS %x\n", iRoot)
+
+	fmt.Println("state objects upon commit")
+	for addr, stateObject := range s.stateObjects {
+		fmt.Println(addr)
+		stateObject.PrettyPrint()
+	}
+	fmt.Printf("done\n\n\n")
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {
