@@ -2045,6 +2045,10 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	var res *ProcessResult
 	var ptime, vtime time.Duration
 	if block.Body().AccessList != nil {
+		if block.NumberU64() == 0 {
+			//return nil, fmt.Errorf("genesis block cannot have a block access list")
+			panic("genesis block cannot have BAL")
+		}
 		// TODO: reenable the below check outside of testing
 		/*
 			if !bc.chainConfig.IsGlamsterdam(block.Number(), block.Time()) {

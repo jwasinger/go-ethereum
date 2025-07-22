@@ -435,27 +435,27 @@ func (a *AccountState) Eq(other *AccountState, ignoreNonce bool) bool {
 	return true
 }
 
-func (a *AccountState) Copy() (res AccountState) {
-	if a.Balance != nil {
-		var balanceCopy Balance
-		copy(balanceCopy[:], (*a.Balance)[:])
-		res.Balance = &balanceCopy
-	}
-	if a.Nonce != nil {
-		res.Nonce = new(uint64)
-		*res.Nonce = *a.Nonce
-	}
-	if a.Code != nil {
-		res.Code = bytes.Clone(a.Code)
-	}
-	if a.StorageWrites != nil {
-		res.StorageWrites = maps.Clone(a.StorageWrites)
-	}
-	return
-}
-
 type StateDiff struct {
 	Mutations map[common.Address]*AccountState `json:"Mutations,omitempty"`
+}
+
+func (as *AccountState) Copy() *AccountState {
+	res := NewEmptyAccountState()
+	if as.Nonce != nil {
+		res.Nonce = new(uint64)
+		*res.Nonce = *as.Nonce
+	}
+	if as.Code != nil {
+		res.Code = bytes.Clone(as.Code)
+	}
+	if as.Balance != nil {
+		res.Balance = new(Balance)
+		copy(res.Balance[:], (*as.Balance)[:])
+	}
+	if as.StorageWrites != nil {
+		res.StorageWrites = maps.Clone(as.StorageWrites)
+	}
+	return res
 }
 
 // TODO: augment this to account for delegation changes in the totalDiff but not in the balDiff
@@ -546,6 +546,7 @@ func (s *StateDiff) Merge(next *StateDiff) {
 				mut.Code = diff.Code
 			}
 			if diff.Nonce != nil {
+				// TODO: not deep copying the nonce from next is causing problems here
 				mut.Nonce = diff.Nonce
 			}
 			if len(diff.StorageWrites) > 0 {
@@ -566,7 +567,7 @@ func (s *StateDiff) Copy() *StateDiff {
 	res := &StateDiff{make(map[common.Address]*AccountState)}
 	for addr, accountDiff := range s.Mutations {
 		cpy := accountDiff.Copy()
-		res.Mutations[addr] = &cpy
+		res.Mutations[addr] = cpy
 	}
 	return res
 }
@@ -677,19 +678,20 @@ func (it *BALIterator) Next() (mutations *StateDiff) {
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
-func (it *BALIterator) BuildStateDiff(initialDiff *StateDiff, until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, error) {
+func (it *BALIterator) BuildStateDiffs(initialDiff *StateDiff, until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, []*StateDiff, error) {
 	if until < it.curIdx {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	accumDiff := &StateDiff{
-		make(map[common.Address]*AccountState),
-	}
+	var resDiffs []*StateDiff
+	var accumDiff *StateDiff
+
 	if initialDiff != nil {
+		// TODO: define scenarios where initial diff is not set
 		accumDiff = initialDiff
 	}
 
-	for ; it.curIdx < until; it.curIdx++ {
+	for ; it.curIdx <= until; it.curIdx++ {
 		// update accumDiff based on the BAL
 
 		layerMutations := StateDiff{
@@ -697,7 +699,7 @@ func (it *BALIterator) BuildStateDiff(initialDiff *StateDiff, until uint16, onTx
 		}
 		for addr, acctIt := range it.acctIterators {
 			if diff, mut := acctIt.Increment(); mut {
-				layerMutations.Mutations[addr] = diff
+				layerMutations.Mutations[addr] = diff.Copy()
 			}
 		}
 
@@ -705,11 +707,13 @@ func (it *BALIterator) BuildStateDiff(initialDiff *StateDiff, until uint16, onTx
 		// * EOA tx sender nonce increments
 		// * 7702 delegations
 		if err := onTx(it.curIdx, accumDiff, &layerMutations); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		accumDiff.Merge(&layerMutations)
+		resDiffs = append(resDiffs, &layerMutations)
+
+		accumDiff.Merge(layerMutations.Copy())
 	}
 
-	return accumDiff, nil
+	return accumDiff, resDiffs, nil
 }

@@ -214,123 +214,130 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// create a number of diffs (one for each worker goroutine)
 	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
 
-	postTxDiff, err := txDiffIt.BuildStateDiff(preTxDiff, uint16(len(block.Transactions())), func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
-		// create the complete account tx post-state by filling in values that the BAL does not provide:
-		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
-		// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
+	if len(block.Transactions()) > 0 {
 
-		stateReader := state.NewBALStateReader(statedb, accumDiff)
+		postTxDiff, stateDiffs, err := txDiffIt.BuildStateDiffs(preTxDiff, uint16(len(block.Transactions()))-1, func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+			// create the complete account tx post-state by filling in values that the BAL does not provide:
+			// * tx sender post nonce: infer from the transaction for non-delegated EOAs
+			// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
 
-		tx := block.Transactions()[txIndex]
-		sender, err := types.Sender(signer, tx)
-		if err != nil {
-			panic("what could cause the error here?!?!")
-		}
+			stateReader := state.NewBALStateReader(statedb, accumDiff)
 
-		// fill in the tx sender nonce
-		if senderDiff, ok := txDiff.Mutations[sender]; ok {
-			// if the sender account nonce diff is set, it is a delegated EOA
-			// which performed one or more creations, so the post-tx nonce value
-			// will be recorded in the BAL
-			if senderDiff.Nonce == nil {
-				// TODO: can infer the new nonce from the transaction
-				senderPostNonce := stateReader.GetNonce(sender) + 1
-				senderDiff.Nonce = &senderPostNonce
-			}
-		} else {
-			// TODO: can infer it from the transaction
-			senderPostNonce := stateReader.GetNonce(sender) + 1
-
-			as := bal.NewEmptyAccountState()
-			as.Nonce = &senderPostNonce
-			txDiff.Mutations[sender] = as
-		}
-
-		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
-		for _, delegation := range tx.SetCodeAuthorizations() {
-			// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
-			// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
-
-			authority, err := delegation.Authority()
+			tx := block.Transactions()[txIndex]
+			sender, err := types.Sender(signer, tx)
 			if err != nil {
-				panic(err)
-				continue
-			}
-			authority, err = validateAuth(&delegation, evm, stateReader)
-			if err != nil {
-				continue // auth validation failures don't constitute a bad block
+				panic("what could cause the error here?!?!")
 			}
 
-			if accountDiff, ok := txDiff.Mutations[authority]; ok {
-				if accountDiff.Code != nil {
-					panic("bad block: BAL included a code change at the authority address for this tx")
-				}
-				if delegation.Address == (common.Address{}) {
-					accountDiff.Code = make(bal.ContractCode, 0)
-				} else {
-					accountDiff.Code = types.AddressToDelegation(delegation.Address)
-				}
-
-				if accountDiff.Nonce == nil {
-					newNonce := delegation.Nonce + 1
-					accountDiff.Nonce = &newNonce
-				} else {
-					// TODO: Check something here?  that the nonce is greater than the minimum?
+			// fill in the tx sender nonce
+			if senderDiff, ok := txDiff.Mutations[sender]; ok {
+				// if the sender account nonce diff is set, it is a delegated EOA
+				// which performed one or more creations, so the post-tx nonce value
+				// will be recorded in the BAL
+				if senderDiff.Nonce == nil {
+					// TODO: can infer the new nonce from the transaction
+					senderPostNonce := stateReader.GetNonce(sender) + 1
+					senderDiff.Nonce = &senderPostNonce
 				}
 			} else {
+				// TODO: can infer it from the transaction
+				senderPostNonce := stateReader.GetNonce(sender) + 1
+
 				as := bal.NewEmptyAccountState()
-				if delegation.Address == (common.Address{}) {
-					accountDiff.Code = make(bal.ContractCode, 0)
-				} else {
-					accountDiff.Code = types.AddressToDelegation(delegation.Address)
+				as.Nonce = &senderPostNonce
+				txDiff.Mutations[sender] = as
+			}
+
+			// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
+			for _, delegation := range tx.SetCodeAuthorizations() {
+				// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
+				// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
+
+				authority, err := delegation.Authority()
+				if err != nil {
+					panic(err)
+					continue
 				}
-				newNonce := delegation.Nonce + 1
-				as.Nonce = &newNonce
-				txDiff.Mutations[authority] = as
+				authority, err = validateAuth(&delegation, evm, stateReader)
+				if err != nil {
+					continue // auth validation failures don't constitute a bad block
+				}
+
+				if accountDiff, ok := txDiff.Mutations[authority]; ok {
+					if accountDiff.Code != nil {
+						panic("bad block: BAL included a code change at the authority address for this tx")
+					}
+					if delegation.Address == (common.Address{}) {
+						accountDiff.Code = make(bal.ContractCode, 0)
+					} else {
+						accountDiff.Code = types.AddressToDelegation(delegation.Address)
+					}
+
+					if accountDiff.Nonce == nil {
+						newNonce := delegation.Nonce + 1
+						accountDiff.Nonce = &newNonce
+					} else {
+						// TODO: Check something here?  that the nonce is greater than the minimum?
+					}
+				} else {
+					as := bal.NewEmptyAccountState()
+					if delegation.Address == (common.Address{}) {
+						accountDiff.Code = make(bal.ContractCode, 0)
+					} else {
+						accountDiff.Code = types.AddressToDelegation(delegation.Address)
+					}
+					newNonce := delegation.Nonce + 1
+					as.Nonce = &newNonce
+					txDiff.Mutations[authority] = as
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			panic("bad block error here")
+		}
+
+		// TODO: validate that system address execution changes aren't recorded in the BAL
+		// unless triggered by a non-system contract (sending a balance to a sys address for example)
+
+		preTxDiff.Merge(postTxDiff)
+
+		txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
+		var balStateTxDiff *bal.StateDiff
+		// Iterate over and process the individual transactions
+		for i, tx := range block.Transactions() {
+			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			}
+			sender, _ := types.Sender(signer, tx)
+			statedb.SetTxSender(sender)
+			statedb.SetTxContext(tx.Hash(), i)
+
+			senderPreNonce := statedb.GetNonce(sender)
+			cpy := statedb.Copy()
+			evm.StateDB = cpy
+			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, cpy, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			}
+			receipts = append(receipts, receipt)
+			allLogs = append(allLogs, receipt.Logs...)
+
+			statedb.ApplyDiff(stateDiffs[i])
+			balStateTxDiff = txExecBALIt.Next()
+
+			// TODO validate the reported state diff with the produced one:
+			// every entry in the reported diff should be in the produced one
+			// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
+
+			if err := bal.ValidateTxStateDiff(balStateTxDiff, txStateDiff, sender, senderPreNonce); err != nil {
+				//return nil, nil, nil, err
 			}
 		}
 
-		return nil
-	})
-	if err != nil {
-		panic("bad block error here")
-	}
-
-	// TODO: validate that system address execution changes aren't recorded in the BAL
-	// unless triggered by a non-system contract (sending a balance to a sys address for example)
-
-	preTxDiff.Merge(postTxDiff)
-
-	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
-	// Iterate over and process the individual transactions
-	for i, tx := range block.Transactions() {
-		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
-		}
-		sender, _ := types.Sender(signer, tx)
-		statedb.SetTxSender(sender)
-		statedb.SetTxContext(tx.Hash(), i)
-
-		senderPreNonce := statedb.GetNonce(sender)
-		txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
-		}
-		receipts = append(receipts, receipt)
-		allLogs = append(allLogs, receipt.Logs...)
-
-		balStateTxStateDiff := txExecBALIt.Next()
-
-		// TODO validate the reported state diff with the produced one:
-		// every entry in the reported diff should be in the produced one
-		// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
-
-		if err := bal.ValidateTxStateDiff(balStateTxStateDiff, txStateDiff, sender, senderPreNonce); err != nil {
-			//fmt.Printf("bal:\n%s\n\ncomputed:\n%s\n\n", balStateTxStateDiff.String(), txStateDiff.String())
-			//fmt.Printf("------bal------\n%s\n\n", block.Body().AccessList.String())
-			return nil, nil, nil, err
-		}
+		statedb.ApplyDiff(postTxDiff)
 	}
 
 	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
@@ -396,6 +403,8 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	// Update the state with pending changes.
 	var root []byte
 	if evm.ChainConfig().IsByzantium(blockNumber) {
+		// TODO: when executing BAL here, the returned diff includes the transaction prestate when it should only return the state accessed+modified by the transaction
+		//panic("fixme")
 		diff, err = evm.StateDB.Finalise(true, balDiff)
 		if err != nil {
 			return nil, nil, err
