@@ -256,6 +256,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				panic(err)
 				continue
 			}
+			authority, err = validateAuth(&delegation, evm, stateReader)
+			if err != nil {
+				continue // auth validation failures don't constitute a bad block
+			}
 
 			if accountDiff, ok := txDiff.Mutations[authority]; ok {
 				if accountDiff.Code != nil {
