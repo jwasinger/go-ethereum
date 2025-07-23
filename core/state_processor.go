@@ -18,17 +18,16 @@ package core
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/types/bal"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"math/big"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -322,10 +321,13 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 			}
+
 			receipts = append(receipts, receipt)
 			allLogs = append(allLogs, receipt.Logs...)
 
 			statedb.ApplyDiff(stateDiffs[i])
+			// TODO: make ApplyDiff invoke Finalise
+			statedb.Finalise(true, nil)
 			balStateTxDiff = txExecBALIt.Next()
 
 			// TODO validate the reported state diff with the produced one:
