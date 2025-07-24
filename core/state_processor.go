@@ -17,6 +17,7 @@
 package core
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -28,6 +29,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"math/big"
+	"slices"
+	"sync"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -243,15 +246,15 @@ func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrest
 	})
 }
 
-func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, *ProcessResult, error) {
+func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, chan *ProcessResult, error) {
 	var (
-		receipts    types.Receipts
 		usedGas     = new(uint64)
 		header      = block.Header()
 		blockHash   = block.Hash()
 		blockNumber = block.Number()
 		allLogs     []*types.Log
-		gp          = new(GasPool).AddGas(block.GasLimit())
+		resCh       = make(chan *ProcessResult)
+		requests    [][]byte
 	)
 
 	prestate := statedb.Copy()
@@ -280,9 +283,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 	// TODO: use TxContext (hash == common.Hash{}) as a signal that we aren't
 	// executing a tx yet, and don't record state based on that?
-	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().DisableMutations()
-	}
 
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
@@ -297,26 +297,90 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 
+	type txExecResult struct {
+		idx     int
+		gasUsed uint64
+		receipt *types.Receipt
+	}
+	errc := make(chan error)
+	execResults := make(chan txExecResult)
+	var wg sync.WaitGroup
+	wg.Add(len(block.Transactions()))
+	var (
+		stateDiffs []*bal.StateDiff
+		err        error
+	)
 	if len(block.Transactions()) > 0 {
-		var (
-			stateDiffs []*bal.StateDiff
-			err        error
-		)
 		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
 		if err != nil {
-			panic("bad block error here")
+			panic("bad block")
 		}
 
-		// TODO: validate that system address execution changes aren't recorded in the BAL
-		// unless triggered by a non-system contract (sending a balance to a sys address for example)
+		// separate go-routine which collects results from tx execution, and forwards a ProcessResult when all txs are finished executing
+		go func() {
+			var receipts []*types.Receipt
+		loop:
+			for {
+				select {
+				case <-errc:
+				// TODO: output the error here and cancel the context
+				case res := <-execResults:
+					receipts = append(receipts, res.receipt)
+					if len(receipts) == len(block.Transactions()) {
+						break loop
+					}
+					// TODO: append the receipt and logs, accumulate the tx gas used into the running total
+					// TODO: if this is the last execution result, order the receipt and logs, and forward the ProcessResult
+				}
+			}
 
-		txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
-		var balStateTxDiff *bal.StateDiff
-		// Iterate over and process the individual transactions
-		for i, tx := range block.Transactions() {
+			// 1. order the receipts by tx index
+			// 2. correctly calculate the cumulative gas used per receipt, returning bad block error if it goes over the allowed
+			slices.SortFunc(receipts, func(a, b *types.Receipt) int {
+				return cmp.Compare(a.TransactionIndex, b.TransactionIndex)
+			})
+
+			var cumGasUsed uint64
+			for _, receipt := range receipts {
+				receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
+				if receipt.CumulativeGasUsed > header.GasLimit {
+					panic("bad block")
+				}
+			}
+
+			/*
+				receipts = append(receipts, receipt)
+				allLogs = append(allLogs, receipt.Logs...)
+
+			*/
+			resCh <- &ProcessResult{
+				Receipts: receipts,
+				Requests: requests,
+				Logs:     allLogs,
+				GasUsed:  *usedGas,
+			}
+		}()
+
+		statedb.ApplyDiff(postTxDiff)
+	}
+
+	wg.Add(len(block.Transactions()))
+
+	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
+	var balStateTxDiff *bal.StateDiff
+	// Iterate over and process the individual transactions
+	for i, tx := range block.Transactions() {
+		// TODO: use an errgroup to limit the number of parallel txs
+		go func(idx int, statedb *state.StateDB, tx *types.Transaction) {
+			defer wg.Done()
+
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+				select {
+				case errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err):
+				default:
+				}
+				return
 			}
 			sender, _ := types.Sender(signer, tx)
 			statedb.SetTxSender(sender)
@@ -325,39 +389,36 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			senderPreNonce := statedb.GetNonce(sender)
 			cpy := statedb.Copy()
 			evm.StateDB = cpy
+			gp := new(GasPool)
+			*gp = GasPool(block.GasLimit())
 			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, cpy, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+				select {
+				case errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err):
+				default:
+				}
+				return
 			}
 
-			receipts = append(receipts, receipt)
-			allLogs = append(allLogs, receipt.Logs...)
+			execResults <- txExecResult{
+				idx:     i,
+				receipt: receipt,
+			}
 
-			statedb.ApplyDiff(stateDiffs[i])
-			// TODO: make ApplyDiff invoke Finalise
-			statedb.Finalise(true, nil)
 			balStateTxDiff = txExecBALIt.Next()
-
-			// TODO validate the reported state diff with the produced one:
-			// every entry in the reported diff should be in the produced one
-			// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
-
 			if err := bal.ValidateTxStateDiff(balStateTxDiff, txStateDiff, sender, senderPreNonce); err != nil {
-				return nil, nil, nil, err
+				select {
+				case errc <- err:
+				default:
+				}
+				return
 			}
-		}
-
-		statedb.ApplyDiff(postTxDiff)
+		}(i, statedb.Copy(), tx)
+		statedb.ApplyDiff(stateDiffs[i])
+		statedb.Finalise(true, nil)
 	}
 
-	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
-	// don't write post-block state mutations to the BAL to save on size.
-	// these can be easily computed in BAL verification.
-	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().DisableMutations()
-	}
 	// Read requests if Prague is enabled.
-	var requests [][]byte
 	if p.config.IsPrague(block.Number(), block.Time()) {
 		requests = [][]byte{}
 		// EIP-6110
@@ -382,14 +443,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 	postTxDiff.Merge(statedb.GetStateDiff())
 
-	processResult := &ProcessResult{
-		Receipts: receipts,
-		Requests: requests,
-		Logs:     allLogs,
-		GasUsed:  *usedGas,
-	}
-
-	return prestate, postTxDiff, processResult, nil
+	return prestate, postTxDiff, resCh, nil
 }
 
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database
