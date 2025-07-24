@@ -310,11 +310,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	var (
 		stateDiffs []*bal.StateDiff
 		err        error
-	)
-	// TODO: don't instantiate these unless there are transactions in the block
-	var (
-		ctx    context2.Context
-		cancel func()
+		ctx        context2.Context
+		cancel     func()
 	)
 	if len(block.Transactions()) > 0 {
 		ctx, cancel = context2.WithCancel(context2.Background())

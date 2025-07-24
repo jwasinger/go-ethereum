@@ -17,7 +17,6 @@
 package core
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -122,26 +121,21 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	return nil
 }
 
-func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, res *ProcessResult, txDone chan struct{}, ctx context.Context, diff *bal.StateDiff, stateless bool) error {
+func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, resCh chan *ProcessResult, diff *bal.StateDiff, stateless bool) error {
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
 	header := block.Header()
 	prestate.ApplyDiff(diff)
-	if root := prestate.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+	root := prestate.IntermediateRoot(v.config.IsEIP158(header.Number))
+
+	res := <-resCh
+	if header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, prestate.Error())
 	}
-
-	select {
-	case <-txDone:
-	case <-ctx.Done():
-		if ctx.Err() == context.Canceled {
-			return nil
-		}
+	if res.Error != nil {
+		return res.Error
 	}
 
-	if res == nil {
-		return errors.New("nil ProcessResult value")
-	}
 	if block.GasUsed() != res.GasUsed {
 		return fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), res.GasUsed)
 	}
