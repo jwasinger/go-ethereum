@@ -2060,16 +2060,19 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		pstart := time.Now()
 		var diff *bal.StateDiff
 		var prestate *state.StateDB
-		prestate, diff, res, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		var resCh chan *ProcessResult
+		prestate, diff, resCh, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
 		if err != nil {
-			bc.reportBlock(block, res, err)
+			// TODO: okay to pass nil here as execution result?
+			bc.reportBlock(block, nil, err)
 			return nil, err
 		}
 		ptime = time.Since(pstart)
 
 		vstart := time.Now()
-		if err := bc.validator.ValidateStateWithDiff(block, prestate, res, diff, false); err != nil {
-			bc.reportBlock(block, res, err)
+		if err := bc.validator.ValidateStateWithDiff(block, prestate, resCh, diff, false); err != nil {
+			// TODO: okay to pass nil here as execution result?
+			bc.reportBlock(block, nil, err)
 			return nil, err
 		}
 		vtime = time.Since(vstart)

@@ -34,7 +34,7 @@ type Validator interface {
 
 	// ValidateState validates the given statedb and optionally the process result.
 	ValidateState(block *types.Block, state *state.StateDB, res *ProcessResult, stateless bool) error
-	ValidateStateWithDiff(block *types.Block, state *state.StateDB, res *ProcessResult, diff *bal.StateDiff, stateless bool) error
+	ValidateStateWithDiff(*types.Block, *state.StateDB, chan *ProcessResult, *bal.StateDiff, bool) error
 }
 
 // Prefetcher is an interface for pre-caching transaction signatures and state.
@@ -51,7 +51,7 @@ type Processor interface {
 	// the transaction messages using the statedb and applying any rewards to both
 	// the processor (coinbase) and any included uncles.
 	Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (*ProcessResult, error)
-	ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, *ProcessResult, error)
+	ProcessWithAccessList(*types.Block, *state.StateDB, vm.Config, *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, chan *ProcessResult, error)
 }
 
 // ProcessResult contains the values computed by Process.
