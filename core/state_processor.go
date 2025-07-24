@@ -343,7 +343,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			// the only extra entries in the produced diff should be tx sender nonce increment (if non-delegated), and delegation code changes (if successful)
 
 			if err := bal.ValidateTxStateDiff(balStateTxDiff, txStateDiff, sender, senderPreNonce); err != nil {
-				//return nil, nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 
