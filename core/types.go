@@ -34,7 +34,7 @@ type Validator interface {
 
 	// ValidateState validates the given statedb and optionally the process result.
 	ValidateState(block *types.Block, state *state.StateDB, res *ProcessResult, stateless bool) error
-	ValidateStateWithDiff(*types.Block, *state.StateDB, chan *ProcessResult, *bal.StateDiff, bool) error
+	ValidateStateWithDiff(*types.Block, *state.StateDB, chan *ProcessResult, *bal.StateDiff, bool) (*ProcessResult, error)
 }
 
 // Prefetcher is an interface for pre-caching transaction signatures and state.

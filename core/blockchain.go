@@ -2070,7 +2070,9 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		ptime = time.Since(pstart)
 
 		vstart := time.Now()
-		if err := bc.validator.ValidateStateWithDiff(block, prestate, resCh, diff, false); err != nil {
+		var err error
+		res, err = bc.validator.ValidateStateWithDiff(block, prestate, resCh, diff, false)
+		if err != nil {
 			// TODO: okay to pass nil here as execution result?
 			bc.reportBlock(block, nil, err)
 			return nil, err

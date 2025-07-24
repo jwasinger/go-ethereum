@@ -258,8 +258,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		requests    [][]byte
 	)
 
-	prestate := statedb.Copy()
-
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -291,9 +289,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
-	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().EnableMutations()
-	}
+	prestate := statedb.Copy()
 
 	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 
@@ -341,10 +337,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					}
 
 				case res := <-execResults:
-					numTxComplete++
-					if numTxComplete == len(block.Transactions()) {
-						break loop
-					}
 					if execErr != nil {
 						continue
 					}
@@ -356,6 +348,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					}
 					receipts = append(receipts, res.receipt)
 					if len(receipts) == len(block.Transactions()) {
+						break loop
+					}
+					numTxComplete++
+					if numTxComplete == len(block.Transactions()) {
 						break loop
 					}
 				}
@@ -389,8 +385,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				GasUsed:  *usedGas,
 			}
 		}()
-
-		statedb.ApplyDiff(postTxDiff)
 	}
 
 	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
@@ -398,7 +392,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		// TODO: use an errgroup to limit the number of parallel txs
-		go func(idx int, statedb *state.StateDB, tx *types.Transaction) {
+		go func(idx int, sdb *state.StateDB, tx *types.Transaction) {
 			// if an error with another transaction rendered the block invalid, don't proceed with executing this one
 			// TODO: also interrupt any currently-executing transactions if one failed.
 			select {
@@ -416,11 +410,11 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				return
 			}
 			sender, _ := types.Sender(signer, tx)
-			statedb.SetTxSender(sender)
-			statedb.SetTxContext(tx.Hash(), i)
+			sdb.SetTxSender(sender)
+			sdb.SetTxContext(tx.Hash(), i)
 
-			senderPreNonce := statedb.GetNonce(sender)
-			cpy := statedb.Copy()
+			senderPreNonce := sdb.GetNonce(sender)
+			cpy := sdb.Copy()
 			evm.StateDB = cpy
 			gp := new(GasPool)
 			gp.SetGas(block.GasLimit())
