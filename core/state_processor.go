@@ -156,6 +156,93 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		GasUsed:  *usedGas,
 	}, nil
 }
+
+func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrestate *state.StateDB) (totalDiff *bal.StateDiff, txDiffs []*bal.StateDiff, err error) {
+	prestateDiff := txPrestate.GetStateDiff()
+	// create a number of diffs (one for each worker goroutine)
+	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
+	header := block.Header()
+	signer := types.MakeSigner(p.config, header.Number, header.Time)
+	return txDiffIt.BuildStateDiffs(prestateDiff, uint16(len(block.Transactions()))-1, func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
+		// create the complete account tx post-state by filling in values that the BAL does not provide:
+		// * tx sender post nonce: infer from the transaction for non-delegated EOAs
+		// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
+
+		stateReader := state.NewBALStateReader(txPrestate, accumDiff)
+
+		tx := block.Transactions()[txIndex]
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			panic("what could cause the error here?!?!")
+		}
+
+		// fill in the tx sender nonce
+		if senderDiff, ok := txDiff.Mutations[sender]; ok {
+			// if the sender account nonce diff is set, it is a delegated EOA
+			// which performed one or more creations, so the post-tx nonce value
+			// will be recorded in the BAL
+			if senderDiff.Nonce == nil {
+				// TODO: can infer the new nonce from the transaction
+				senderPostNonce := stateReader.GetNonce(sender) + 1
+				senderDiff.Nonce = &senderPostNonce
+			}
+		} else {
+			// TODO: can infer it from the transaction
+			senderPostNonce := stateReader.GetNonce(sender) + 1
+
+			as := bal.NewEmptyAccountState()
+			as.Nonce = &senderPostNonce
+			txDiff.Mutations[sender] = as
+		}
+
+		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
+		for _, delegation := range tx.SetCodeAuthorizations() {
+			// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
+			// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
+
+			authority, err := delegation.Authority()
+			if err != nil {
+				panic(err)
+				continue
+			}
+			authority, err = validateAuth(&delegation, evm, stateReader)
+			if err != nil {
+				continue // auth validation failures don't constitute a bad block
+			}
+
+			if accountDiff, ok := txDiff.Mutations[authority]; ok {
+				if accountDiff.Code != nil {
+					panic("bad block: BAL included a code change at the authority address for this tx")
+				}
+				if delegation.Address == (common.Address{}) {
+					accountDiff.Code = make(bal.ContractCode, 0)
+				} else {
+					accountDiff.Code = types.AddressToDelegation(delegation.Address)
+				}
+
+				if accountDiff.Nonce == nil {
+					newNonce := delegation.Nonce + 1
+					accountDiff.Nonce = &newNonce
+				} else {
+					// TODO: Check something here?  that the nonce is greater than the minimum?
+				}
+			} else {
+				as := bal.NewEmptyAccountState()
+				if delegation.Address == (common.Address{}) {
+					accountDiff.Code = make(bal.ContractCode, 0)
+				} else {
+					accountDiff.Code = types.AddressToDelegation(delegation.Address)
+				}
+				newNonce := delegation.Nonce + 1
+				as.Nonce = &newNonce
+				txDiff.Mutations[authority] = as
+			}
+		}
+
+		return nil
+	})
+}
+
 func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, *ProcessResult, error) {
 	var (
 		receipts    types.Receipts
@@ -208,99 +295,20 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		statedb.BlockAccessList().EnableMutations()
 	}
 
-	preTxDiff := statedb.GetStateDiff()
-
-	// create a number of diffs (one for each worker goroutine)
-	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
+	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 
 	if len(block.Transactions()) > 0 {
-
-		postTxDiff, stateDiffs, err := txDiffIt.BuildStateDiffs(preTxDiff, uint16(len(block.Transactions()))-1, func(txIndex uint16, accumDiff, txDiff *bal.StateDiff) error {
-			// create the complete account tx post-state by filling in values that the BAL does not provide:
-			// * tx sender post nonce: infer from the transaction for non-delegated EOAs
-			// * 7702 delegation code changes: infer from the delegations in the transaction and the tx pre-state balances
-
-			stateReader := state.NewBALStateReader(statedb, accumDiff)
-
-			tx := block.Transactions()[txIndex]
-			sender, err := types.Sender(signer, tx)
-			if err != nil {
-				panic("what could cause the error here?!?!")
-			}
-
-			// fill in the tx sender nonce
-			if senderDiff, ok := txDiff.Mutations[sender]; ok {
-				// if the sender account nonce diff is set, it is a delegated EOA
-				// which performed one or more creations, so the post-tx nonce value
-				// will be recorded in the BAL
-				if senderDiff.Nonce == nil {
-					// TODO: can infer the new nonce from the transaction
-					senderPostNonce := stateReader.GetNonce(sender) + 1
-					senderDiff.Nonce = &senderPostNonce
-				}
-			} else {
-				// TODO: can infer it from the transaction
-				senderPostNonce := stateReader.GetNonce(sender) + 1
-
-				as := bal.NewEmptyAccountState()
-				as.Nonce = &senderPostNonce
-				txDiff.Mutations[sender] = as
-			}
-
-			// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
-			for _, delegation := range tx.SetCodeAuthorizations() {
-				// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
-				// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
-
-				authority, err := delegation.Authority()
-				if err != nil {
-					panic(err)
-					continue
-				}
-				authority, err = validateAuth(&delegation, evm, stateReader)
-				if err != nil {
-					continue // auth validation failures don't constitute a bad block
-				}
-
-				if accountDiff, ok := txDiff.Mutations[authority]; ok {
-					if accountDiff.Code != nil {
-						panic("bad block: BAL included a code change at the authority address for this tx")
-					}
-					if delegation.Address == (common.Address{}) {
-						accountDiff.Code = make(bal.ContractCode, 0)
-					} else {
-						accountDiff.Code = types.AddressToDelegation(delegation.Address)
-					}
-
-					if accountDiff.Nonce == nil {
-						newNonce := delegation.Nonce + 1
-						accountDiff.Nonce = &newNonce
-					} else {
-						// TODO: Check something here?  that the nonce is greater than the minimum?
-					}
-				} else {
-					as := bal.NewEmptyAccountState()
-					if delegation.Address == (common.Address{}) {
-						accountDiff.Code = make(bal.ContractCode, 0)
-					} else {
-						accountDiff.Code = types.AddressToDelegation(delegation.Address)
-					}
-					newNonce := delegation.Nonce + 1
-					as.Nonce = &newNonce
-					txDiff.Mutations[authority] = as
-				}
-			}
-
-			return nil
-		})
+		var (
+			stateDiffs []*bal.StateDiff
+			err        error
+		)
+		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
 		if err != nil {
 			panic("bad block error here")
 		}
 
 		// TODO: validate that system address execution changes aren't recorded in the BAL
 		// unless triggered by a non-system contract (sending a balance to a sys address for example)
-
-		preTxDiff.Merge(postTxDiff)
 
 		txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
 		var balStateTxDiff *bal.StateDiff
@@ -372,7 +380,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// invoke Finalise so that withdrawals are accounted for in the state diff
 	statedb.Finalise(true, nil)
 
-	preTxDiff.Merge(statedb.GetStateDiff())
+	postTxDiff.Merge(statedb.GetStateDiff())
 
 	processResult := &ProcessResult{
 		Receipts: receipts,
@@ -381,7 +389,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		GasUsed:  *usedGas,
 	}
 
-	return prestate, preTxDiff, processResult, nil
+	return prestate, postTxDiff, processResult, nil
 }
 
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database

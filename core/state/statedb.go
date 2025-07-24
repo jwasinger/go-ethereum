@@ -213,6 +213,8 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 }
 
 func (s *StateDB) GetStateDiff() *bal.StateDiff {
+	// TODO: seems very dangerous to return the direct diff, because the caller will modify it.
+	// However, the alternative is probably not great either?
 	return s.diff
 }
 
