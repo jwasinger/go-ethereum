@@ -18,6 +18,7 @@ package core
 
 import (
 	"cmp"
+	context2 "context"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -287,7 +288,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
-	// TODO: set the beacon root on the BAL if we are building a BAL
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
@@ -299,18 +299,25 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 	type txExecResult struct {
 		idx     int
-		gasUsed uint64
+		gasUsed uint64 // accounts for the net gas used (refunds accounted for)
 		receipt *types.Receipt
 	}
 	errc := make(chan error)
 	execResults := make(chan txExecResult)
 	var wg sync.WaitGroup
 	wg.Add(len(block.Transactions()))
+
 	var (
 		stateDiffs []*bal.StateDiff
 		err        error
 	)
+	// TODO: don't instantiate these unless there are transactions in the block
+	var (
+		ctx    context2.Context
+		cancel func()
+	)
 	if len(block.Transactions()) > 0 {
+		ctx, cancel = context2.WithCancel(context2.Background())
 		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
 		if err != nil {
 			panic("bad block")
@@ -319,20 +326,49 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		// separate go-routine which collects results from tx execution, and forwards a ProcessResult when all txs are finished executing
 		go func() {
 			var receipts []*types.Receipt
+			gp := new(GasPool)
+			gp.SetGas(block.GasLimit())
+			var execErr error
+			var numTxComplete int
 		loop:
 			for {
 				select {
-				case <-errc:
-				// TODO: output the error here and cancel the context
+				case err := <-errc:
+					if execErr != nil {
+						execErr = err
+						cancel()
+					}
+					numTxComplete++
+					if numTxComplete == len(block.Transactions()) {
+						break loop
+					}
+
 				case res := <-execResults:
+					numTxComplete++
+					if numTxComplete == len(block.Transactions()) {
+						break loop
+					}
+					if execErr != nil {
+						continue
+					}
+					// TODO: track the accumulated gas used (discounting with refunds), trigger error-exit if we exceed it here.
+					if err := gp.SubGas(res.receipt.GasUsed); err != nil {
+						execErr = err
+						cancel()
+						continue
+					}
 					receipts = append(receipts, res.receipt)
 					if len(receipts) == len(block.Transactions()) {
 						break loop
 					}
-					// TODO: append the receipt and logs, accumulate the tx gas used into the running total
-					// TODO: if this is the last execution result, order the receipt and logs, and forward the ProcessResult
 				}
 			}
+
+			if execErr != nil {
+				resCh <- &ProcessResult{Error: execErr}
+				return
+			}
+			cancel()
 
 			// 1. order the receipts by tx index
 			// 2. correctly calculate the cumulative gas used per receipt, returning bad block error if it goes over the allowed
@@ -344,15 +380,11 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			for _, receipt := range receipts {
 				receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
 				if receipt.CumulativeGasUsed > header.GasLimit {
-					panic("bad block")
+					resCh <- &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
+					return
 				}
 			}
 
-			/*
-				receipts = append(receipts, receipt)
-				allLogs = append(allLogs, receipt.Logs...)
-
-			*/
 			resCh <- &ProcessResult{
 				Receipts: receipts,
 				Requests: requests,
@@ -364,15 +396,19 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		statedb.ApplyDiff(postTxDiff)
 	}
 
-	wg.Add(len(block.Transactions()))
-
 	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
 	var balStateTxDiff *bal.StateDiff
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		// TODO: use an errgroup to limit the number of parallel txs
 		go func(idx int, statedb *state.StateDB, tx *types.Transaction) {
-			defer wg.Done()
+			// if an error with another transaction rendered the block invalid, don't proceed with executing this one
+			// TODO: also interrupt any currently-executing transactions if one failed.
+			select {
+			case <-ctx.Done():
+				errc <- ctx.Err()
+			default:
+			}
 
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 			if err != nil {
@@ -390,7 +426,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			cpy := statedb.Copy()
 			evm.StateDB = cpy
 			gp := new(GasPool)
-			*gp = GasPool(block.GasLimit())
+			gp.SetGas(block.GasLimit())
 			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, cpy, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 			if err != nil {
 				select {
@@ -403,6 +439,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			execResults <- txExecResult{
 				idx:     i,
 				receipt: receipt,
+				gasUsed: gp.Gas(),
 			}
 
 			balStateTxDiff = txExecBALIt.Next()
