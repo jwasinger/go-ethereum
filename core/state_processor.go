@@ -391,6 +391,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	var balStateTxDiff *bal.StateDiff
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		sdbCopy := statedb.Copy()
 		// TODO: use an errgroup to limit the number of parallel txs
 		go func(idx int, sdb *state.StateDB, tx *types.Transaction) {
 			// if an error with another transaction rendered the block invalid, don't proceed with executing this one
@@ -400,6 +401,12 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				errc <- ctx.Err()
 			default:
 			}
+			var tracingStateDB = vm.StateDB(statedb)
+			if hooks := cfg.Tracer; hooks != nil {
+				tracingStateDB = state.NewHookedState(statedb, hooks)
+			}
+			context = NewEVMBlockContext(header, p.chain, nil)
+			evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
 
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 			if err != nil {
@@ -414,11 +421,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			sdb.SetTxContext(tx.Hash(), i)
 
 			senderPreNonce := sdb.GetNonce(sender)
-			cpy := sdb.Copy()
-			evm.StateDB = cpy
+			evm.StateDB = sdb
 			gp := new(GasPool)
 			gp.SetGas(block.GasLimit())
-			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, cpy, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 			if err != nil {
 				select {
 				case errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err):
@@ -441,7 +447,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				}
 				return
 			}
-		}(i, statedb.Copy(), tx)
+		}(i, sdbCopy, tx)
 		statedb.ApplyDiff(stateDiffs[i])
 		statedb.Finalise(true, nil)
 	}

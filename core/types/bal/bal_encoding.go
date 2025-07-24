@@ -470,7 +470,6 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 		// if only the nonce changed by one, ensure it's not present in the BAL
 		// if the nonce changed by more than one, it's a delegated EOA and must be in the BAL
 		if addr == sender {
-			fmt.Println(computedDiff)
 			// TODO: check computed diff must contain nonce, otherwise the tx could not be applied and we would have failed before this at execution
 			if *computedDiff.Nonce == senderPreNonce+1 {
 				// if no state values changed other than nonce, it must not be present in the BAL
