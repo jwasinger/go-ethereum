@@ -294,9 +294,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 
 	type txExecResult struct {
-		idx     int
-		gasUsed uint64 // accounts for the net gas used (refunds accounted for)
-		receipt *types.Receipt
+		idx        int
+		netGasUsed uint64 // accounts for the net gas used (refunds accounted for)
+		receipt    *types.Receipt
 	}
 	errc := make(chan error)
 	execResults := make(chan txExecResult)
@@ -311,6 +311,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	)
 	if len(block.Transactions()) > 0 {
 		ctx, cancel = context2.WithCancel(context2.Background())
+		fmt.Printf("bal is\n%s\n", block.Body().AccessList.String())
 		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
 		if err != nil {
 			panic("bad block")
@@ -323,11 +324,13 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			gp.SetGas(block.GasLimit())
 			var execErr error
 			var numTxComplete int
+
 		loop:
 			for {
 				select {
 				case err := <-errc:
-					if execErr != nil {
+					if execErr == nil {
+						fmt.Printf("got err: %v\n", err)
 						execErr = err
 						cancel()
 					}
@@ -347,9 +350,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 						continue
 					}
 					receipts = append(receipts, res.receipt)
-					if len(receipts) == len(block.Transactions()) {
-						break loop
-					}
 					numTxComplete++
 					if numTxComplete == len(block.Transactions()) {
 						break loop
@@ -358,6 +358,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			}
 
 			if execErr != nil {
+				fmt.Println("returning error")
 				resCh <- &ProcessResult{Error: execErr}
 				return
 			}
@@ -372,11 +373,14 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			var cumGasUsed uint64
 			for _, receipt := range receipts {
 				receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
+				cumGasUsed += receipt.GasUsed
 				if receipt.CumulativeGasUsed > header.GasLimit {
 					resCh <- &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
 					return
 				}
+				fmt.Printf("cum gas used is %d\n", cumGasUsed)
 			}
+			fmt.Println(len(block.Transactions()))
 
 			resCh <- &ProcessResult{
 				Receipts: receipts,
@@ -384,6 +388,11 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				Logs:     allLogs,
 				GasUsed:  *usedGas,
 			}
+		}()
+	} else {
+		go func() {
+			resCh <- &ProcessResult{}
+			return
 		}()
 	}
 
@@ -410,10 +419,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 			if err != nil {
-				select {
-				case errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err):
-				default:
-				}
+				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 				return
 			}
 			sender, _ := types.Sender(signer, tx)
@@ -426,25 +432,20 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			gp.SetGas(block.GasLimit())
 			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 			if err != nil {
-				select {
-				case errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err):
-				default:
-				}
+				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 				return
 			}
 
 			execResults <- txExecResult{
-				idx:     i,
-				receipt: receipt,
-				gasUsed: gp.Gas(),
+				idx:        i,
+				receipt:    receipt,
+				netGasUsed: gp.Gas(),
 			}
 
 			balStateTxDiff = txExecBALIt.Next()
 			if err := bal.ValidateTxStateDiff(balStateTxDiff, txStateDiff, sender, senderPreNonce); err != nil {
-				select {
-				case errc <- err:
-				default:
-				}
+				fmt.Printf("failed to validate block %d tx index %d: %v\n", block.NumberU64(), i, err)
+				errc <- err
 				return
 			}
 		}(i, sdbCopy, tx)

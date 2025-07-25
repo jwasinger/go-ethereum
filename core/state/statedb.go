@@ -215,7 +215,7 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 func (s *StateDB) GetStateDiff() *bal.StateDiff {
 	// TODO: seems very dangerous to return the direct diff, because the caller will modify it.
 	// However, the alternative is probably not great either?
-	return s.diff
+	return s.diff.Copy()
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
@@ -912,6 +912,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			// compute bal storage mutations after finalisation
 			if s.constructionBAL != nil {
 				for key, val := range obj.pendingStorage {
+					panic("TODO: this is wrong and will include the storage kv multiple times even if it is only modified once in the block.  move this logic into the state object's finalise method")
 					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
 				}
 			} else if balPost != nil {

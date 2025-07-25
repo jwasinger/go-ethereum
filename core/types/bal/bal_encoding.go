@@ -482,10 +482,12 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 					// otherwise non-nonce fields must match BAL exactly
 					balAccountDiff, ok := balDiff.Mutations[addr]
 					if !ok {
+						fmt.Println("error 1")
 						return fmt.Errorf("missing from BAL")
 					}
 
 					if balAccountDiff.Nonce != nil || !computedDiff.Eq(balAccountDiff, true) {
+						fmt.Printf("computed:\n%s\nbal:\n%s\n", totalDiff.String(), balDiff.String())
 						return fmt.Errorf("nonce was set in BAL or bal account diff didn't match computed")
 					}
 				}
@@ -493,6 +495,7 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 				// delegated EOA which performed creations, must match BAL value exactly
 				balAccountDiff, ok := balDiff.Mutations[addr]
 				if !ok {
+					fmt.Println("2")
 					return fmt.Errorf("missing from BAL")
 				}
 
@@ -510,6 +513,7 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, s
 
 		balAccountDiff, ok := balDiff.Mutations[addr]
 		if !ok {
+			fmt.Println("3")
 			return fmt.Errorf("missing from BAL")
 		}
 
