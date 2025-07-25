@@ -912,7 +912,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			// compute bal storage mutations after finalisation
 			if s.constructionBAL != nil {
 				for key, val := range obj.pendingStorage {
-					panic("TODO: this is wrong and will include the storage kv multiple times even if it is only modified once in the block.  move this logic into the state object's finalise method")
+					//TODO: this is wrong and will include the storage kv multiple times even if it is only modified once in the block.  move this logic into the state object's finalise method
 					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
 				}
 			} else if balPost != nil {

@@ -311,7 +311,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	)
 	if len(block.Transactions()) > 0 {
 		ctx, cancel = context2.WithCancel(context2.Background())
-		fmt.Printf("bal is\n%s\n", block.Body().AccessList.String())
 		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
 		if err != nil {
 			panic("bad block")
@@ -330,7 +329,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				select {
 				case err := <-errc:
 					if execErr == nil {
-						fmt.Printf("got err: %v\n", err)
 						execErr = err
 						cancel()
 					}
@@ -341,15 +339,14 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 				case res := <-execResults:
 					if execErr != nil {
-						continue
+						// TODO: track the accumulated gas used (discounting with refunds), trigger error-exit if we exceed it here.
+						if err := gp.SubGas(res.receipt.GasUsed); err != nil {
+							execErr = err
+							cancel()
+						} else {
+							receipts = append(receipts, res.receipt)
+						}
 					}
-					// TODO: track the accumulated gas used (discounting with refunds), trigger error-exit if we exceed it here.
-					if err := gp.SubGas(res.receipt.GasUsed); err != nil {
-						execErr = err
-						cancel()
-						continue
-					}
-					receipts = append(receipts, res.receipt)
 					numTxComplete++
 					if numTxComplete == len(block.Transactions()) {
 						break loop
@@ -358,7 +355,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			}
 
 			if execErr != nil {
-				fmt.Println("returning error")
 				resCh <- &ProcessResult{Error: execErr}
 				return
 			}
@@ -378,9 +374,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					resCh <- &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
 					return
 				}
-				fmt.Printf("cum gas used is %d\n", cumGasUsed)
 			}
-			fmt.Println(len(block.Transactions()))
 
 			resCh <- &ProcessResult{
 				Receipts: receipts,
@@ -397,7 +391,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	}
 
 	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
-	var balStateTxDiff *bal.StateDiff
+	var balStateDiffs []*bal.StateDiff
+	for range block.Transactions() {
+		balStateDiffs = append(balStateDiffs, txExecBALIt.Next())
+	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		sdbCopy := statedb.Copy()
@@ -419,12 +416,12 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 			if err != nil {
-				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
 				return
 			}
 			sender, _ := types.Sender(signer, tx)
 			sdb.SetTxSender(sender)
-			sdb.SetTxContext(tx.Hash(), i)
+			sdb.SetTxContext(tx.Hash(), idx)
 
 			senderPreNonce := sdb.GetNonce(sender)
 			evm.StateDB = sdb
@@ -432,19 +429,17 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			gp.SetGas(block.GasLimit())
 			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
 			if err != nil {
-				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
 				return
 			}
 
 			execResults <- txExecResult{
-				idx:        i,
+				idx:        idx,
 				receipt:    receipt,
 				netGasUsed: gp.Gas(),
 			}
 
-			balStateTxDiff = txExecBALIt.Next()
-			if err := bal.ValidateTxStateDiff(balStateTxDiff, txStateDiff, sender, senderPreNonce); err != nil {
-				fmt.Printf("failed to validate block %d tx index %d: %v\n", block.NumberU64(), i, err)
+			if err := bal.ValidateTxStateDiff(balStateDiffs[idx], txStateDiff, sender, senderPreNonce); err != nil {
 				errc <- err
 				return
 			}
