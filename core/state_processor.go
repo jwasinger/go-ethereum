@@ -201,12 +201,8 @@ func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrest
 
 		// for each delegation in the tx: calc if it has enough funds for the delegation to proceed and adjust the delegation target in the diff if so
 		for _, delegation := range tx.SetCodeAuthorizations() {
-			// TODO: don't blindly-assume that the delegation will succeed.  Validate which authorizations can succeed/fail based on the computed tx prestate
-			// TODO: don't set the code directly (delegations are not charged by code size so the state diff can get very large in a block with lots of auths)
-
 			authority, err := delegation.Authority()
 			if err != nil {
-				panic(err)
 				continue
 			}
 			authority, err = validateAuth(&delegation, evm, stateReader)
@@ -224,12 +220,8 @@ func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrest
 					accountDiff.Code = types.AddressToDelegation(delegation.Address)
 				}
 
-				if accountDiff.Nonce == nil {
-					newNonce := delegation.Nonce + 1
-					accountDiff.Nonce = &newNonce
-				} else {
-					// TODO: Check something here?  that the nonce is greater than the minimum?
-				}
+				newNonce := delegation.Nonce + 1
+				accountDiff.Nonce = &newNonce
 			} else {
 				as := bal.NewEmptyAccountState()
 				if delegation.Address == (common.Address{}) {
@@ -249,7 +241,6 @@ func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrest
 
 func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, chan *ProcessResult, error) {
 	var (
-		usedGas     = new(uint64)
 		header      = block.Header()
 		blockHash   = block.Hash()
 		blockNumber = block.Number()
@@ -330,6 +321,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				case err := <-errc:
 					if execErr == nil {
 						execErr = err
+						// TODO: isn't this case caught in any spec test coverage
 						cancel()
 					}
 					numTxComplete++
@@ -338,7 +330,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					}
 
 				case res := <-execResults:
-					if execErr != nil {
+					if execErr == nil {
 						// TODO: track the accumulated gas used (discounting with refunds), trigger error-exit if we exceed it here.
 						if err := gp.SubGas(res.receipt.GasUsed); err != nil {
 							execErr = err
@@ -380,7 +372,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				Receipts: receipts,
 				Requests: requests,
 				Logs:     allLogs,
-				GasUsed:  *usedGas,
+				GasUsed:  cumGasUsed,
 			}
 		}()
 	} else {
@@ -405,6 +397,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			select {
 			case <-ctx.Done():
 				errc <- ctx.Err()
+				return
 			default:
 			}
 			var tracingStateDB = vm.StateDB(statedb)
@@ -427,7 +420,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			evm.StateDB = sdb
 			gp := new(GasPool)
 			gp.SetGas(block.GasLimit())
-			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, usedGas, evm, nil)
+			var gasUsed uint64
+			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, &gasUsed, evm, nil)
 			if err != nil {
 				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
 				return

@@ -854,8 +854,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				// only include nonce changes in the BAL if:
 				// * the object was a contract
 				// OR
-				// * the object was the tx sender, is a delegated EOA, and had its nonce bumped by more than 1
+				// * the object was the tx sender, is a delegated EOA, and had its nonce bumped by more than the amount
+				// of delegations it performed
 				if s.sender == obj.address {
+					// TODO: this is not correct if the sender had multiple delegations, but didn't perform a create
+					// in that case, the nonce will be bumped by more than one
 					if obj.Nonce() != obj.txPreNonce+1 {
 						s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
 					}
