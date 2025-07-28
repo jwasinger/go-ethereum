@@ -143,7 +143,7 @@ type AccountAccess struct {
 	StorageReads   []common.Hash           `ssz-max:"300000" json:"storageReads,omitempty"`   // Read-only storage keys
 	BalanceChanges []encodingBalanceChange `ssz-max:"300000" json:"balanceChanges,omitempty"` // Balance changes ([tx_index -> post_balance])
 	NonceChanges   []encodingAccountNonce  `ssz-max:"300000" json:"nonceChanges,omitempty"`   // Nonce changes ([tx_index -> new_nonce])
-	Code           []CodeChange            `ssz-max:"1" json:"code,omitempty"`                // Code changes ([tx_index -> new_code])
+	CodeChanges    []CodeChange            `ssz-max:"1" json:"code,omitempty"`                // CodeChanges changes ([tx_index -> new_code])
 }
 
 // validate converts the account accesses out of encoding format.
@@ -184,8 +184,8 @@ func (e *AccountAccess) validate() error {
 	}
 
 	// Convert code change
-	if len(e.Code) == 1 {
-		if len(e.Code[0].Code) > params.MaxCodeSize {
+	for _, codeChange := range e.CodeChanges {
+		if len(codeChange.Code) > params.MaxCodeSize {
 			return fmt.Errorf("code change contained oversized code")
 		}
 	}
@@ -206,13 +206,12 @@ func (e *AccountAccess) Copy() AccountAccess {
 			Accesses: slices.Clone(storageWrite.Accesses),
 		})
 	}
-	if len(e.Code) == 1 {
-		res.Code = []CodeChange{
-			{
-				e.Code[0].TxIndex,
-				bytes.Clone(e.Code[0].Code),
-			},
-		}
+	for _, codeChange := range e.CodeChanges {
+		res.CodeChanges = append(res.CodeChanges,
+			CodeChange{
+				codeChange.TxIndex,
+				bytes.Clone(codeChange.Code),
+			})
 	}
 	return res
 }
@@ -233,7 +232,7 @@ func (a *ConstructionAccountAccess) toEncodingObj(addr common.Address) AccountAc
 		StorageReads:   make([]common.Hash, 0),
 		BalanceChanges: make([]encodingBalanceChange, 0),
 		NonceChanges:   make([]encodingAccountNonce, 0),
-		Code:           nil,
+		CodeChanges:    make([]CodeChange, 0),
 	}
 
 	// Convert write slots
@@ -285,13 +284,13 @@ func (a *ConstructionAccountAccess) toEncodingObj(addr common.Address) AccountAc
 	}
 
 	// Convert code change
-	if a.CodeChange != nil {
-		res.Code = []CodeChange{
-			{
-				a.CodeChange.TxIndex,
-				bytes.Clone(a.CodeChange.Code),
-			},
-		}
+	codeChangeIdxs := slices.Collect(maps.Keys(a.CodeChanges))
+	slices.SortFunc(codeChangeIdxs, cmp.Compare[uint16])
+	for _, idx := range codeChangeIdxs {
+		res.CodeChanges = append(res.CodeChanges, CodeChange{
+			idx,
+			bytes.Clone(a.CodeChanges[idx].Code),
+		})
 	}
 	return res
 }
@@ -344,9 +343,10 @@ func (e *BlockAccessList) PrettyPrint() string {
 			printWithIndent(2, fmt.Sprintf("%d: %d", change.TxIdx, change.Nonce))
 		}
 
-		if len(accountDiff.Code) > 0 {
+		if len(accountDiff.CodeChanges) > 0 {
 			printWithIndent(1, "code:")
-			printWithIndent(2, fmt.Sprintf("%d: %x", accountDiff.Code[0].TxIndex, accountDiff.Code[0].Code))
+			printWithIndent(2, fmt.Sprintf("%d: %x", accountDiff.CodeChanges[0].TxIndex, accountDiff.CodeChanges[0].Code))
+			panic("this is bugged.  there canbe more than one code change per block")
 		}
 	}
 	return res.String()
@@ -392,7 +392,7 @@ func NewEmptyAccountState() *AccountState {
 	}
 }
 
-func (a *AccountState) Eq(other *AccountState, ignoreNonce bool) bool {
+func (a *AccountState) Eq(other *AccountState) bool {
 	if a.Balance != nil || other.Balance != nil {
 		if a.Balance == nil || other.Balance == nil {
 			return false
@@ -403,17 +403,11 @@ func (a *AccountState) Eq(other *AccountState, ignoreNonce bool) bool {
 		}
 	}
 
-	if a.Code != nil || other.Code != nil {
-		if a.Code == nil || other.Code == nil {
-			return false
-		}
-
-		if !bytes.Equal(a.Code, other.Code) {
-			return false
-		}
+	if (len(a.Code) != 0 || len(other.Code) != 0) && !bytes.Equal(a.Code, other.Code) {
+		return false
 	}
 
-	if !ignoreNonce && (a.Nonce != nil || other.Nonce != nil) {
+	if a.Nonce != nil || other.Nonce != nil {
 		if a.Nonce == nil || other.Nonce == nil {
 			return false
 		}
@@ -459,62 +453,19 @@ func (as *AccountState) Copy() *AccountState {
 }
 
 // TODO: augment this to account for delegation changes in the totalDiff but not in the balDiff
-func ValidateTxStateDiff(balDiff, totalDiff *StateDiff, sender common.Address, senderPreNonce uint64) error {
+func ValidateTxStateDiff(txIdx int, balDiff, totalDiff *StateDiff, sender common.Address, senderPreNonce uint64) error {
 	// if the number of account mutations was equal:
 	// * the tx sender was modified other than the nonce (e.g.balance), or it was a delegated EOA that performed creations
 	// * each
 
 	expectedBALAddrs := len(totalDiff.Mutations)
 	for addr, computedDiff := range totalDiff.Mutations {
-		// if it's the sender:
-		// if only the nonce changed by one, ensure it's not present in the BAL
-		// if the nonce changed by more than one, it's a delegated EOA and must be in the BAL
-		if addr == sender {
-			// TODO: check computed diff must contain nonce, otherwise the tx could not be applied and we would have failed before this at execution
-			if *computedDiff.Nonce == senderPreNonce+1 {
-				// if no state values changed other than nonce, it must not be present in the BAL
-				if computedDiff.Code == nil && computedDiff.Balance == nil && computedDiff.StorageWrites == nil {
-					if _, ok := balDiff.Mutations[addr]; ok {
-						return fmt.Errorf("should not be in BAL")
-					}
-					expectedBALAddrs--
-				} else {
-					// otherwise non-nonce fields must match BAL exactly
-					balAccountDiff, ok := balDiff.Mutations[addr]
-					if !ok {
-						return fmt.Errorf("missing from BAL")
-					}
-
-					if balAccountDiff.Nonce != nil || !computedDiff.Eq(balAccountDiff, true) {
-						return fmt.Errorf("nonce was set in BAL or bal account diff didn't match computed")
-					}
-				}
-			} else {
-				// delegated EOA which performed creations, must match BAL value exactly
-				balAccountDiff, ok := balDiff.Mutations[addr]
-				if !ok {
-					return fmt.Errorf("missing from BAL")
-				}
-
-				if !computedDiff.Eq(balAccountDiff, false) {
-					return fmt.Errorf("mismatch between BAl and computed for delegated EOA which performed creations")
-				}
-			}
-			continue
-		}
-
-		// if it's a newly-created contract, it should
-
-		// TODO: if it's not present in the BAL:
-		// * ensure it was a delegated EOA and only the code changed
-
 		balAccountDiff, ok := balDiff.Mutations[addr]
 		if !ok {
-			fmt.Println("error 3")
 			return fmt.Errorf("missing from BAL")
 		}
 
-		if !computedDiff.Eq(balAccountDiff, false) {
+		if !computedDiff.Eq(balAccountDiff) {
 			return fmt.Errorf("mismatch between BAl value and computed value")
 		}
 	}
@@ -631,8 +582,11 @@ func (it *AccountIterator) Increment() (accountState *AccountState, mut bool) {
 		it.balanceChangeIdx++
 	}
 
-	if it.codeChangeIdx < len(it.aa.Code) && it.aa.Code[it.codeChangeIdx].TxIndex == uint16(it.curTxIdx) {
-		newCode := bytes.Clone(it.aa.Code[it.codeChangeIdx].Code)
+	if it.codeChangeIdx < len(it.aa.CodeChanges) && it.aa.CodeChanges[it.codeChangeIdx].TxIndex == uint16(it.curTxIdx) {
+		newCode := bytes.Clone(it.aa.CodeChanges[it.codeChangeIdx].Code)
+		if newCode == nil {
+			newCode = make([]byte, 0)
+		}
 		layerMut.Code = newCode
 		it.codeChangeIdx++
 	}
@@ -679,7 +633,7 @@ func (it *BALIterator) Next() (mutations *StateDiff) {
 }
 
 // return nil if there is no state diff (can this happen with base-fee burning, does the base-fee portion get burned when the tx is applied or at the end of the block when crediting the coinbase?)
-func (it *BALIterator) BuildStateDiffs(initialDiff *StateDiff, until uint16, onTx func(txIndex uint16, accumDiff, txDiff *StateDiff) error) (*StateDiff, []*StateDiff, error) {
+func (it *BALIterator) BuildStateDiffs(initialDiff *StateDiff, until uint16) (*StateDiff, []*StateDiff, error) {
 	if until < it.curIdx {
 		return nil, nil, nil
 	}
@@ -704,15 +658,7 @@ func (it *BALIterator) BuildStateDiffs(initialDiff *StateDiff, until uint16, onT
 			}
 		}
 
-		// callback to fill in state mutations that can't be sourced from the BAL:
-		// * EOA tx sender nonce increments
-		// * 7702 delegations
-		if err := onTx(it.curIdx, accumDiff, &layerMutations); err != nil {
-			return nil, nil, err
-		}
-
 		resDiffs = append(resDiffs, &layerMutations)
-
 		accumDiff.Merge(layerMutations.Copy())
 	}
 

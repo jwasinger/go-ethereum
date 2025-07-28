@@ -182,7 +182,7 @@ func makeTestAccountAccess(sort bool) AccountAccess {
 		StorageReads:   storageReads,
 		BalanceChanges: balances,
 		NonceChanges:   nonces,
-		Code: []CodeChange{
+		CodeChanges: []CodeChange{
 			{
 				TxIndex: 100,
 				Code:    testrand.Bytes(256),

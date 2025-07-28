@@ -55,9 +55,7 @@ type ConstructionAccountAccess struct {
 	// by tx index.
 	NonceChanges map[uint16]uint64
 
-	// CodeChange is only set for contract accounts which were deployed in
-	// the block.
-	CodeChange *CodeChange
+	CodeChanges map[uint16]CodeChange
 }
 
 // NewConstructionAccountAccess initializes the account access object.
@@ -67,6 +65,7 @@ func NewConstructionAccountAccess() *ConstructionAccountAccess {
 		StorageReads:   make(map[common.Hash]struct{}),
 		BalanceChanges: make(map[uint16]*uint256.Int),
 		NonceChanges:   make(map[uint16]uint64),
+		CodeChanges:    make(map[uint16]CodeChange),
 	}
 }
 
@@ -146,7 +145,7 @@ func (c *ConstructionBlockAccessList) CodeChange(address common.Address, txIndex
 	if _, ok := c.Accounts[address]; !ok {
 		c.Accounts[address] = NewConstructionAccountAccess()
 	}
-	c.Accounts[address].CodeChange = &CodeChange{
+	c.Accounts[address].CodeChanges[txIndex] = CodeChange{
 		TxIndex: txIndex,
 		Code:    bytes.Clone(code),
 	}
@@ -202,10 +201,11 @@ func (c *ConstructionBlockAccessList) Copy() *ConstructionBlockAccessList {
 		aaCopy.BalanceChanges = balances
 		aaCopy.NonceChanges = maps.Clone(aa.NonceChanges)
 
-		if aa.CodeChange != nil {
-			aaCopy.CodeChange = &CodeChange{
-				TxIndex: aa.CodeChange.TxIndex,
-				Code:    bytes.Clone(aa.CodeChange.Code),
+		codeChangesCopy := make(map[uint16]CodeChange)
+		for idx, codeChange := range aa.CodeChanges {
+			codeChangesCopy[idx] = CodeChange{
+				TxIndex: idx,
+				Code:    bytes.Clone(codeChange.Code),
 			}
 		}
 		res.Accounts[addr] = &aaCopy

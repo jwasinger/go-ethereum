@@ -847,22 +847,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 					s.constructionBAL.BalanceChange(uint16(s.txIndex), obj.address, obj.Balance())
 				}
 
-				// include nonces for any contracts which incremented them.
-				// newly-delegated contracts are not included
-				// consider contract creation execution which executes a
-
-				// only include nonce changes in the BAL if:
-				// * the object was a contract
-				// OR
-				// * the object was the tx sender, is a delegated EOA, and had its nonce bumped by more than the amount
-				// of delegations it performed
-				if s.sender == obj.address {
-					// TODO: this is not correct if the sender had multiple delegations, but didn't perform a create
-					// in that case, the nonce will be bumped by more than one
-					if obj.Nonce() != obj.txPreNonce+1 {
-						s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
-					}
-				} else if obj.Nonce() != obj.txPreNonce {
+				if obj.Nonce() != obj.txPreNonce {
 					s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
 				}
 
@@ -871,32 +856,36 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 				// include code of created contracts
 				// Delegations are not included because they can be statically inferred from the tx and its prestate.
-				if obj.newContract && len(obj.code) != 0 && !obj.isDelegated() {
+				if obj.dirtyCode {
+					// TODO: this flag is only reset upon commit.  However, we want to know if the tx changed since the beginning of the transaction
 					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
 				}
 			} else if balPost != nil {
-				// TODO: compute a bal.StateDiff from the finalized objects and do the comparison outside this func
-				// I will also call finalise after performing pre-tx-execution operations (withdrawals + beacon root)
-				// and in addition call it after post-tx system contracts have executed.
-				accountDiff, ok := balPost.Mutations[obj.address]
-				if !ok {
-					panic("TODO return error here, bad block")
-				}
-				if obj.newContract && (accountDiff.Code == nil || bytes.Compare(accountDiff.Code, obj.code) != 0) {
-					panic("TODO return error here, bad block")
-				}
-				if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
-					if obj.isDelegated() || accountDiff.Nonce == nil || *accountDiff.Nonce != obj.Nonce() {
+				panic("assumed dead code path")
+				/*
+					// TODO: compute a bal.StateDiff from the finalized objects and do the comparison outside this func
+					// I will also call finalise after performing pre-tx-execution operations (withdrawals + beacon root)
+					// and in addition call it after post-tx system contracts have executed.
+					accountDiff, ok := balPost.Mutations[obj.address]
+					if !ok {
 						panic("TODO return error here, bad block")
 					}
-				}
-				if !obj.Balance().Eq(obj.txPreBalance) && (accountDiff.Balance == nil || !obj.Balance().Eq(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))) {
-					panic("TODO return error here, bad block")
-				}
+					if obj.newContract && (accountDiff.Code == nil || bytes.Compare(accountDiff.Code, obj.code) != 0) {
+						panic("TODO return error here, bad block")
+					}
+					if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
+						if obj.isDelegated() || accountDiff.Nonce == nil || *accountDiff.Nonce != obj.Nonce() {
+							panic("TODO return error here, bad block")
+						}
+					}
+					if !obj.Balance().Eq(obj.txPreBalance) && (accountDiff.Balance == nil || !obj.Balance().Eq(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))) {
+						panic("TODO return error here, bad block")
+					}
+				*/
 			}
 
 			var accountPost bal.AccountState
-			if obj.newContract {
+			if obj.dirtyCode {
 				accountPost.Code = bytes.Clone(obj.code)
 			}
 			if obj.Nonce() != obj.txPreNonce {
@@ -919,15 +908,18 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
 				}
 			} else if balPost != nil {
-				accountDiff, _ := balPost.Mutations[obj.address]
-				if len(obj.pendingStorage) > 0 {
-					if len(accountDiff.StorageWrites) != len(obj.pendingStorage) {
-						panic("TODO return error here, bad block")
+				panic("assumed dead code path")
+				/*
+					accountDiff, _ := balPost.Mutations[obj.address]
+					if len(obj.pendingStorage) > 0 {
+						if len(accountDiff.StorageWrites) != len(obj.pendingStorage) {
+							panic("TODO return error here, bad block")
+						}
+						if !maps.Equal(accountDiff.StorageWrites, obj.pendingStorage) {
+							panic("TODO return error here, bad block")
+						}
 					}
-					if !maps.Equal(accountDiff.StorageWrites, obj.pendingStorage) {
-						panic("TODO return error here, bad block")
-					}
-				}
+				*/
 			}
 
 			if len(obj.pendingStorage) > 0 {
