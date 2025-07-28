@@ -90,20 +90,17 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// do not include the storage writes in the BAL:
 	// * beacon root will be provided as a standalone field in the BAL
 	// * parent block hash is already in the header field of the block
+	if statedb.BlockAccessList() != nil {
+		statedb.BlockAccessList().EnableMutations()
+	}
 
 	// TODO: use TxContext (hash == common.Hash{}) as a signal that we aren't
 	// executing a tx yet, and don't record state based on that?
-	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().DisableMutations()
-	}
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
-	}
-	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().EnableMutations()
 	}
 
 	// Iterate over and process the individual transactions
@@ -129,9 +126,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// TODO: note that the below clause is only for BAL building.  Perhaps use the idea I showed above to remove explicit call to disable mutations
 	// don't write post-block state mutations to the BAL to save on size.
 	// these can be easily computed in BAL verification.
+
 	if statedb.BlockAccessList() != nil {
-		statedb.BlockAccessList().DisableMutations()
+		statedb.SetAccessListIndex(len(block.Transactions()) + 1)
 	}
+
 	// Read requests if Prague is enabled.
 	var requests [][]byte
 	if p.config.IsPrague(block.Number(), block.Time()) {
@@ -164,8 +163,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrestate *state.StateDB) (totalDiff *bal.StateDiff, txDiffs []*bal.StateDiff, err error) {
 	prestateDiff := txPrestate.GetStateDiff()
 	// create a number of diffs (one for each worker goroutine)
-	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
-	return txDiffIt.BuildStateDiffs(prestateDiff, uint16(len(block.Transactions()))-1)
+	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions())+2)
+	return txDiffIt.BuildStateDiffs(prestateDiff, uint16(len(block.Transactions()))+2)
 }
 
 func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, chan *ProcessResult, error) {
@@ -173,7 +172,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		header      = block.Header()
 		blockHash   = block.Hash()
 		blockNumber = block.Number()
-		allLogs     []*types.Log
 		resCh       = make(chan *ProcessResult)
 		requests    [][]byte
 	)
@@ -202,6 +200,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 
 	// TODO: use TxContext (hash == common.Hash{}) as a signal that we aren't
 	// executing a tx yet, and don't record state based on that?
+	prestate := statedb.Copy()
 
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
@@ -209,7 +208,14 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
-	prestate := statedb.Copy()
+
+	alIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions())+2)
+	preTxDiff := alIt.Next()
+	computedDiff := statedb.GetStateDiff()
+	if err := bal.ValidateTxStateDiff(preTxDiff, computedDiff); err != nil {
+		//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", preTxDiff.String(), computedDiff.String())
+		return nil, nil, nil, err
+	}
 
 	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
 
@@ -229,20 +235,27 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		ctx        context2.Context
 		cancel     func()
 	)
+	postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
+	if err != nil {
+		panic("bad block")
+	}
 	if len(block.Transactions()) > 0 {
 		ctx, cancel = context2.WithCancel(context2.Background())
-		postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
-		if err != nil {
-			panic("bad block")
-		}
 
 		// separate go-routine which collects results from tx execution, and forwards a ProcessResult when all txs are finished executing
-		go func() {
+		go func(statedb *state.StateDB) {
 			var receipts []*types.Receipt
 			gp := new(GasPool)
 			gp.SetGas(block.GasLimit())
 			var execErr error
 			var numTxComplete int
+
+			var tracingStateDB = vm.StateDB(statedb)
+			if hooks := cfg.Tracer; hooks != nil {
+				tracingStateDB = state.NewHookedState(statedb, hooks)
+			}
+			context = NewEVMBlockContext(header, p.chain, nil)
+			evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
 
 		loop:
 			for {
@@ -288,6 +301,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			})
 
 			var cumGasUsed uint64
+			var allLogs []*types.Log
 			for _, receipt := range receipts {
 				receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
 				cumGasUsed += receipt.GasUsed
@@ -295,6 +309,40 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					resCh <- &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
 					return
 				}
+				allLogs = append(allLogs, receipt.Logs...)
+			}
+
+			// Read requests if Prague is enabled.
+			if p.config.IsPrague(block.Number(), block.Time()) {
+				requests = [][]byte{}
+				// EIP-6110
+				if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
+					resCh <- &ProcessResult{
+						Error: err,
+					}
+					return
+				}
+				// EIP-7002
+				if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+					resCh <- &ProcessResult{
+						Error: err,
+					}
+					return
+				}
+				// EIP-7251
+				if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+					resCh <- &ProcessResult{
+						Error: err,
+					}
+					return
+				}
+				// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
+				// TODO: apply withdrawals state diff from the Finalize call
+				p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
+				// invoke Finalise so that withdrawals are accounted for in the state diff
+				statedb.Finalise(true, nil)
+
+				// TODO: validate against the last entry in the BAL
 			}
 
 			resCh <- &ProcessResult{
@@ -303,19 +351,24 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				Logs:     allLogs,
 				GasUsed:  cumGasUsed,
 			}
-		}()
+		}(statedb.Copy())
 	} else {
 		go func() {
 			resCh <- &ProcessResult{}
 			return
 		}()
+		return prestate, postTxDiff, resCh, nil
 	}
 
-	txExecBALIt := bal.NewIterator(al, len(block.Transactions()))
+	txExecBALIt := bal.NewIterator(al, len(block.Transactions())+2)
 	var balStateDiffs []*bal.StateDiff
-	for range block.Transactions() {
+	for i := 0; i < len(block.Transactions())+2; i++ {
 		balStateDiffs = append(balStateDiffs, txExecBALIt.Next())
 	}
+	statedb.ApplyDiff(stateDiffs[0])
+	stateDiffs = stateDiffs[1:]
+	balStateDiffs = balStateDiffs[1:]
+	statedb.Finalise(true, nil)
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		sdbCopy := statedb.Copy()
@@ -329,9 +382,9 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				return
 			default:
 			}
-			var tracingStateDB = vm.StateDB(statedb)
+			var tracingStateDB = vm.StateDB(sdb)
 			if hooks := cfg.Tracer; hooks != nil {
-				tracingStateDB = state.NewHookedState(statedb, hooks)
+				tracingStateDB = state.NewHookedState(sdb, hooks)
 			}
 			context = NewEVMBlockContext(header, p.chain, nil)
 			evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
@@ -345,7 +398,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			sdb.SetTxSender(sender)
 			sdb.SetTxContext(tx.Hash(), idx)
 
-			senderPreNonce := sdb.GetNonce(sender)
 			evm.StateDB = sdb
 			gp := new(GasPool)
 			gp.SetGas(block.GasLimit())
@@ -356,7 +408,8 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				return
 			}
 
-			if err := bal.ValidateTxStateDiff(idx, balStateDiffs[idx], txStateDiff, sender, senderPreNonce); err != nil {
+			if err := bal.ValidateTxStateDiff(balStateDiffs[idx], txStateDiff); err != nil {
+				//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", balStateDiffs[idx].String(), txStateDiff.String())
 				errc <- err
 				return
 			}
@@ -367,34 +420,10 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 				netGasUsed: gp.Gas(),
 			}
 		}(i, sdbCopy, tx)
+
 		statedb.ApplyDiff(stateDiffs[i])
 		statedb.Finalise(true, nil)
 	}
-
-	// Read requests if Prague is enabled.
-	if p.config.IsPrague(block.Number(), block.Time()) {
-		requests = [][]byte{}
-		// EIP-6110
-		if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
-			return nil, nil, nil, err
-		}
-		// EIP-7002
-		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
-			return nil, nil, nil, err
-		}
-		// EIP-7251
-		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-
-	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
-	// TODO: apply withdrawals state diff from the Finalize call
-	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
-	// invoke Finalise so that withdrawals are accounted for in the state diff
-	statedb.Finalise(true, nil)
-
-	postTxDiff.Merge(statedb.GetStateDiff())
 
 	return prestate, postTxDiff, resCh, nil
 }

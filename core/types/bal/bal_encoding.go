@@ -453,7 +453,7 @@ func (as *AccountState) Copy() *AccountState {
 }
 
 // TODO: augment this to account for delegation changes in the totalDiff but not in the balDiff
-func ValidateTxStateDiff(txIdx int, balDiff, totalDiff *StateDiff, sender common.Address, senderPreNonce uint64) error {
+func ValidateTxStateDiff(balDiff, totalDiff *StateDiff) error {
 	// if the number of account mutations was equal:
 	// * the tx sender was modified other than the nonce (e.g.balance), or it was a delegated EOA that performed creations
 	// * each
@@ -473,6 +473,7 @@ func ValidateTxStateDiff(txIdx int, balDiff, totalDiff *StateDiff, sender common
 	// assert that the BAL contains exactly the computed addresses minus the allowed excludeable
 	// only check length because we already checked inclusion above
 	if len(balDiff.Mutations) != expectedBALAddrs {
+		fmt.Printf("bal is\n%s\nexpected is\n%s\n", balDiff.String(), totalDiff.String())
 		return fmt.Errorf("BAL contained unexpected mutations compared to computed")
 	}
 

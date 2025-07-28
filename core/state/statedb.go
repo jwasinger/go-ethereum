@@ -122,6 +122,12 @@ type StateDB struct {
 	txIndex int
 	sender  common.Address
 
+	// block access list modifications will be recorded with this index.
+	// 0 - state access before transaction execution
+	// 1 -> len(block txs) - state access of each transaction
+	// len(block txs) + 1 - state access after transaction execution.
+	balIndex int
+
 	logs    map[common.Hash][]*types.Log
 	logSize uint
 
@@ -813,7 +819,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 				// TODO: for testing purposes we should probably have tests that create/destroy the same account multiple times via this same edge-case with create2
 				if s.constructionBAL != nil {
-					s.constructionBAL.BalanceChange(uint16(s.txIndex), obj.address, uint256.NewInt(0))
+					s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, uint256.NewInt(0))
 				} else if balPost != nil {
 					balDiff, ok := balPost.Mutations[obj.address]
 					if !ok {
@@ -844,11 +850,11 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 				// for addresses that changed balance, add the post-change value
 				if obj.Balance().Cmp(obj.txPreBalance) != 0 {
-					s.constructionBAL.BalanceChange(uint16(s.txIndex), obj.address, obj.Balance())
+					s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, obj.Balance())
 				}
 
 				if obj.Nonce() != obj.txPreNonce {
-					s.constructionBAL.NonceChange(obj.address, uint16(s.txIndex), obj.Nonce())
+					s.constructionBAL.NonceChange(obj.address, uint16(s.balIndex), obj.Nonce())
 				}
 
 				// TODO: newContract will be set regardless of whether the creation initcode succeeded
@@ -858,7 +864,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				// Delegations are not included because they can be statically inferred from the tx and its prestate.
 				if obj.dirtyCode {
 					// TODO: this flag is only reset upon commit.  However, we want to know if the tx changed since the beginning of the transaction
-					s.constructionBAL.CodeChange(obj.address, uint16(s.txIndex), obj.code)
+					s.constructionBAL.CodeChange(obj.address, uint16(s.balIndex), obj.code)
 				}
 			} else if balPost != nil {
 				panic("assumed dead code path")
@@ -905,7 +911,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			if s.constructionBAL != nil {
 				for key, val := range obj.pendingStorage {
 					//TODO: this is wrong and will include the storage kv multiple times even if it is only modified once in the block.  move this logic into the state object's finalise method
-					s.constructionBAL.StorageWrite(uint16(s.txIndex), obj.address, key, val)
+					s.constructionBAL.StorageWrite(uint16(s.balIndex), obj.address, key, val)
 				}
 			} else if balPost != nil {
 				panic("assumed dead code path")
@@ -1121,6 +1127,11 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 func (s *StateDB) SetTxContext(thash common.Hash, ti int) {
 	s.thash = thash
 	s.txIndex = ti
+	s.balIndex = ti + 1
+}
+
+func (s *StateDB) SetAccessListIndex(idx int) {
+	s.balIndex = idx
 }
 
 // TODO: combine this into set tx context
