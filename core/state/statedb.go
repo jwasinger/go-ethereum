@@ -806,35 +806,36 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			continue
 		}
 		if obj.selfDestructed || (deleteEmptyObjects && obj.empty()) {
-			if obj.selfDestructed {
-				// an object that was not created in the current transaction
-				// can only become empty and be removed if only the balance
-				// was non-zero before, the account was the target of a create
-				// whose initcode called SENDALL leaving the account empty at
-				// the end of the transaction.
+			// an object that was not created in the current transaction
+			// can only become empty and be removed if only the balance
+			// was non-zero before, the account was the target of a create
+			// whose initcode called SENDALL leaving the account empty at
+			// the end of the transaction.
 
-				// an account with a preexisting balance will not have its nonce set to 1 upon being the target of a CREATE
+			// an account with a preexisting balance will not have its nonce set to 1 upon being the target of a CREATE
 
-				// TODO: why is the nonce set here (thus making empty() false)
+			// TODO: why is the nonce set here (thus making empty() false)
 
-				// TODO: for testing purposes we should probably have tests that create/destroy the same account multiple times via this same edge-case with create2
-				if s.constructionBAL != nil {
-					s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, uint256.NewInt(0))
-				} else if balPost != nil {
-					balDiff, ok := balPost.Mutations[obj.address]
-					if !ok {
-						panic("account not found in bal post mutations")
-					}
-					if balDiff.Nonce != nil || balDiff.Code != nil || balDiff.StorageWrites != nil || balDiff.Balance == nil || !new(uint256.Int).SetBytes(balDiff.Balance[:]).IsZero() {
-						panic("crap")
-					}
+			// TODO: for testing purposes we should probably have tests that create/destroy the same account multiple times via this same edge-case with create2
+			if s.constructionBAL != nil {
+				s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, uint256.NewInt(0))
+			} else if balPost != nil {
+				balDiff, ok := balPost.Mutations[obj.address]
+				if !ok {
+					panic("account not found in bal post mutations")
 				}
-
-				// overrite any previous state (only storage reads possible here)
-				postState := bal.NewEmptyAccountState()
-				postState.Balance = &bal.Balance{}
-				post.Mutations[obj.address] = postState
+				if balDiff.Nonce != nil || balDiff.Code != nil || balDiff.StorageWrites != nil || balDiff.Balance == nil || !new(uint256.Int).SetBytes(balDiff.Balance[:]).IsZero() {
+					panic("crap")
+				}
 			}
+
+			// TODO: only enable recording of post-state optionally
+			// TODO: only record this post-cancun, when an account can only become empty as a result of sendall
+			// overrite any previous state (only storage reads possible here)
+			postState := bal.NewEmptyAccountState()
+			postState.Balance = &bal.Balance{}
+			post.Mutations[obj.address] = postState
+
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
 			// We need to maintain account deletions explicitly (will remain

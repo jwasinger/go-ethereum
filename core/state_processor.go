@@ -193,7 +193,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	prepareExecResult := func(postTxState *state.StateDB, expectedStateDiff *bal.StateDiff, receipts types.Receipts) *ProcessResult {
 		var tracingStateDB = vm.StateDB(postTxState)
 		if hooks := cfg.Tracer; hooks != nil {
-			tracingStateDB = state.NewHookedState(statedb, hooks)
+			tracingStateDB = state.NewHookedState(postTxState, hooks)
 		}
 		context := NewEVMBlockContext(header, p.chain, nil)
 		evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
@@ -237,18 +237,19 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 					Error: err,
 				}
 			}
-
-			if err := bal.ValidateTxStateDiff(expectedStateDiff, postTxState.GetStateDiff()); err != nil {
-				return &ProcessResult{
-					Error: fmt.Errorf("post-transaction-execution state transition produced a different diff that what was reported in the BAL"),
-				}
-			}
 		}
 		// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 		// TODO: apply withdrawals state diff from the Finalize call
 		p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 		// invoke Finalise so that withdrawals are accounted for in the state diff
-		statedb.Finalise(true, nil)
+		postTxState.Finalise(true, nil)
+		postTxState.ApplyDiff(statedb.GetStateDiff())
+
+		if err := bal.ValidateTxStateDiff(expectedStateDiff, postTxState.GetStateDiff()); err != nil {
+			return &ProcessResult{
+				Error: fmt.Errorf("post-transaction-execution state transition produced a different diff that what was reported in the BAL"),
+			}
+		}
 
 		// TODO: validate against the last entry in the BAL
 		return &ProcessResult{
