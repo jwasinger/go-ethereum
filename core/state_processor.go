@@ -243,7 +243,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 		// invoke Finalise so that withdrawals are accounted for in the state diff
 		postTxState.Finalise(true, nil)
-		postTxState.ApplyDiff(statedb.GetStateDiff())
 
 		if err := bal.ValidateTxStateDiff(expectedStateDiff, postTxState.GetStateDiff()); err != nil {
 			return &ProcessResult{
