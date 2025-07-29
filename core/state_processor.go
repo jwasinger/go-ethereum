@@ -31,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 	"slices"
-	"sync"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -163,8 +162,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 func (p *StateProcessor) calcStateDiffs(evm *vm.EVM, block *types.Block, txPrestate *state.StateDB) (totalDiff *bal.StateDiff, txDiffs []*bal.StateDiff, err error) {
 	prestateDiff := txPrestate.GetStateDiff()
 	// create a number of diffs (one for each worker goroutine)
-	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions())+2)
-	return txDiffIt.BuildStateDiffs(prestateDiff, uint16(len(block.Transactions()))+2)
+	txDiffIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions()))
+	return txDiffIt.BuildStateDiffs(prestateDiff, uint16(len(block.Transactions()))+1)
 }
 
 func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *state.StateDB, cfg vm.Config, al *bal.BlockAccessList) (*state.StateDB, *bal.StateDiff, chan *ProcessResult, error) {
@@ -174,7 +173,186 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		blockNumber = block.Number()
 		resCh       = make(chan *ProcessResult)
 		requests    [][]byte
+		signer      = types.MakeSigner(p.config, header.Number, header.Time)
+		ctx, cancel = context2.WithCancel(context2.Background())
 	)
+
+	type txExecResult struct {
+		idx        int
+		netGasUsed uint64 // accounts for the net gas used (refunds accounted for)
+		receipt    *types.Receipt
+		err        error
+	}
+
+	txResCh := make(chan txExecResult)
+
+	// called by resultHandler when all transactions have successfully executed.
+	// performs post-tx state transition (system contracts and withdrawals)
+	// and calculates the ProcessResult, returning it to be sent on resCh
+	// by resultHandler
+	prepareExecResult := func(postTxState *state.StateDB, expectedStateDiff *bal.StateDiff, receipts types.Receipts) *ProcessResult {
+		var tracingStateDB = vm.StateDB(postTxState)
+		if hooks := cfg.Tracer; hooks != nil {
+			tracingStateDB = state.NewHookedState(statedb, hooks)
+		}
+		context := NewEVMBlockContext(header, p.chain, nil)
+		evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
+
+		// 1. order the receipts by tx index
+		// 2. correctly calculate the cumulative gas used per receipt, returning bad block error if it goes over the allowed
+		slices.SortFunc(receipts, func(a, b *types.Receipt) int {
+			return cmp.Compare(a.TransactionIndex, b.TransactionIndex)
+		})
+
+		var cumGasUsed uint64
+		var allLogs []*types.Log
+		for _, receipt := range receipts {
+			receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
+			cumGasUsed += receipt.GasUsed
+			if receipt.CumulativeGasUsed > header.GasLimit {
+				return &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
+			}
+			allLogs = append(allLogs, receipt.Logs...)
+		}
+
+		// Read requests if Prague is enabled.
+		if p.config.IsPrague(block.Number(), block.Time()) {
+			requests = [][]byte{}
+			// EIP-6110
+			if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
+				return &ProcessResult{
+					Error: err,
+				}
+			}
+
+			// EIP-7002
+			if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+				return &ProcessResult{
+					Error: err,
+				}
+			}
+			// EIP-7251
+			if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+				return &ProcessResult{
+					Error: err,
+				}
+			}
+
+			if err := bal.ValidateTxStateDiff(expectedStateDiff, postTxState.GetStateDiff()); err != nil {
+				return &ProcessResult{
+					Error: fmt.Errorf("post-transaction-execution state transition produced a different diff that what was reported in the BAL"),
+				}
+			}
+		}
+		// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
+		// TODO: apply withdrawals state diff from the Finalize call
+		p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
+		// invoke Finalise so that withdrawals are accounted for in the state diff
+		statedb.Finalise(true, nil)
+
+		// TODO: validate against the last entry in the BAL
+		return &ProcessResult{
+			Receipts: receipts,
+			Requests: requests,
+			Logs:     allLogs,
+			GasUsed:  cumGasUsed,
+		}
+	}
+	resultHandler := func(expectedDiff *bal.StateDiff, postTxState *state.StateDB) {
+		defer cancel()
+		// 1. if the block has transactions, receive the execution results from all of them and return an error on resCh if any txs err'd
+		// 2. once all txs are executed, compute the post-tx state transition and produce the ProcessResult sending it on resCh (or an error if the post-tx state didn't match what is reported in the BAL)
+		var receipts []*types.Receipt
+		gp := new(GasPool)
+		gp.SetGas(block.GasLimit())
+		var execErr error
+		var numTxComplete int
+
+		if len(block.Transactions()) > 0 {
+		loop:
+			for {
+				select {
+				case res := <-txResCh:
+					if execErr == nil {
+						if res.err != nil {
+							execErr = res.err
+						} else {
+							if err := gp.SubGas(res.receipt.GasUsed); err != nil {
+								execErr = err
+								cancel()
+							} else {
+								receipts = append(receipts, res.receipt)
+							}
+						}
+					}
+					numTxComplete++
+					if numTxComplete == len(block.Transactions()) {
+						break loop
+					}
+				}
+			}
+
+			if execErr != nil {
+				resCh <- &ProcessResult{Error: execErr}
+				return
+			}
+		}
+
+		resCh <- prepareExecResult(postTxState, expectedDiff, receipts)
+	}
+
+	// executes single transaction, validating the computed diff against the BAL
+	// and forwarding the txExecResult to be consumed by resultHandler
+	execTx := func(ctx context2.Context, tx *types.Transaction, idx int, db *state.StateDB, expectedDiff *bal.StateDiff) {
+		// if an error with another transaction rendered the block invalid, don't proceed with executing this one
+		// TODO: also interrupt any currently-executing transactions if one failed.
+		select {
+		case <-ctx.Done():
+			txResCh <- txExecResult{err: ctx.Err()}
+			return
+		default:
+		}
+		var tracingStateDB = vm.StateDB(db)
+		if hooks := cfg.Tracer; hooks != nil {
+			tracingStateDB = state.NewHookedState(db, hooks)
+		}
+		context := NewEVMBlockContext(header, p.chain, nil)
+		evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
+
+		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
+		if err != nil {
+			err = fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
+			txResCh <- txExecResult{err: err}
+			return
+		}
+		sender, _ := types.Sender(signer, tx)
+		db.SetTxSender(sender)
+		db.SetTxContext(tx.Hash(), idx)
+
+		evm.StateDB = db // TODO: unsure if need to set this here since the evm should maintain a reference to the db but I recall that adding this fixed some broken tests
+		gp := new(GasPool)
+		gp.SetGas(block.GasLimit())
+		var gasUsed uint64
+		computedDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, db, blockNumber, blockHash, context.Time, tx, &gasUsed, evm, nil)
+		if err != nil {
+			err := fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
+			txResCh <- txExecResult{err: err}
+			return
+		}
+
+		if err := bal.ValidateTxStateDiff(expectedDiff, computedDiff); err != nil {
+			//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", balStateDiffs[idx].String(), txStateDiff.String())
+			txResCh <- txExecResult{err: err}
+			return
+		}
+
+		txResCh <- txExecResult{
+			idx:        idx,
+			receipt:    receipt,
+			netGasUsed: gp.Gas(),
+		}
+		return
+	}
 
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
@@ -182,7 +360,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	}
 	var (
 		context vm.BlockContext
-		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
 
 	// Apply pre-execution system calls.
@@ -202,6 +379,12 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	// executing a tx yet, and don't record state based on that?
 	prestate := statedb.Copy()
 
+	blockStateDiff, stateDiffs, err := p.calcStateDiffs(evm, block, statedb)
+	if err != nil {
+		panic("bad block")
+	}
+	preTxDiff := stateDiffs[0]
+
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
@@ -209,223 +392,23 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
-	alIt := bal.NewIterator(block.Body().AccessList, len(block.Transactions())+2)
-	preTxDiff := alIt.Next()
 	computedDiff := statedb.GetStateDiff()
 	if err := bal.ValidateTxStateDiff(preTxDiff, computedDiff); err != nil {
-		//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", preTxDiff.String(), computedDiff.String())
 		return nil, nil, nil, err
 	}
-
-	postTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
-
-	type txExecResult struct {
-		idx        int
-		netGasUsed uint64 // accounts for the net gas used (refunds accounted for)
-		receipt    *types.Receipt
-	}
-	errc := make(chan error)
-	execResults := make(chan txExecResult)
-	var wg sync.WaitGroup
-	wg.Add(len(block.Transactions()))
-
-	var (
-		stateDiffs []*bal.StateDiff
-		err        error
-		ctx        context2.Context
-		cancel     func()
-	)
-	postTxDiff, stateDiffs, err = p.calcStateDiffs(evm, block, statedb)
-	if err != nil {
-		panic("bad block")
-	}
-	if len(block.Transactions()) > 0 {
-		ctx, cancel = context2.WithCancel(context2.Background())
-
-		// separate go-routine which collects results from tx execution, and forwards a ProcessResult when all txs are finished executing
-		go func(statedb *state.StateDB) {
-			var receipts []*types.Receipt
-			gp := new(GasPool)
-			gp.SetGas(block.GasLimit())
-			var execErr error
-			var numTxComplete int
-
-			var tracingStateDB = vm.StateDB(statedb)
-			if hooks := cfg.Tracer; hooks != nil {
-				tracingStateDB = state.NewHookedState(statedb, hooks)
-			}
-			context = NewEVMBlockContext(header, p.chain, nil)
-			evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
-
-		loop:
-			for {
-				select {
-				case err := <-errc:
-					if execErr == nil {
-						execErr = err
-						// TODO: isn't this case caught in any spec test coverage
-						cancel()
-					}
-					numTxComplete++
-					if numTxComplete == len(block.Transactions()) {
-						break loop
-					}
-
-				case res := <-execResults:
-					if execErr == nil {
-						// TODO: track the accumulated gas used (discounting with refunds), trigger error-exit if we exceed it here.
-						if err := gp.SubGas(res.receipt.GasUsed); err != nil {
-							execErr = err
-							cancel()
-						} else {
-							receipts = append(receipts, res.receipt)
-						}
-					}
-					numTxComplete++
-					if numTxComplete == len(block.Transactions()) {
-						break loop
-					}
-				}
-			}
-
-			if execErr != nil {
-				resCh <- &ProcessResult{Error: execErr}
-				return
-			}
-			cancel()
-
-			// 1. order the receipts by tx index
-			// 2. correctly calculate the cumulative gas used per receipt, returning bad block error if it goes over the allowed
-			slices.SortFunc(receipts, func(a, b *types.Receipt) int {
-				return cmp.Compare(a.TransactionIndex, b.TransactionIndex)
-			})
-
-			var cumGasUsed uint64
-			var allLogs []*types.Log
-			for _, receipt := range receipts {
-				receipt.CumulativeGasUsed = cumGasUsed + receipt.GasUsed
-				cumGasUsed += receipt.GasUsed
-				if receipt.CumulativeGasUsed > header.GasLimit {
-					resCh <- &ProcessResult{Error: fmt.Errorf("gas limit exceeded")}
-					return
-				}
-				allLogs = append(allLogs, receipt.Logs...)
-			}
-
-			// Read requests if Prague is enabled.
-			if p.config.IsPrague(block.Number(), block.Time()) {
-				requests = [][]byte{}
-				// EIP-6110
-				if err := ParseDepositLogs(&requests, allLogs, p.config); err != nil {
-					resCh <- &ProcessResult{
-						Error: err,
-					}
-					return
-				}
-				// EIP-7002
-				if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
-					resCh <- &ProcessResult{
-						Error: err,
-					}
-					return
-				}
-				// EIP-7251
-				if err := ProcessConsolidationQueue(&requests, evm); err != nil {
-					resCh <- &ProcessResult{
-						Error: err,
-					}
-					return
-				}
-				// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
-				// TODO: apply withdrawals state diff from the Finalize call
-				p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
-				// invoke Finalise so that withdrawals are accounted for in the state diff
-				statedb.Finalise(true, nil)
-
-				// TODO: validate against the last entry in the BAL
-			}
-
-			resCh <- &ProcessResult{
-				Receipts: receipts,
-				Requests: requests,
-				Logs:     allLogs,
-				GasUsed:  cumGasUsed,
-			}
-		}(statedb.Copy())
-	} else {
-		go func() {
-			resCh <- &ProcessResult{}
-			return
-		}()
-		return prestate, postTxDiff, resCh, nil
-	}
-
-	txExecBALIt := bal.NewIterator(al, len(block.Transactions())+2)
-	var balStateDiffs []*bal.StateDiff
-	for i := 0; i < len(block.Transactions())+2; i++ {
-		balStateDiffs = append(balStateDiffs, txExecBALIt.Next())
-	}
-	statedb.ApplyDiff(stateDiffs[0])
-	stateDiffs = stateDiffs[1:]
-	balStateDiffs = balStateDiffs[1:]
 	statedb.Finalise(true, nil)
+
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		sdbCopy := statedb.Copy()
-		// TODO: use an errgroup to limit the number of parallel txs
-		go func(idx int, sdb *state.StateDB, tx *types.Transaction) {
-			// if an error with another transaction rendered the block invalid, don't proceed with executing this one
-			// TODO: also interrupt any currently-executing transactions if one failed.
-			select {
-			case <-ctx.Done():
-				errc <- ctx.Err()
-				return
-			default:
-			}
-			var tracingStateDB = vm.StateDB(sdb)
-			if hooks := cfg.Tracer; hooks != nil {
-				tracingStateDB = state.NewHookedState(sdb, hooks)
-			}
-			context = NewEVMBlockContext(header, p.chain, nil)
-			evm := vm.NewEVM(context, tracingStateDB, p.config, cfg)
+		go execTx(ctx, tx, i, statedb.Copy(), stateDiffs[i+1])
 
-			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
-			if err != nil {
-				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
-				return
-			}
-			sender, _ := types.Sender(signer, tx)
-			sdb.SetTxSender(sender)
-			sdb.SetTxContext(tx.Hash(), idx)
-
-			evm.StateDB = sdb
-			gp := new(GasPool)
-			gp.SetGas(block.GasLimit())
-			var gasUsed uint64
-			txStateDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, sdb, blockNumber, blockHash, context.Time, tx, &gasUsed, evm, nil)
-			if err != nil {
-				errc <- fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
-				return
-			}
-
-			if err := bal.ValidateTxStateDiff(balStateDiffs[idx], txStateDiff); err != nil {
-				//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", balStateDiffs[idx].String(), txStateDiff.String())
-				errc <- err
-				return
-			}
-
-			execResults <- txExecResult{
-				idx:        idx,
-				receipt:    receipt,
-				netGasUsed: gp.Gas(),
-			}
-		}(i, sdbCopy, tx)
-
-		statedb.ApplyDiff(stateDiffs[i])
+		statedb.ApplyDiff(stateDiffs[i+1])
 		statedb.Finalise(true, nil)
 	}
 
-	return prestate, postTxDiff, resCh, nil
+	go resultHandler(blockStateDiff, statedb.Copy())
+
+	return prestate, blockStateDiff, resCh, nil
 }
 
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database
@@ -599,6 +582,14 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(addr)
+	/*
+		if addr == params.ConsolidationQueueAddress {
+			evm.Config.Tracer = logger.NewJSONLogger(&logger.Config{}, os.Stdout)
+			defer func() {
+				evm.Config.Tracer = nil
+			}()
+		}
+	*/
 	ret, _, err := evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
 	evm.StateDB.Finalise(true, nil)
 	if err != nil {

@@ -473,7 +473,6 @@ func ValidateTxStateDiff(balDiff, totalDiff *StateDiff) error {
 	// assert that the BAL contains exactly the computed addresses minus the allowed excludeable
 	// only check length because we already checked inclusion above
 	if len(balDiff.Mutations) != expectedBALAddrs {
-		fmt.Printf("bal is\n%s\nexpected is\n%s\n", balDiff.String(), totalDiff.String())
 		return fmt.Errorf("BAL contained unexpected mutations compared to computed")
 	}
 
@@ -549,7 +548,7 @@ func NewAccountIterator(accesses *AccountAccess, txCount int) *AccountIterator {
 		nonceChangeIdx:   0,
 		codeChangeIdx:    0,
 		curTxIdx:         0,
-		maxIdx:           txCount - 1,
+		maxIdx:           txCount + 2,
 		aa:               accesses,
 	}
 }
@@ -607,6 +606,7 @@ type BALIterator struct {
 	bal           *BlockAccessList
 	acctIterators map[common.Address]*AccountIterator
 	curIdx        uint16
+	maxIdx        uint16
 }
 
 func NewIterator(b *BlockAccessList, txCount int) *BALIterator {
@@ -618,11 +618,15 @@ func NewIterator(b *BlockAccessList, txCount int) *BALIterator {
 		b,
 		accounts,
 		0,
+		uint16(txCount) + 2,
 	}
 }
 
 // Iterate one transaction into the BAL, returning the state diff from that tx
 func (it *BALIterator) Next() (mutations *StateDiff) {
+	if it.curIdx == it.maxIdx {
+		return nil
+	}
 	diff := StateDiff{Mutations: make(map[common.Address]*AccountState)}
 	for addr, acctIt := range it.acctIterators {
 		acctMut, isMut := acctIt.Increment()
@@ -630,6 +634,7 @@ func (it *BALIterator) Next() (mutations *StateDiff) {
 			diff.Mutations[addr] = acctMut
 		}
 	}
+	it.curIdx++
 	return &diff
 }
 
