@@ -820,6 +820,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			if s.constructionBAL != nil {
 				s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, uint256.NewInt(0))
 			} else if balPost != nil {
+				// TODO: ensure this path is tested elsewhere (this is an unused code path intentionally)
 				balDiff, ok := balPost.Mutations[obj.address]
 				if !ok {
 					panic("account not found in bal post mutations")
@@ -845,93 +846,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 				s.stateObjectsDestruct[obj.address] = obj
 			}
 		} else {
-			if s.constructionBAL != nil {
-				// add written storage keys/values
-				// TODO: clarify the sematic difference between pending and dirty storage
-
-				// for addresses that changed balance, add the post-change value
-				if obj.Balance().Cmp(obj.txPreBalance) != 0 {
-					s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, obj.Balance())
-				}
-
-				if obj.Nonce() != obj.txPreNonce {
-					s.constructionBAL.NonceChange(obj.address, uint16(s.balIndex), obj.Nonce())
-				}
-
-				// TODO: newContract will be set regardless of whether the creation initcode succeeded
-				// ensure that if an initcode was run, the object was deleted before here.
-
-				// include code of created contracts
-				// Delegations are not included because they can be statically inferred from the tx and its prestate.
-				if obj.dirtyCode {
-					// TODO: this flag is only reset upon commit.  However, we want to know if the tx changed since the beginning of the transaction
-					s.constructionBAL.CodeChange(obj.address, uint16(s.balIndex), obj.code)
-				}
-			} else if balPost != nil {
-				panic("assumed dead code path")
-				/*
-					// TODO: compute a bal.StateDiff from the finalized objects and do the comparison outside this func
-					// I will also call finalise after performing pre-tx-execution operations (withdrawals + beacon root)
-					// and in addition call it after post-tx system contracts have executed.
-					accountDiff, ok := balPost.Mutations[obj.address]
-					if !ok {
-						panic("TODO return error here, bad block")
-					}
-					if obj.newContract && (accountDiff.Code == nil || bytes.Compare(accountDiff.Code, obj.code) != 0) {
-						panic("TODO return error here, bad block")
-					}
-					if common.BytesToHash(obj.CodeHash()) != types.EmptyCodeHash && obj.Nonce() != obj.txPreNonce {
-						if obj.isDelegated() || accountDiff.Nonce == nil || *accountDiff.Nonce != obj.Nonce() {
-							panic("TODO return error here, bad block")
-						}
-					}
-					if !obj.Balance().Eq(obj.txPreBalance) && (accountDiff.Balance == nil || !obj.Balance().Eq(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))) {
-						panic("TODO return error here, bad block")
-					}
-				*/
-			}
-
-			var accountPost bal.AccountState
-			if obj.dirtyCode {
-				accountPost.Code = bytes.Clone(obj.code)
-			}
-			if obj.Nonce() != obj.txPreNonce {
-				accountPost.Nonce = new(uint64)
-				*accountPost.Nonce = obj.Nonce()
-			}
-			if !obj.Balance().Eq(obj.txPreBalance) {
-				var postBalance bal.Balance
-				postBalanceBytes := obj.Balance().Bytes()
-				copy(postBalance[16-len(postBalanceBytes):], postBalanceBytes[:])
-				accountPost.Balance = &postBalance
-			}
-
-			obj.finalise()
-
-			// compute bal storage mutations after finalisation
-			if s.constructionBAL != nil {
-				for key, val := range obj.pendingStorage {
-					//TODO: this is wrong and will include the storage kv multiple times even if it is only modified once in the block.  move this logic into the state object's finalise method
-					s.constructionBAL.StorageWrite(uint16(s.balIndex), obj.address, key, val)
-				}
-			} else if balPost != nil {
-				panic("assumed dead code path")
-				/*
-					accountDiff, _ := balPost.Mutations[obj.address]
-					if len(obj.pendingStorage) > 0 {
-						if len(accountDiff.StorageWrites) != len(obj.pendingStorage) {
-							panic("TODO return error here, bad block")
-						}
-						if !maps.Equal(accountDiff.StorageWrites, obj.pendingStorage) {
-							panic("TODO return error here, bad block")
-						}
-					}
-				*/
-			}
-
-			if len(obj.pendingStorage) > 0 {
-				accountPost.StorageWrites = maps.Clone(obj.pendingStorage)
-			}
+			accountPost := obj.finalise()
 
 			// if the account executed SENDALL but did not send a balance, don't include it in the diff
 			if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {

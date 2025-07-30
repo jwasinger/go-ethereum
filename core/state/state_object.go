@@ -19,6 +19,7 @@ package state
 import (
 	"bytes"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"maps"
 	"slices"
 	"time"
@@ -76,6 +77,8 @@ type stateObject struct {
 
 	// Cache flags.
 	dirtyCode bool // true if the code was updated
+
+	nonFinalizedCode bool // true if the code was updated since the last call to finalise
 
 	// Flag whether the account was marked as self-destructed. The self-destructed
 	// account is still accessible in the scope of same transaction.
@@ -255,21 +258,74 @@ func (s *stateObject) PrettyPrint() {
 
 // finalise moves all dirty storage slots into the pending area to be hashed or
 // committed later. It is invoked at the end of every transaction.
-func (s *stateObject) finalise() {
+func (s *stateObject) finalise() bal.AccountState {
+	var accountPost bal.AccountState // TODO: optionally enable tx post-state accumulation
+	if s.Balance().Cmp(s.txPreBalance) != 0 {
+		if s.db.constructionBAL != nil {
+			s.db.constructionBAL.BalanceChange(uint16(s.db.balIndex), s.address, s.Balance())
+		}
+		var postBalance bal.Balance
+		postBalanceBytes := s.Balance().Bytes()
+		copy(postBalance[16-len(postBalanceBytes):], postBalanceBytes[:])
+		accountPost.Balance = &postBalance
+	}
+
+	if s.Nonce() != s.txPreNonce {
+		if s.db.constructionBAL != nil {
+			s.db.constructionBAL.NonceChange(s.address, uint16(s.db.balIndex), s.Nonce())
+		}
+		accountPost.Nonce = new(uint64)
+		*accountPost.Nonce = s.Nonce()
+	}
+
+	// TODO: newContract will be set regardless of whether the creation initcode succeeded
+	// ensure that if an initcode was run, the object was deleted before here.
+
+	// include code of created contracts
+	// Delegations are not included because they can be statically inferred from the tx and its prestate.
+	if s.nonFinalizedCode {
+		// TODO: this flag is only reset upon commit.  However, we want to know if the tx changed since the beginning of the transaction
+		if s.db.constructionBAL != nil {
+			s.db.constructionBAL.CodeChange(s.address, uint16(s.db.balIndex), s.code)
+		}
+		accountPost.Code = s.code
+	}
 	slotsToPrefetch := make([]common.Hash, 0, len(s.dirtyStorage))
 	for key, value := range s.dirtyStorage {
 		if origin, exist := s.uncommittedStorage[key]; exist && origin == value {
 			// The slot is reverted to its original value, delete the entry
 			// to avoid thrashing the data structures.
 			delete(s.uncommittedStorage, key)
+
+			if s.db.constructionBAL != nil {
+				s.db.BlockAccessList().StorageWrite(uint16(s.db.balIndex), s.address, key, value)
+			}
+			if accountPost.StorageWrites == nil {
+				accountPost.StorageWrites = make(map[common.Hash]common.Hash)
+			}
+			accountPost.StorageWrites[key] = value
 		} else if exist {
 			// The slot is modified to another value and the slot has been
 			// tracked for commit, do nothing here.
+			if s.db.constructionBAL != nil {
+				s.db.BlockAccessList().StorageWrite(uint16(s.db.balIndex), s.address, key, value)
+			}
+			if accountPost.StorageWrites == nil {
+				accountPost.StorageWrites = make(map[common.Hash]common.Hash)
+			}
+			accountPost.StorageWrites[key] = value
 		} else {
 			// The slot is different from its original value and hasn't been
 			// tracked for commit yet.
 			s.uncommittedStorage[key] = s.GetCommittedState(key)
 			slotsToPrefetch = append(slotsToPrefetch, key) // Copy needed for closure
+			if s.db.constructionBAL != nil {
+				s.db.BlockAccessList().StorageWrite(uint16(s.db.balIndex), s.address, key, value)
+			}
+			if accountPost.StorageWrites == nil {
+				accountPost.StorageWrites = make(map[common.Hash]common.Hash)
+			}
+			accountPost.StorageWrites[key] = value
 		}
 		// Aggregate the dirty storage slots into the pending area. It might
 		// be possible that the value of tracked slot here is same with the
@@ -292,8 +348,11 @@ func (s *stateObject) finalise() {
 	// by EIP-6780. For non-newly-created objects, it's a no-op.
 	s.newContract = false
 
+	s.nonFinalizedCode = false
+
 	s.txPreBalance = s.data.Balance.Clone()
 	s.txPreNonce = s.data.Nonce
+	return accountPost
 }
 
 // updateTrie is responsible for persisting cached storage changes into the
@@ -583,6 +642,7 @@ func (s *stateObject) setCode(codeHash common.Hash, code []byte) {
 	s.code = code
 	s.data.CodeHash = codeHash[:]
 	s.dirtyCode = true
+	s.nonFinalizedCode = true
 }
 
 func (s *stateObject) SetNonce(nonce uint64) {
