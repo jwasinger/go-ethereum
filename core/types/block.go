@@ -18,7 +18,6 @@
 package types
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -236,8 +235,8 @@ type extblock struct {
 	Header      *Header
 	Txs         []*Transaction
 	Uncles      []*Header
-	Withdrawals []*Withdrawal `rlp:"optional"`
-	BAL         []byte        `rlp:"optional"`
+	Withdrawals []*Withdrawal        `rlp:"optional"`
+	BAL         *bal.BlockAccessList `rlp:"optional"`
 }
 
 // NewBlock creates a new block. The input data is copied, changes to header and to the
@@ -349,20 +348,14 @@ func CopyHeader(h *Header) *Header {
 // DecodeRLP decodes a block from RLP.
 func (b *Block) DecodeRLP(s *rlp.Stream) error {
 	var (
-		eb  extblock
-		err error
+		eb extblock
 	)
 	_, size, _ := s.Kind()
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
-	if eb.BAL != nil {
-		err = b.accessList.DecodeRLP(rlp.NewStream(bytes.NewBuffer(eb.BAL), 10_000_000))
-		if err != nil {
-			return err
-		}
-	}
+	b.header, b.uncles, b.transactions, b.withdrawals, b.accessList = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals, eb.BAL
+
 	// TODO: ensure that BAL is accounted for in size
 	b.size.Store(rlp.ListSize(size))
 	return nil
@@ -370,21 +363,12 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 
 // EncodeRLP serializes a block as RLP.
 func (b *Block) EncodeRLP(w io.Writer) error {
-	var alEnc []byte
-	var err error
-
-	if b.accessList != nil {
-		err = b.accessList.EncodeRLP(bytes.NewBuffer(alEnc))
-		if err != nil {
-			return err
-		}
-	}
 	return rlp.Encode(w, &extblock{
 		Header:      b.header,
 		Txs:         b.transactions,
 		Uncles:      b.uncles,
 		Withdrawals: b.withdrawals,
-		BAL:         alEnc,
+		BAL:         b.accessList,
 	})
 }
 
