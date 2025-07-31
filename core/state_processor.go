@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 	"slices"
+	"sync"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -258,7 +259,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			GasUsed:  cumGasUsed,
 		}
 	}
-	resultHandler := func(expectedDiff *bal.StateDiff, postTxState *state.StateDB) {
+	resultHandler := func(wg *sync.WaitGroup, expectedDiff *bal.StateDiff, postTxState *state.StateDB) {
 		defer cancel()
 		// 1. if the block has transactions, receive the execution results from all of them and return an error on resCh if any txs err'd
 		// 2. once all txs are executed, compute the post-tx state transition and produce the ProcessResult sending it on resCh (or an error if the post-tx state didn't match what is reported in the BAL)
@@ -298,12 +299,14 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			}
 		}
 
+		wg.Wait()
 		resCh <- prepareExecResult(postTxState, expectedDiff, receipts)
 	}
 
 	// executes single transaction, validating the computed diff against the BAL
 	// and forwarding the txExecResult to be consumed by resultHandler
-	execTx := func(ctx context2.Context, tx *types.Transaction, idx int, db *state.StateDB, expectedDiff *bal.StateDiff) {
+	execTx := func(start, end *sync.WaitGroup, ctx context2.Context, tx *types.Transaction, idx int, db *state.StateDB, expectedDiff *bal.StateDiff) {
+		start.Wait()
 		// if an error with another transaction rendered the block invalid, don't proceed with executing this one
 		// TODO: also interrupt any currently-executing transactions if one failed.
 		select {
@@ -341,7 +344,6 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 		}
 
 		if err := bal.ValidateTxStateDiff(expectedDiff, computedDiff); err != nil {
-			//fmt.Printf("errrrr.  bal diff:\n%s\nexpected:\n%s\n", balStateDiffs[idx].String(), txStateDiff.String())
 			txResCh <- txExecResult{err: err}
 			return
 		}
@@ -351,6 +353,7 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 			receipt:    receipt,
 			netGasUsed: gp.Gas(),
 		}
+		end.Done()
 		return
 	}
 
@@ -398,15 +401,29 @@ func (p *StateProcessor) ProcessWithAccessList(block *types.Block, statedb *stat
 	}
 	statedb.Finalise(true, nil)
 
+	var ends []*sync.WaitGroup
+	for i := 0; i < len(block.Transactions())+1; i++ {
+		end := sync.WaitGroup{}
+		end.Add(1)
+		ends = append(ends, &end)
+	}
 	// Iterate over and process the individual transactions
+	if len(block.Transactions()) == 0 {
+		end := &sync.WaitGroup{}
+		end.Add(1)
+		ends = append(ends, end)
+		ends[1].Done()
+	}
+
+	ends[0].Done()
 	for i, tx := range block.Transactions() {
-		go execTx(ctx, tx, i, statedb.Copy(), stateDiffs[i+1])
+		go execTx(ends[i], ends[i+1], ctx, tx, i, statedb.Copy(), stateDiffs[i+1])
 
 		statedb.ApplyDiff(stateDiffs[i+1])
 		statedb.Finalise(true, nil)
 	}
 
-	go resultHandler(blockStateDiff, statedb.Copy())
+	go resultHandler(ends[len(block.Transactions())], blockStateDiff, statedb.Copy())
 
 	return prestate, blockStateDiff, resCh, nil
 }
