@@ -2077,6 +2077,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 			bc.reportBlock(block, nil, err)
 			return nil, err
 		}
+		statedb = prestate // TODO: temporary hack.  remove the need to assign this directly
 		vtime = time.Since(vstart)
 
 	} else {

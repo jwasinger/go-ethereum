@@ -817,7 +817,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 			// TODO: why is the nonce set here (thus making empty() false)
 
 			// TODO: for testing purposes we should probably have tests that create/destroy the same account multiple times via this same edge-case with create2
-			if obj.selfDestructed && s.constructionBAL != nil {
+			if obj.address != params.SystemAddress && s.constructionBAL != nil {
 				s.constructionBAL.BalanceChange(uint16(s.balIndex), obj.address, uint256.NewInt(0))
 			} else if balPost != nil {
 				// TODO: ensure this path is tested elsewhere (this is an unused code path intentionally)
@@ -832,7 +832,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool, balPost *bal.StateDiff) (pos
 
 			// the system address will be deleted, so need to ensure it's not included in the bal
 			// by explicitly checking the selfDestructed flag
-			if obj.selfDestructed {
+			if obj.address != params.SystemAddress {
 				postState := bal.NewEmptyAccountState()
 				postState.Balance = &bal.Balance{}
 				post.Mutations[obj.address] = postState
