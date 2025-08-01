@@ -69,6 +69,9 @@ var (
 	chainInfoGauge   = metrics.NewRegisteredGaugeInfo("chain/info", nil)
 	chainMgaspsMeter = metrics.NewRegisteredResettingTimer("chain/mgasps", nil)
 
+	// BAL-specific timers
+	preprocessTimer = metrics.NewRegisteredMeter("chain/blockPreprocessing", nil)
+
 	accountReadTimer   = metrics.NewRegisteredResettingTimer("chain/account/reads", nil)
 	accountHashTimer   = metrics.NewRegisteredResettingTimer("chain/account/hashes", nil)
 	accountUpdateTimer = metrics.NewRegisteredResettingTimer("chain/account/updates", nil)
@@ -2050,6 +2053,10 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 
 	var res *ProcessResult
 	var ptime, vtime time.Duration
+	var preProcessTime time.Duration
+	var postProcessTime time.Time
+	var rootCalcTime time.Duration
+
 	if block.Body().AccessList != nil {
 		if block.NumberU64() == 0 {
 			//return nil, fmt.Errorf("genesis block cannot have a block access list")
@@ -2067,7 +2074,7 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		var diff *bal.StateDiff
 		var prestate *state.StateDB
 		var resCh chan *ProcessResult
-		prestate, diff, resCh, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
+		preProcessTime, prestate, diff, resCh, err = bc.processor.ProcessWithAccessList(block, statedb, bc.cfg.VmConfig, block.Body().AccessList)
 		if err != nil {
 			// TODO: okay to pass nil here as execution result?
 			bc.reportBlock(block, nil, err)
@@ -2075,9 +2082,10 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		}
 		ptime = time.Since(pstart)
 
+		// TODO: surface total tx execution time from ValidateStateWithDiff
 		vstart := time.Now()
 		var err error
-		res, err = bc.validator.ValidateStateWithDiff(block, prestate, resCh, diff, false)
+		postProcessTime, rootCalcTime, res, err = bc.validator.ValidateStateWithDiff(block, prestate, resCh, diff, false)
 		if err != nil {
 			// TODO: okay to pass nil here as execution result?
 			bc.reportBlock(block, nil, err)
@@ -2146,6 +2154,18 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	xvtime := time.Since(xvstart)
 	proctime := time.Since(startTime) // processing + validation + cross validation
 
+	// if BAL
+	// block preprocessing time = time from start to the end of computing all BAL state diffs
+	// block execution time = time from end of block preprocessing to when the tx execution result was received in ValidateStateWithDiff
+	// ignore: accountReadTimer, storageReadTimer
+	// block validation time = time it took to compute the state root
+	// total block execution time = max(block validation time, block execution time) + block preprocessing time + block commit time
+
+	if block.Body().AccessList != nil {
+
+	} else {
+
+	}
 	// Update the metrics touched during block processing and validation
 	accountReadTimer.Update(statedb.AccountReads) // Account reads are complete(in processing)
 	storageReadTimer.Update(statedb.StorageReads) // Storage reads are complete(in processing)

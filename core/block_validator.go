@@ -19,12 +19,15 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"sync"
+	"time"
 )
 
 // BlockValidator is responsible for validating block headers, uncles and
@@ -121,23 +124,38 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	return nil
 }
 
-func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, resCh chan *ProcessResult, diff *bal.StateDiff, stateless bool) (*ProcessResult, error) {
+func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *state.StateDB, resCh chan *ProcessResult, diff *bal.StateDiff, stateless bool) (time.Time, time.Duration, *ProcessResult, error) {
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
 	header := block.Header()
-	prestate.ApplyDiff(diff)
-	root := prestate.IntermediateRoot(v.config.IsEIP158(header.Number))
+	var wg sync.WaitGroup
+	var root common.Hash
+	var rootCalcTime time.Duration
+
+	wg.Add(2)
+
+	go func() {
+		prestate.ApplyDiff(diff)
+		rootCalcStart := time.Now()
+		root = prestate.IntermediateRoot(v.config.IsEIP158(header.Number))
+		rootCalcTime = time.Since(rootCalcStart)
+		wg.Done()
+	}()
 
 	res := <-resCh
+	wg.Done()
+	wg.Wait()
+
+	procTime := time.Now()
 	if res.Error != nil {
-		return nil, res.Error
+		return time.Time{}, 0, nil, res.Error
 	}
 	if header.Root != root {
-		return res, fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, prestate.Error())
+		return time.Time{}, 0, res, fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, prestate.Error())
 	}
 
 	if block.GasUsed() != res.GasUsed {
-		return res, fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), res.GasUsed)
+		return time.Time{}, 0, res, fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), res.GasUsed)
 	}
 	// Validate the received block's bloom with the one derived from the generated receipts.
 	// For valid blocks this should always validate to true.
@@ -147,29 +165,29 @@ func (v *BlockValidator) ValidateStateWithDiff(block *types.Block, prestate *sta
 	// everything.
 	rbloom := types.MergeBloom(res.Receipts)
 	if rbloom != header.Bloom {
-		return res, fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
+		return time.Time{}, 0, res, fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
 	}
 	// In stateless mode, return early because the receipt and state root are not
 	// provided through the witness, rather the cross validator needs to return it.
 	if stateless {
-		return res, nil
+		return time.Time{}, 0, res, nil
 	}
 	// The receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
 	receiptSha := types.DeriveSha(res.Receipts, trie.NewStackTrie(nil))
 	if receiptSha != header.ReceiptHash {
-		return res, fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+		return time.Time{}, 0, res, fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
 	}
 	// Validate the parsed requests match the expected header value.
 	if header.RequestsHash != nil {
 		reqhash := types.CalcRequestsHash(res.Requests)
 		if reqhash != *header.RequestsHash {
-			return res, fmt.Errorf("invalid requests hash (remote: %x local: %x)", *header.RequestsHash, reqhash)
+			return time.Time{}, 0, res, fmt.Errorf("invalid requests hash (remote: %x local: %x)", *header.RequestsHash, reqhash)
 		}
 	} else if res.Requests != nil {
-		return res, errors.New("block has requests before prague fork")
+		return time.Time{}, 0, res, errors.New("block has requests before prague fork")
 	}
 
-	return res, nil
+	return procTime, rootCalcTime, res, nil
 }
 
 // ValidateState validates the various changes that happen after a state transition,
