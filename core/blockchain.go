@@ -2012,19 +2012,21 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 	// while processing transactions. Before Byzantium the prefetcher is mostly
 	// useless due to the intermediate root hashing after each transaction.
 	var witness *stateless.Witness
-	if bc.chainConfig.IsByzantium(block.Number()) {
-		// Generate witnesses either if we're self-testing, or if it's the
-		// only block being inserted. A bit crude, but witnesses are huge,
-		// so we refuse to make an entire chain of them.
-		if bc.cfg.VmConfig.StatelessSelfValidation || makeWitness {
-			witness, err = stateless.NewWitness(block.Header(), bc)
-			if err != nil {
-				return nil, err
+	/*
+		if bc.chainConfig.IsByzantium(block.Number()) {
+			// Generate witnesses either if we're self-testing, or if it's the
+			// only block being inserted. A bit crude, but witnesses are huge,
+			// so we refuse to make an entire chain of them.
+			if bc.cfg.VmConfig.StatelessSelfValidation || makeWitness {
+				witness, err = stateless.NewWitness(block.Header(), bc)
+				if err != nil {
+					return nil, err
+				}
 			}
+			statedb.StartPrefetcher("chain", witness)
+			defer statedb.StopPrefetcher()
 		}
-		statedb.StartPrefetcher("chain", witness)
-		defer statedb.StopPrefetcher()
-	}
+	*/
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
