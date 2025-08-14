@@ -434,9 +434,6 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 // GetState retrieves the value associated with the specific key.
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
-	if s.constructionBAL != nil {
-		s.constructionBAL.StorageRead(addr, hash)
-	}
 	if stateObject != nil {
 		return stateObject.GetState(hash)
 	}
@@ -1113,9 +1110,12 @@ func (s *StateDB) ApplyPrestate(prestateDiff *bal.StateDiff) {
 // ApplyStateDiff applies a state diff to the StateDB.  All state changes will be marked as mutations
 // for the purpose of applying them in the next call to Commit.
 func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
+	s.StartPrefetcher("chainimport", nil)
+	defer s.StopPrefetcher()
+
 	for addr, accountDiff := range diff.Mutations {
-		stateObject, ok := s.stateObjects[addr]
-		if !ok {
+		stateObject, preexisting := s.stateObjects[addr]
+		if !preexisting {
 			stateObject = newObject(s, addr, &types.StateAccount{
 				0,
 				uint256.NewInt(0),
@@ -1136,6 +1136,15 @@ func (s *StateDB) ApplyStateDiff(diff *bal.StateDiff) {
 		}
 		if accountDiff.Balance != nil {
 			stateObject.SetBalance(new(uint256.Int).SetBytes((*accountDiff.Balance)[:]))
+		}
+		if preexisting {
+			var storageMutations []common.Hash
+			// TODO: source this from slots that were actually modified from the prestate
+			for key, _ := range accountDiff.StorageWrites {
+				storageMutations = append(storageMutations, key)
+			}
+			s.prefetcher.prefetch(stateObject.addrHash, stateObject.Root(), stateObject.address, nil, storageMutations, false)
+			s.prefetcher.prefetch(common.Hash{}, s.originalRoot, stateObject.address, nil, nil, false)
 		}
 		if !stateObject.empty() {
 			s.setStateObject(stateObject)

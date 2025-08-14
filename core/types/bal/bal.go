@@ -82,24 +82,6 @@ func NewConstructionBlockAccessList() ConstructionBlockAccessList {
 	}
 }
 
-// AccountRead records the address of an account that has been read during execution.
-func (c *ConstructionBlockAccessList) AccountRead(addr common.Address) {
-	if _, ok := c.Accounts[addr]; !ok {
-		c.Accounts[addr] = NewConstructionAccountAccess()
-	}
-}
-
-// StorageRead records a storage key read during execution.
-func (c *ConstructionBlockAccessList) StorageRead(address common.Address, key common.Hash) {
-	if _, ok := c.Accounts[address]; !ok {
-		c.Accounts[address] = NewConstructionAccountAccess()
-	}
-	if _, ok := c.Accounts[address].StorageWrites[key]; ok {
-		return
-	}
-	c.Accounts[address].StorageReads[key] = struct{}{}
-}
-
 // StorageWrite records the post-transaction value of a mutated storage slot.
 // The storage slot is removed from the list of read slots.
 func (c *ConstructionBlockAccessList) StorageWrite(txIdx uint16, address common.Address, key, value common.Hash) {
