@@ -391,10 +391,10 @@ func handleBlockBodies(backend Backend, msg Decoder, peer *Peer) error {
 				withdrawalHashes[i] = types.DeriveSha(types.Withdrawals(body.Withdrawals), hasher)
 			}
 			if body.AccessList != nil {
-				accessListHashes[i] = body.AccessList.Hash() // TODO: where is this validated against the header?
+				accessListHashes[i] = body.AccessList.Hash()
 			}
 		}
-		return [][]common.Hash{txsHashes, uncleHashes, withdrawalHashes}
+		return [][]common.Hash{txsHashes, uncleHashes, withdrawalHashes, accessListHashes}
 	}
 	return peer.dispatchResponse(&Response{
 		id:   res.RequestId,
