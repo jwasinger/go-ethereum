@@ -91,7 +91,6 @@ func (q *bodyQueue) deliver(peer *peerConnection, packet *eth.Response) (int, er
 	txs, uncles, withdrawals, accessLists := packet.Res.(*eth.BlockBodiesResponse).Unpack()
 	hashsets := packet.Meta.([][]common.Hash) // {txs hashes, uncle hashes, withdrawal hashes, access list hashes}
 
-	panic("ensure hashsets[3] is populated here")
 	accepted, err := q.queue.DeliverBodies(peer.id, txs, hashsets[0], uncles, hashsets[1], withdrawals, hashsets[2], accessLists, hashsets[3])
 	switch {
 	case err == nil && len(txs) == 0:
