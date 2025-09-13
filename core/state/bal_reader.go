@@ -161,6 +161,21 @@ func (r *BALReader) ModifiedAccounts() (res []common.Address) {
 	return res
 }
 
+func (r *BALReader) AccessedState() (res map[common.Address]map[common.Hash]struct{}) {
+	res = make(map[common.Address]map[common.Hash]struct{})
+	for addr, accesses := range r.accesses {
+		if len(accesses.StorageReads) > 0 {
+			res[addr] = make(map[common.Hash]struct{})
+			for _, slot := range accesses.StorageReads {
+				res[addr][slot] = struct{}{}
+			}
+		} else if len(accesses.BalanceChanges) == 0 && len(accesses.NonceChanges) == 0 && len(accesses.StorageChanges) == 0 && len(accesses.CodeChanges) == 0 {
+			res[addr] = make(map[common.Hash]struct{})
+		}
+	}
+	return
+}
+
 // TODO: it feels weird that this modifies the prestate instance. However, it's needed because it will
 // subsequently be used in Commit.
 func (r *BALReader) StateRoot(prestate *StateDB) common.Hash {

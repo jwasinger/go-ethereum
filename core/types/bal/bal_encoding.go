@@ -172,6 +172,28 @@ func (e *AccountAccess) validate() error {
 		return errors.New("storage read slots not in lexicographic order")
 	}
 
+	// test case ideas: keys in both read/writes, duplicate keys in either read/writes
+	// ensure that the read and write key sets are distinct
+	var readKeys, writeKeys map[common.Hash]struct{}
+	for _, readKey := range e.StorageReads {
+		if _, ok := readKeys[readKey]; ok {
+			return errors.New("duplicate read key")
+		}
+		readKeys[readKey] = struct{}{}
+	}
+	for _, writeKey := range e.StorageReads {
+		if _, ok := writeKeys[writeKey]; ok {
+			return errors.New("duplicate write key")
+		}
+		writeKeys[writeKey] = struct{}{}
+	}
+
+	for readKey := range readKeys {
+		if _, ok := writeKeys[readKey]; ok {
+			return errors.New("storage key reported in both read/write sets")
+		}
+	}
+
 	// Check the balance changes are sorted in order
 	if !slices.IsSortedFunc(e.BalanceChanges, func(a, b encodingBalanceChange) int {
 		return cmp.Compare[uint16](a.TxIdx, b.TxIdx)

@@ -251,6 +251,17 @@ type StateDiff struct {
 
 type StateAccesses map[common.Address]map[common.Hash]struct{}
 
+func (s *StateAccesses) Merge(other StateAccesses) {
+	for addr, accesses := range other {
+		if _, ok := (*s)[addr]; !ok {
+			(*s)[addr] = make(map[common.Hash]struct{})
+		}
+		for slot := range accesses {
+			(*s)[addr][slot] = struct{}{}
+		}
+	}
+}
+
 type AccountState struct {
 	Balance       *uint256.Int                `json:"Balance,omitempty"`
 	Nonce         *uint64                     `json:"Nonce,omitempty"`

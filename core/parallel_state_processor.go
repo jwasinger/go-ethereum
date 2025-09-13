@@ -53,7 +53,7 @@ func NewParallelStateProcessor(config *params.ChainConfig, chain *HeaderChain, c
 // performs post-tx state transition (system contracts and withdrawals)
 // and calculates the ProcessResult, returning it to be sent on resCh
 // by resultHandler
-func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) *ProcessResultWithMetrics {
+func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, preTxWrites *bal.StateDiff, preTxReads *bal.StateAccesses, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) *ProcessResultWithMetrics {
 	tExec := time.Since(tExecStart)
 	var requests [][]byte
 	tPostprocessStart := time.Now()
@@ -87,6 +87,8 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 	}
 
 	computedDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
+	computedAccesses := new(bal.StateAccesses)
+
 	// Read requests if Prague is enabled.
 	if p.config.IsPrague(block.Number(), block.Time()) {
 		requests = [][]byte{}
@@ -98,33 +100,43 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 		}
 
 		// EIP-7002
-		diff, _, err := ProcessWithdrawalQueue(&requests, evm)
+		diff, accesses, err := ProcessWithdrawalQueue(&requests, evm)
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
 			}
 		}
 		computedDiff = diff
+		computedAccesses = accesses
+
 		// EIP-7251
-		diff, _, err = ProcessConsolidationQueue(&requests, evm)
+		diff, accesses, err = ProcessConsolidationQueue(&requests, evm)
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
 			}
 		}
 		computedDiff.Merge(diff)
+		computedAccesses.Merge(*accesses)
 	}
+
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.chain.engine.Finalize(p.chain, header, tracingStateDB, block.Body())
 	// invoke Finalise so that withdrawals are accounted for in the state diff
-	finalDiff, _ := postTxState.Finalise(true)
+	finalDiff, finalAccesses := postTxState.Finalise(true)
 	computedDiff.Merge(finalDiff)
+	computedAccesses.Merge(*finalAccesses)
 
 	if err := postTxState.BlockAccessList().ValidateStateDiff(len(block.Transactions())+1, computedDiff); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
 		}
 	}
+
+	// (the writes are now validated against the BAL)
+	// 1. merge the pre-tx/tx/post-tx accesses.
+	// 2. remove any written accounts/storage from the total access set
+	// 3. verify that the set of accesses computed by step 2 is equivalent to what's reported in the BAL
 
 	tPostprocess := time.Since(tPostprocessStart)
 
@@ -144,11 +156,14 @@ type txExecResult struct {
 	idx     int // transaction index
 	receipt *types.Receipt
 	err     error // non-EVM error which would render the block invalid
+
+	mutations  *bal.StateDiff
+	stateReads *bal.StateAccesses
 }
 
 // resultHandler polls until all transactions have finished executing and the
 // state root calculation is complete. The result is emitted on resCh.
-func (p *ParallelStateProcessor) resultHandler(block *types.Block, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics) {
+func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxMutations *bal.StateDiff, preTxStateReads *bal.StateAccesses, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics) {
 	// 1. if the block has transactions, receive the execution results from all of them and return an error on resCh if any txs err'd
 	// 2. once all txs are executed, compute the post-tx state transition and produce the ProcessResult sending it on resCh (or an error if the post-tx state didn't match what is reported in the BAL)
 	var receipts []*types.Receipt
@@ -157,6 +172,7 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, postTxState *
 	var execErr error
 	var numTxComplete int
 
+	allReads := make(bal.StateAccesses)
 	if len(block.Transactions()) > 0 {
 	loop:
 		for {
@@ -169,7 +185,18 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, postTxState *
 						if err := gp.SubGas(res.receipt.GasUsed); err != nil {
 							execErr = err
 						} else {
+							// merge tx execution reads into "all reads"
+							// validate tx writes against BAL
 							receipts = append(receipts, res.receipt)
+
+							for addr, reads := range *res.stateReads {
+								if _, ok := allReads[addr]; !ok {
+									allReads[addr] = make(map[common.Hash]struct{})
+								}
+								for slot := range reads {
+									allReads[addr][slot] = struct{}{}
+								}
+							}
 						}
 					}
 				}
@@ -184,6 +211,22 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, postTxState *
 			resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: execErr}}
 			return
 		}
+
+		// TODO validate state reads:
+		// following properties must hold:
+		//
+		// check:
+		// * the set of all accounts/storage that was read matches what was reported in the BAL
+		// * none of the mutated slots were also reported as reads (we can validate this as part of each transaction?)
+
+		// 1. calculate the set of accounts that were only read by removing the written accounts from "all reads"
+
+		// TODO: need to include pre/post-tx reads in 'allReads'
+
+		// 1. take set of "all reads" that were computed, remove any accounts/slots that had writes (writes are validated at this point)
+		// 2. the remaining reads should be validated against the BAL:  check that all the reads were accounted for in the BAL, and that the BAL doesn't contain any extra entries compared to what was computed by execution
+
+		// 2. ensure that read/written accounts match the BAL exactly
 	}
 
 	execResults := p.prepareExecResult(block, tExecStart, postTxState, receipts)
@@ -221,8 +264,7 @@ func (p *ParallelStateProcessor) calcAndVerifyRoot(preState *state.StateDB, bloc
 	resCh <- res
 }
 
-// execTx executes single transaction, validating the computed diff against the BAL
-// and forwarding the txExecResult to be consumed by resultHandler
+// execTx executes single transaction returning a result which includes state accessed/modified
 func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transaction, idx int, db *state.StateDB, signer types.Signer) *txExecResult {
 	header := block.Header()
 	var tracingStateDB = vm.StateDB(db)
@@ -246,19 +288,21 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 	gp := new(GasPool)
 	gp.SetGas(block.GasLimit())
 	var gasUsed uint64
-	computedDiff, receipt, err := ApplyTransactionWithEVM(msg, gp, db, block.Number(), block.Hash(), context.Time, tx, &gasUsed, evm)
+	mutatedState, accessedState, receipt, err := ApplyTransactionWithEVM(msg, gp, db, block.Number(), block.Hash(), context.Time, tx, &gasUsed, evm)
 	if err != nil {
 		err := fmt.Errorf("could not apply tx %d [%v]: %w", idx, tx.Hash().Hex(), err)
 		return &txExecResult{err: err}
 	}
 
-	if err := db.BlockAccessList().ValidateStateDiff(idx+1, computedDiff); err != nil {
+	if err := db.BlockAccessList().ValidateStateDiff(idx+1, mutatedState); err != nil {
 		return &txExecResult{err: err}
 	}
 
 	return &txExecResult{
-		idx:     idx,
-		receipt: receipt,
+		idx:        idx,
+		receipt:    receipt,
+		mutations:  mutatedState,
+		stateReads: accessedState,
 	}
 }
 
