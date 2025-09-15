@@ -910,23 +910,21 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) (mutations *bal.StateDiff, a
 			accountPost := obj.finalise()
 
 			if s.enableStateDiffRecording {
-				if _, shouldIgnore := IgnoredBALAddresses[obj.address]; !shouldIgnore {
-					if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {
-						// the account executed SENDALL but did not send a balance, don't include it in the diff
-						// TODO: probably shouldn't include the account in the dirty set in this case (unrelated to the BAL changes)
-						mutations.Mutations[obj.address] = accountPost
-					}
-					if len(accountPost.StorageWrites) > 0 {
-						// remove all the written slots from the accessedState
-						if _, ok := s.stateAccesses[obj.address]; ok {
-							for slot, _ := range accountPost.StorageWrites {
-								delete(s.stateAccesses[obj.address], slot)
-							}
+				if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {
+					// the account executed SENDALL but did not send a balance, don't include it in the diff
+					// TODO: probably shouldn't include the account in the dirty set in this case (unrelated to the BAL changes)
+					mutations.Mutations[obj.address] = accountPost
+				}
+				if len(accountPost.StorageWrites) > 0 {
+					// remove all the written slots from the accessedState
+					if _, ok := s.stateAccesses[obj.address]; ok {
+						for slot, _ := range accountPost.StorageWrites {
+							delete(s.stateAccesses[obj.address], slot)
 						}
 					}
-					if _, ok := s.stateAccesses[obj.address]; ok && len(s.stateAccesses[obj.address]) == 0 {
-						delete(s.stateAccesses, obj.address)
-					}
+				}
+				if _, ok := s.stateAccesses[obj.address]; ok && len(s.stateAccesses[obj.address]) == 0 {
+					delete(s.stateAccesses, obj.address)
 				}
 			}
 			s.markUpdate(addr)
