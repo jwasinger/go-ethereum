@@ -17,7 +17,6 @@
 package tests
 
 import (
-	"fmt"
 	"math/rand"
 	"path/filepath"
 	"testing"
@@ -177,7 +176,6 @@ func TestExecutionSpecBlocktestsAmsterdam(t *testing.T) {
 		if gspec.Config.CancunTime == nil || *gspec.Config.CancunTime != 0 {
 			return
 		}
-		fmt.Printf("test %s\n", name)
 		// TODO: skip any tests that aren't amsterdam
 		execBlockTest(t, bt, test, false)
 	})

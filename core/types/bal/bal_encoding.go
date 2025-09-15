@@ -100,7 +100,6 @@ func (e *BlockAccessList) Hash() common.Hash {
 		// under reasonable conditions.
 		panic(err)
 	}
-	fmt.Printf("bal hash %x\n", enc.Bytes())
 	return crypto.Keccak256Hash(enc.Bytes())
 }
 
