@@ -542,6 +542,7 @@ func (b *Block) WithWitness(witness *ExecutionWitness) *Block {
 		transactions: b.transactions,
 		uncles:       b.uncles,
 		withdrawals:  b.withdrawals,
+		accessList:   b.accessList,
 		witness:      witness,
 	}
 }
