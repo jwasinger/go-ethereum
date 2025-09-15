@@ -199,7 +199,7 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 		i := 0
 		for ; i < importBatchSize; i++ {
 			var b types.Block
-			if err := stream.Decode(&b); err == io.EOF {
+			if err := stream.Decode(&b); err == io.EOF || err == rlp.EOL {
 				break
 			} else if err != nil {
 				return fmt.Errorf("at block %d: %v", n, err)
