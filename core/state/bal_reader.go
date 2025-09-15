@@ -167,12 +167,10 @@ func (r *BALReader) ModifiedAccounts() (res []common.Address) {
 }
 
 func (r *BALReader) ValidateStateReads(allReads bal.StateAccesses) error {
-	totalDiff := r.changesAt(len(r.block.Transactions()) + 2)
-
 	// 1. remove any slots from 'allReads' which were written
 	// 2. validate that the read set in the BAL matches 'allReads' exactly
 	for addr, reads := range allReads {
-		balAcctDiff := totalDiff.Mutations[addr]
+		balAcctDiff := r.readAccountDiff(addr, len(r.block.Transactions())+2)
 		if balAcctDiff != nil {
 			for writeSlot := range balAcctDiff.StorageWrites {
 				delete(reads, writeSlot)

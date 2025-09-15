@@ -87,7 +87,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 	}
 
 	computedDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
-	computedAccesses := new(bal.StateAccesses)
+	computedAccesses := make(bal.StateAccesses)
 
 	// Read requests if Prague is enabled.
 	if p.config.IsPrague(block.Number(), block.Time()) {
@@ -107,7 +107,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 			}
 		}
 		computedDiff = diff
-		computedAccesses = accesses
+		computedAccesses = *accesses
 
 		// EIP-7251
 		diff, accesses, err = ProcessConsolidationQueue(&requests, evm)
@@ -133,7 +133,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		}
 	}
 
-	allStateReads.Merge(*computedAccesses)
+	allStateReads.Merge(computedAccesses)
 	if err := postTxState.BlockAccessList().ValidateStateReads(*allStateReads); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
