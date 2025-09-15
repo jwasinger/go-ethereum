@@ -53,7 +53,7 @@ func NewParallelStateProcessor(config *params.ChainConfig, chain *HeaderChain, c
 // performs post-tx state transition (system contracts and withdrawals)
 // and calculates the ProcessResult, returning it to be sent on resCh
 // by resultHandler
-func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, preTxWrites *bal.StateDiff, preTxReads *bal.StateAccesses, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) *ProcessResultWithMetrics {
+func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateReads *bal.StateAccesses, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) *ProcessResultWithMetrics {
 	tExec := time.Since(tExecStart)
 	var requests [][]byte
 	tPostprocessStart := time.Now()
@@ -133,10 +133,12 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, preTxWrit
 		}
 	}
 
-	// (the writes are now validated against the BAL)
-	// 1. merge the pre-tx/tx/post-tx accesses.
-	// 2. remove any written accounts/storage from the total access set
-	// 3. verify that the set of accesses computed by step 2 is equivalent to what's reported in the BAL
+	allStateReads.Merge(*computedAccesses)
+	if err := postTxState.BlockAccessList().ValidateStateReads(*allStateReads); err != nil {
+		return &ProcessResultWithMetrics{
+			ProcessResult: &ProcessResult{Error: err},
+		}
+	}
 
 	tPostprocess := time.Since(tPostprocessStart)
 
@@ -163,7 +165,7 @@ type txExecResult struct {
 
 // resultHandler polls until all transactions have finished executing and the
 // state root calculation is complete. The result is emitted on resCh.
-func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxMutations *bal.StateDiff, preTxStateReads *bal.StateAccesses, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics) {
+func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateReads *bal.StateAccesses, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics) {
 	// 1. if the block has transactions, receive the execution results from all of them and return an error on resCh if any txs err'd
 	// 2. once all txs are executed, compute the post-tx state transition and produce the ProcessResult sending it on resCh (or an error if the post-tx state didn't match what is reported in the BAL)
 	var receipts []*types.Receipt
@@ -173,6 +175,7 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxMutation
 	var numTxComplete int
 
 	allReads := make(bal.StateAccesses)
+	allReads.Merge(*preTxStateReads)
 	if len(block.Transactions()) > 0 {
 	loop:
 		for {
@@ -185,18 +188,8 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxMutation
 						if err := gp.SubGas(res.receipt.GasUsed); err != nil {
 							execErr = err
 						} else {
-							// merge tx execution reads into "all reads"
-							// validate tx writes against BAL
 							receipts = append(receipts, res.receipt)
-
-							for addr, reads := range *res.stateReads {
-								if _, ok := allReads[addr]; !ok {
-									allReads[addr] = make(map[common.Hash]struct{})
-								}
-								for slot := range reads {
-									allReads[addr][slot] = struct{}{}
-								}
-							}
+							allReads.Merge(*res.stateReads)
 						}
 					}
 				}
@@ -211,25 +204,9 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxMutation
 			resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: execErr}}
 			return
 		}
-
-		// TODO validate state reads:
-		// following properties must hold:
-		//
-		// check:
-		// * the set of all accounts/storage that was read matches what was reported in the BAL
-		// * none of the mutated slots were also reported as reads (we can validate this as part of each transaction?)
-
-		// 1. calculate the set of accounts that were only read by removing the written accounts from "all reads"
-
-		// TODO: need to include pre/post-tx reads in 'allReads'
-
-		// 1. take set of "all reads" that were computed, remove any accounts/slots that had writes (writes are validated at this point)
-		// 2. the remaining reads should be validated against the BAL:  check that all the reads were accounted for in the BAL, and that the BAL doesn't contain any extra entries compared to what was computed by execution
-
-		// 2. ensure that read/written accounts match the BAL exactly
 	}
 
-	execResults := p.prepareExecResult(block, tExecStart, postTxState, receipts)
+	execResults := p.prepareExecResult(block, &allReads, tExecStart, postTxState, receipts)
 	rootCalcRes := <-stateRootCalcResCh
 
 	if execResults.ProcessResult.Error != nil {
@@ -343,13 +320,17 @@ func (p *ParallelStateProcessor) Process(block *types.Block, statedb *state.Stat
 
 	// validate the correctness of pre-transaction execution state changes
 	computedPreTxDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountState)}
+	preTxStateReads := make(bal.StateAccesses)
+
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
-		diff, _ := ProcessBeaconBlockRoot(*beaconRoot, evm)
+		diff, reads := ProcessBeaconBlockRoot(*beaconRoot, evm)
 		computedPreTxDiff.Merge(diff)
+		preTxStateReads.Merge(*reads)
 	}
 	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
-		diff, _ := ProcessParentBlockHash(block.ParentHash(), evm)
+		diff, reads := ProcessParentBlockHash(block.ParentHash(), evm)
 		computedPreTxDiff.Merge(diff)
+		preTxStateReads.Merge(*reads)
 	}
 
 	if err := statedb.BlockAccessList().ValidateStateDiff(0, computedPreTxDiff); err != nil {
@@ -365,7 +346,7 @@ func (p *ParallelStateProcessor) Process(block *types.Block, statedb *state.Stat
 	// execute transactions and state root calculation in parallel
 
 	tExecStart = time.Now()
-	go p.resultHandler(block, postTxState, tExecStart, txResCh, rootCalcResultCh, resCh)
+	go p.resultHandler(block, &preTxStateReads, postTxState, tExecStart, txResCh, rootCalcResultCh, resCh)
 	var workers errgroup.Group
 	startingState := statedb.Copy()
 	for i, tx := range block.Transactions() {

@@ -435,10 +435,12 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if s.enableStateDiffRecording {
-		if _, ok := s.stateAccesses[addr]; !ok {
-			s.stateAccesses[addr] = make(map[common.Hash]struct{})
+		if _, shouldIgnore := IgnoredBALAddresses[addr]; !shouldIgnore {
+			if _, ok := s.stateAccesses[addr]; !ok {
+				s.stateAccesses[addr] = make(map[common.Hash]struct{})
+			}
+			s.stateAccesses[addr][hash] = struct{}{}
 		}
-		s.stateAccesses[addr][hash] = struct{}{}
 	}
 	if stateObject != nil {
 		return stateObject.GetState(hash)
@@ -672,8 +674,10 @@ func (s *StateDB) deleteStateObject(addr common.Address) {
 // the object is not found or was deleted in this execution context.
 func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	if s.enableStateDiffRecording {
-		if _, ok := s.stateAccesses[addr]; !ok {
-			s.stateAccesses[addr] = make(map[common.Hash]struct{})
+		if _, shouldIgnore := IgnoredBALAddresses[addr]; !shouldIgnore {
+			if _, ok := s.stateAccesses[addr]; !ok {
+				s.stateAccesses[addr] = make(map[common.Hash]struct{})
+			}
 		}
 	}
 	// Prefer live objects if any is available
@@ -878,18 +882,20 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) (mutations *bal.StateDiff, a
 		if obj.selfDestructed || (deleteEmptyObjects && obj.empty()) {
 			// record state diffs for any preexisting accounts which became empty
 			if s.enableStateDiffRecording && obj.txPreBalance != nil && !obj.txPreBalance.IsZero() {
-				// TODO: IsZero check is somehow needed for coinbase.  figure out why.
-				// TODO: the above check should be as easy as checking that the account was not selfdestructed in the
-				// current transaction, but that causes spec tests to fail.  need to figure out why.
-				postState := bal.NewEmptyAccountState()
-				postState.Balance = new(uint256.Int)
-				mutations.Mutations[obj.address] = postState
+				if _, shouldIgnore := IgnoredBALAddresses[obj.address]; !shouldIgnore {
+					// TODO: IsZero check is somehow needed for coinbase.  figure out why.
+					// TODO: the above check should be as easy as checking that the account was not selfdestructed in the
+					// current transaction, but that causes spec tests to fail.  need to figure out why.
+					postState := bal.NewEmptyAccountState()
+					postState.Balance = new(uint256.Int)
+					mutations.Mutations[obj.address] = postState
 
-				// note that this account cannot have any storage accesses in the same tx:
-				// * it cannot have code if it was previously-existing and became empty in this tx
-				// * perhaps it could have had code deployed before selfdestruct removal, that set some storage
-				//   and the code was removed (pre-selfdestruct removal) leaving the storage.  But the storage
-				//   won't be cleared from the state here right
+					// note that this account cannot have any storage accesses in the same tx:
+					// * it cannot have code if it was previously-existing and became empty in this tx
+					// * perhaps it could have had code deployed before selfdestruct removal, that set some storage
+					//   and the code was removed (pre-selfdestruct removal) leaving the storage.  But the storage
+					//   won't be cleared from the state here right
+				}
 			}
 
 			delete(s.stateObjects, obj.address)
@@ -904,21 +910,23 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) (mutations *bal.StateDiff, a
 			accountPost := obj.finalise()
 
 			if s.enableStateDiffRecording {
-				if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {
-					// the account executed SENDALL but did not send a balance, don't include it in the diff
-					// TODO: probably shouldn't include the account in the dirty set in this case (unrelated to the BAL changes)
-					mutations.Mutations[obj.address] = accountPost
-				}
-				if len(accountPost.StorageWrites) > 0 {
-					// remove all the written slots from the accessedState
-					if _, ok := s.stateAccesses[obj.address]; ok {
-						for slot, _ := range accountPost.StorageWrites {
-							delete(s.stateAccesses[obj.address], slot)
+				if _, shouldIgnore := IgnoredBALAddresses[obj.address]; !shouldIgnore {
+					if accountPost.Nonce != nil || accountPost.Code != nil || accountPost.StorageWrites != nil || accountPost.Balance != nil {
+						// the account executed SENDALL but did not send a balance, don't include it in the diff
+						// TODO: probably shouldn't include the account in the dirty set in this case (unrelated to the BAL changes)
+						mutations.Mutations[obj.address] = accountPost
+					}
+					if len(accountPost.StorageWrites) > 0 {
+						// remove all the written slots from the accessedState
+						if _, ok := s.stateAccesses[obj.address]; ok {
+							for slot, _ := range accountPost.StorageWrites {
+								delete(s.stateAccesses[obj.address], slot)
+							}
 						}
 					}
-				}
-				if _, ok := s.stateAccesses[obj.address]; ok && len(s.stateAccesses[obj.address]) == 0 {
-					delete(s.stateAccesses, obj.address)
+					if _, ok := s.stateAccesses[obj.address]; ok && len(s.stateAccesses[obj.address]) == 0 {
+						delete(s.stateAccesses, obj.address)
+					}
 				}
 			}
 			s.markUpdate(addr)
