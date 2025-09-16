@@ -173,7 +173,8 @@ func (e *AccountAccess) validate() error {
 
 	// test case ideas: keys in both read/writes, duplicate keys in either read/writes
 	// ensure that the read and write key sets are distinct
-	var readKeys, writeKeys map[common.Hash]struct{}
+	readKeys := make(map[common.Hash]struct{})
+	writeKeys := make(map[common.Hash]struct{})
 	for _, readKey := range e.StorageReads {
 		if _, ok := readKeys[readKey]; ok {
 			return errors.New("duplicate read key")

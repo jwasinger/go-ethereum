@@ -2114,8 +2114,15 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 		if block.NumberU64() == 0 {
 			return nil, fmt.Errorf("genesis block cannot have a block access list")
 		}
+		// TODO: rename 'validateBAL' to indicate that it's for validating that the BAL
+		// is present and we are after amsterdam fork.  validateBAL=false is only used for
+		// testing BALs in pre-Amsterdam blocks.
 		if !validateBAL && !bc.chainConfig.IsAmsterdam(block.Number(), block.Time()) {
 			bc.reportBlock(block, res, fmt.Errorf("received block containing access list before glamsterdam activated"))
+			return nil, err
+		}
+		if err = block.Body().AccessList.Validate(); err != nil {
+			bc.reportBlock(block, res, fmt.Errorf("validation of block access list failed: %v", err))
 			return nil, err
 		}
 		// Process block using the parent state as reference point
