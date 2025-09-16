@@ -181,7 +181,8 @@ func (e *AccountAccess) validate() error {
 		}
 		readKeys[readKey] = struct{}{}
 	}
-	for _, writeKey := range e.StorageReads {
+	for _, write := range e.StorageChanges {
+		writeKey := write.Slot
 		if _, ok := writeKeys[writeKey]; ok {
 			return errors.New("duplicate write key")
 		}
