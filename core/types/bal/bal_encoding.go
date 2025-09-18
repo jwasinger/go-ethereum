@@ -82,7 +82,13 @@ func (e BlockAccessList) Validate() error {
 	}) {
 		return errors.New("block access list accounts not in lexicographic order")
 	}
+	acctMap := make(map[common.Address]struct{})
 	for _, entry := range e {
+		if _, ok := acctMap[entry.Address]; ok {
+			return errors.New("duplicate account in block access list")
+		}
+		acctMap[entry.Address] = struct{}{}
+
 		if err := entry.validate(); err != nil {
 			return err
 		}
