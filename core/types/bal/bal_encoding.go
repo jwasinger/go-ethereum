@@ -54,6 +54,7 @@ func (obj *BlockAccessList) DecodeRLP(dec *rlp.Stream) error {
 	if _, err := dec.List(); err != nil {
 		return err
 	}
+	*obj = (*obj)[:0]
 	for dec.MoreDataInList() {
 		var access AccountAccess
 		if err := access.DecodeRLP(dec); err != nil {
@@ -63,6 +64,9 @@ func (obj *BlockAccessList) DecodeRLP(dec *rlp.Stream) error {
 	}
 	return nil
 }
+
+var _ rlp.Encoder = &BlockAccessList{}
+var _ rlp.Decoder = &BlockAccessList{}
 
 func (e *BlockAccessList) String() string {
 	var res bytes.Buffer

@@ -118,6 +118,8 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 			return fmt.Errorf("access list hash not present in block header")
 		} else if *block.Header().BlockAccessListHash != block.Body().AccessList.Hash() {
 			return fmt.Errorf("access list hash mismatch.  local: %x. remote: %x\n", block.Body().AccessList.Hash(), *block.Header().BlockAccessListHash)
+		} else if err := block.Body().AccessList.Validate(); err != nil {
+			return fmt.Errorf("invalid block access list: %v", err)
 		}
 	} else if !v.bc.cfg.EnableBAL {
 		// if --experimental-bal is not enabled, block headers cannot have access list hash and bodies cannot have access lists.

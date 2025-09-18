@@ -2121,10 +2121,6 @@ func (bc *BlockChain) processBlock(parentRoot common.Hash, block *types.Block, s
 			bc.reportBlock(block, res, fmt.Errorf("received block containing access list before glamsterdam activated"))
 			return nil, err
 		}
-		if err = block.Body().AccessList.Validate(); err != nil {
-			bc.reportBlock(block, res, fmt.Errorf("validation of block access list failed: %v", err))
-			return nil, err
-		}
 		// Process block using the parent state as reference point
 		pstart := time.Now()
 		resWithMetrics, err = bc.parallelProcessor.Process(block, statedb, bc.cfg.VmConfig)
