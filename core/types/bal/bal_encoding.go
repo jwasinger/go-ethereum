@@ -63,6 +63,7 @@ func (obj *BlockAccessList) DecodeRLP(dec *rlp.Stream) error {
 		}
 		*obj = append(*obj, access)
 	}
+	dec.ListEnd()
 	return nil
 }
 
@@ -363,7 +364,7 @@ func (b *BlockAccessList) UnmarshalJSON(input []byte) error {
 		// It's a hex string, decode from RLP
 		return rlp.DecodeBytes(hexBytes, b)
 	}
-	
+
 	// Otherwise try to unmarshal as structured JSON
 	var tmp []AccountAccess
 	if err := json.Unmarshal(input, &tmp); err != nil {
