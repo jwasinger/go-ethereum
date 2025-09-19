@@ -96,6 +96,7 @@ var caps = []string{
 	"engine_getPayloadV3",
 	"engine_getPayloadV4",
 	"engine_getPayloadV5",
+	"engine_getPayloadV6",
 	"engine_getBlobsV1",
 	"engine_getBlobsV2",
 	"engine_newPayloadV1",
@@ -478,6 +479,14 @@ func (api *ConsensusAPI) GetPayloadV4(payloadID engine.PayloadID) (*engine.Execu
 
 // GetPayloadV5 returns a cached payload by id.
 func (api *ConsensusAPI) GetPayloadV5(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
+	if !payloadID.Is(engine.PayloadV3) {
+		return nil, engine.UnsupportedFork
+	}
+	return api.getPayload(payloadID, false)
+}
+
+// GetPayloadV6 returns a cached payload by id.
+func (api *ConsensusAPI) GetPayloadV6(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
 	if !payloadID.Is(engine.PayloadV3) {
 		return nil, engine.UnsupportedFork
 	}
