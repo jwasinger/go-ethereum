@@ -1031,6 +1031,8 @@ func (c *ChainConfig) ActiveSystemContracts(time uint64) map[string]common.Addre
 // the fork isn't defined or isn't a time-based fork.
 func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
 	switch {
+	case fork == forks.Amsterdam:
+		return c.AmsterdamTime
 	case fork == forks.Osaka:
 		return c.OsakaTime
 	case fork == forks.Prague:

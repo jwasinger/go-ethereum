@@ -73,4 +73,5 @@ var forkToString = map[Fork]string{
 	Cancun:           "Cancun",
 	Prague:           "Prague",
 	Osaka:            "Osaka",
+	Amsterdam:        "Amsterdam",
 }
