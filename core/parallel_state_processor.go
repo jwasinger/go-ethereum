@@ -21,16 +21,15 @@ type ProcessResultWithMetrics struct {
 	ProcessResult *ProcessResult
 	// the time it took to load modified prestate accounts from disk and instantiate statedbs for execution
 	PreProcessTime time.Duration
-	// the time it took to load modified prestate accounts from disk
-	PreProcessLoadTime time.Duration
 	// the time it took to validate the block post transaction execution and state root calculation
 	PostProcessTime time.Duration
 	// the time it took to hash the state root, including intermediate node reads
 	RootCalcTime time.Duration
+	// the time that it took to load the prestate for accounts that were updated as part of
+	// the state root update
+	PrestateLoadTime time.Duration
 	// the time it took to execute all txs in the block
 	ExecTime time.Duration
-
-	StateDiffCalcTime time.Duration // time it took to convert BAL into a set of state diffs
 }
 
 // ParallelStateProcessor is used to execute and verify blocks containing
@@ -214,26 +213,30 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateRea
 	} else if rootCalcRes.err != nil {
 		resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: rootCalcRes.err}}
 	} else {
-		execResults.RootCalcTime = rootCalcRes.duration
+		execResults.RootCalcTime = rootCalcRes.rootCalcTime
+		execResults.PrestateLoadTime = rootCalcRes.prestateLoadTime
 		resCh <- execResults
 	}
 }
 
 type stateRootCalculationResult struct {
-	err      error
-	duration time.Duration
+	err              error
+	prestateLoadTime time.Duration
+	rootCalcTime     time.Duration
+	root             common.Hash
 }
 
 // calcAndVerifyRoot performs the post-state root hash calculation, verifying
 // it against what is reported by the block and returning a result on resCh.
 func (p *ParallelStateProcessor) calcAndVerifyRoot(preState *state.StateDB, block *types.Block, resCh chan stateRootCalculationResult) {
 	// calculate and apply the block state modifications
-	tVerifyStart := time.Now()
-	root := preState.BlockAccessList().StateRoot(preState)
-	tVerify := time.Since(tVerifyStart)
+	root, prestateLoadTime, rootCalcTime := preState.BlockAccessList().StateRoot(preState)
 
-	var res stateRootCalculationResult
-	res.duration = tVerify
+	res := stateRootCalculationResult{
+		root:             root,
+		prestateLoadTime: prestateLoadTime,
+		rootCalcTime:     rootCalcTime,
+	}
 
 	if root != block.Root() {
 		res.err = fmt.Errorf("state root mismatch. local: %x. remote: %x", root, block.Root())

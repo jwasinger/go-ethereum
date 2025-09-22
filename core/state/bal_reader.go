@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"sync"
+	"time"
 )
 
 // TODO: probably unnecessary to cache the resolved state object here as it will already be in the db cache?
@@ -209,9 +210,10 @@ func (r *BALReader) AccessedState() (res map[common.Address]map[common.Hash]stru
 
 // TODO: it feels weird that this modifies the prestate instance. However, it's needed because it will
 // subsequently be used in Commit.
-func (r *BALReader) StateRoot(prestate *StateDB) common.Hash {
+func (r *BALReader) StateRoot(prestate *StateDB) (root common.Hash, prestateLoadTime time.Duration, rootUpdateTime time.Duration) {
 	lastIdx := len(r.block.Transactions()) + 1
 	modifiedAccts := r.ModifiedAccounts()
+	startPrestateLoad := time.Now()
 	for _, addr := range modifiedAccts {
 		diff := r.readAccountDiff(addr, lastIdx)
 		acct := r.prestateReader.account(addr)
@@ -220,7 +222,11 @@ func (r *BALReader) StateRoot(prestate *StateDB) common.Hash {
 			prestate.setStateObject(obj)
 		}
 	}
-	return prestate.IntermediateRoot(true)
+	prestateLoadTime = time.Since(startPrestateLoad)
+	rootUpdateStart := time.Now()
+	root = prestate.IntermediateRoot(true)
+	rootUpdateTime = time.Since(rootUpdateStart)
+	return root, prestateLoadTime, rootUpdateTime
 }
 
 // changesAt returns all state changes at the given index.
