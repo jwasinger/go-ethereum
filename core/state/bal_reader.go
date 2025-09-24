@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
@@ -9,20 +10,53 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+	"maps"
 	"sync"
 	"time"
 )
 
+// storageOriginResolver is used for async loading the origin of modified storage
+// slots which is necessary for committing the state update to pathdb (TODO: why?)
+// TODO: probably will need to resolve code also
+type storageOriginResolver struct {
+	originSet map[common.Address]map[common.Hash]common.Hash
+	ctx       context.Context
+	cancel    func()
+}
+
+func (s *storageOriginResolver) resolve(r Reader, storageSet map[common.Address]map[common.Hash]struct{}) {
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	go func() {
+		defer s.cancel()
+		// resolve everything sequentially: these values were already loaded as
+		// part of execution, so it's fine to assume that they will still be in
+		// the cache at this point.
+		for addr, tasks := range storageSet {
+			for slot, _ := range tasks {
+				val, err := r.Storage(addr, slot)
+				if err != nil {
+					panic("TODO: wat do here")
+				}
+				s.originSet[addr][slot] = val
+			}
+		}
+
+		// resolve codes here too?
+	}()
+}
+
 // TODO: probably unnecessary to cache the resolved state object here as it will already be in the db cache?
 // ^ experiment with the performance of keeping this as-is vs just using the db cache.
-type prestateResolver struct {
+type prestateStateObjectResolver struct {
 	inProgress map[common.Address]chan struct{}
 	resolved   sync.Map
 	ctx        context.Context
 	cancel     func()
 }
 
-func (p *prestateResolver) resolve(r Reader, addrs []common.Address) {
+// resolve loads the state accounts corresponding to the given addresses
+// asynchronously.
+func (p *prestateStateObjectResolver) resolve(r Reader, addrs []common.Address) {
 	p.inProgress = make(map[common.Address]chan struct{})
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 
@@ -49,11 +83,13 @@ func (p *prestateResolver) resolve(r Reader, addrs []common.Address) {
 	}
 }
 
-func (p *prestateResolver) stop() {
+func (p *prestateStateObjectResolver) stop() {
 	p.cancel()
 }
 
-func (p *prestateResolver) account(addr common.Address) *types.StateAccount {
+// account loads the state account corresponding to the given address.  If the
+// state account was never scheduled for retrieval or is non-existent, nil is returned.
+func (p *prestateStateObjectResolver) account(addr common.Address) *types.StateAccount {
 	if _, ok := p.inProgress[addr]; !ok {
 		return nil
 	}
@@ -144,7 +180,7 @@ var IgnoredBALAddresses map[common.Address]struct{} = map[common.Address]struct{
 type BALReader struct {
 	block          *types.Block
 	accesses       map[common.Address]*bal.AccountAccess
-	prestateReader prestateResolver
+	prestateReader prestateStateObjectResolver
 }
 
 // NewBALReader constructs a new reader from an access list. db is expected to have been instantiated with a reader.
@@ -314,10 +350,82 @@ func (r *BALReader) isModified(addr common.Address) bool {
 	return len(access.StorageChanges) > 0 || len(access.BalanceChanges) > 0 || len(access.CodeChanges) > 0 || len(access.NonceChanges) > 0
 }
 
-func (r *BALReader) readAccount(db *StateDB, addr common.Address, idx int) *stateObject {
+func (r *BALReader) readStateObject(db *StateDB, addr common.Address, idx int) *stateObject {
 	diff := r.readAccountDiff(addr, idx)
 	prestate := r.prestateReader.account(addr)
 	return r.initObjFromDiff(db, addr, prestate, diff)
+}
+
+// accountState is a slimmed-down version of stateObject.  It represents the post
+// state of an account, omitting unmodified storage keys.
+//
+// it is used as input for the trie update
+//
+// TODO: rename this to reflect that it's the account state of a modified account used as input to the state root update procedure...
+type accountState struct {
+	address       common.Address
+	nonce         uint64
+	balance       *uint256.Int
+	codeHash      common.Hash
+	code          []byte
+	storageWrites map[common.Hash]common.Hash
+
+	mutated bool
+}
+
+func newAccountState(addr common.Address, prestate *types.StateAccount, diff *bal.AccountState) *accountState {
+	var a accountState
+	a.address = addr
+	a.nonce = prestate.Nonce
+	a.codeHash = common.BytesToHash(prestate.CodeHash)
+	a.balance = prestate.Balance.Clone()
+
+	if diff.Nonce != nil && *diff.Nonce != prestate.Nonce {
+		a.nonce = *diff.Nonce
+		a.mutated = true
+	}
+
+	if diff.Balance != nil && !diff.Balance.Eq(prestate.Balance) {
+		a.balance = diff.Balance.Clone()
+		a.mutated = true
+	}
+
+	if diff.Code != nil {
+		diffCodeHash := crypto.Keccak256Hash(diff.Code)
+		if diffCodeHash != common.BytesToHash(prestate.CodeHash) {
+			a.codeHash = diffCodeHash
+			a.code = bytes.Clone(diff.Code)
+			a.mutated = true
+		}
+	}
+
+	if len(diff.StorageWrites) > 0 {
+		// ideally, we would only include storage writes which are known
+		// to be different from the prestate, to avoid no-op trie lookups/hashing.
+		//
+		// However, it feels like the overhead of fetching the prestate of all
+		// mutated storage just to occasionally avoid a write isn't worth it.
+		//
+		// ofc, we will fetch the prestate as part of executing the transaction that mutated
+		// that slot, but we don't necessarily want to wait on that here (?)
+		a.storageWrites = maps.Clone(diff.StorageWrites)
+		a.mutated = true
+	}
+
+	return &a
+}
+
+func (a *accountState) isDeleted() bool {
+	return a.code == nil && a.balance == nil && a.nonce == 0 && len(a.storageWrites) == 0
+}
+
+// readAccountPostState returns the post-state of a modified account, or nil
+// if that account was not modified.
+func (r *BALReader) readAccountPostState(addr common.Address) *accountState {
+	lastIdx := len(r.block.Transactions()) + 1
+	diff := r.readAccountDiff(addr, lastIdx)
+	prestate := r.prestateReader.account(addr)
+	return newAccountState(addr, prestate, diff)
 }
 
 // readAccountDiff returns the accumulated state changes of an account up through idx.

@@ -693,7 +693,7 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	// state at the current tx index by applying the access-list diff on top
 	// of the prestate value for the account.
 	if s.blockAccessList != nil && s.balIndex != 0 && s.blockAccessList.isModified(addr) {
-		acct := s.blockAccessList.readAccount(s, addr, s.balIndex-1)
+		acct := s.blockAccessList.readStateObject(s, addr, s.balIndex-1)
 		if acct != nil {
 			s.setStateObject(acct)
 			return acct
