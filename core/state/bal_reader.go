@@ -360,18 +360,16 @@ func (r *BALReader) ValidateStateDiff(idx int, computedDiff *bal.StateDiff) erro
 	for addr, state := range balChanges.Mutations {
 		computedAccountDiff, ok := computedDiff.Mutations[addr]
 		if !ok {
-			//fmt.Printf("bal changes:\n%s\ncomputed changes:\n%s\n", r.block.Body().AccessList.String(), computedDiff.String())
-			return fmt.Errorf("BAL change not reported in computed")
+			return fmt.Errorf("BAL contained account %x which wasn't present in computed state diff", addr)
 		}
 
 		if !state.Eq(computedAccountDiff) {
-			return fmt.Errorf("unequal")
+			return fmt.Errorf("difference between computed state diff and BAL entry for account %x", addr)
 		}
 	}
 
 	if len(balChanges.Mutations) != len(computedDiff.Mutations) {
-		fmt.Printf("tx idx %d. computed:\n%s\nbal:\n%s\n", idx, computedDiff.String(), r.block.Body().AccessList.String())
-		return fmt.Errorf("computed diff contained additional mutations compared to BAL")
+		return fmt.Errorf("computed state diff contained mutated accounts which weren't reported in BAL")
 	}
 
 	return nil
