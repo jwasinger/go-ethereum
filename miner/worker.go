@@ -163,6 +163,12 @@ func (miner *Miner) generateWork(genParam *generateParams, witness bool) *newPay
 	}
 
 	block, err := miner.engine.FinalizeAndAssemble(miner.chain, work.header, work.state, &body, work.receipts)
+	if miner.chainConfig.IsAmsterdam(block.Number(), block.Time()) {
+		fmt.Println("embed")
+		body := block.Body()
+		body.AccessList = work.state.(*state.AccessListCreationDB).ConstructedBlockAccessList().ToEncodingObj()
+		block = block.WithBody(*body)
+	}
 	if err != nil {
 		return &newPayloadResult{err: err}
 	}
