@@ -281,6 +281,7 @@ func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase
 	}
 	var sdb state.BlockProcessingDB = st
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
+		// TODO: if I disable this, the local devnet still works fine with empty BALs... clearly there is some bug afoot
 		st.EnableStateDiffRecording()
 		sdb = state.NewBlockAccessListBuilder(st)
 	}
