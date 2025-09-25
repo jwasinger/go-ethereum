@@ -281,6 +281,7 @@ func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase
 	}
 	var sdb state.BlockProcessingDB = st
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
+		st.EnableStateDiffRecording()
 		sdb = state.NewBlockAccessListBuilder(st)
 	}
 	// Note the passed coinbase may be different with header.Coinbase.
