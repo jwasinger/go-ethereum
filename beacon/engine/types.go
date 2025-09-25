@@ -340,6 +340,7 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 		BlobGasUsed:      block.BlobGasUsed(),
 		ExcessBlobGas:    block.ExcessBlobGas(),
 		ExecutionWitness: block.ExecutionWitness(),
+		BlockAccessList:  block.Body().AccessList,
 	}
 
 	// Add blobs.
