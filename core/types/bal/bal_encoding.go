@@ -22,14 +22,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"slices"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
-	"io"
-	"maps"
-	"slices"
 )
 
 //go:generate go run github.com/ethereum/go-ethereum/rlp/rlpgen -out bal_encoding_rlp_generated.go -type AccountAccess -decoder
@@ -353,4 +355,32 @@ type ContractCode []byte
 func (c *ContractCode) MarshalJSON() ([]byte, error) {
 	hexStr := fmt.Sprintf("%x", *c)
 	return json.Marshal(hexStr)
+}
+
+// UnmarshalJSON implements json.Unmarshaler to decode from RLP hex bytes
+func (b *BlockAccessList) UnmarshalJSON(input []byte) error {
+	// Handle both hex string and object formats
+	var hexBytes hexutil.Bytes
+	if err := json.Unmarshal(input, &hexBytes); err == nil {
+		// It's a hex string, decode from RLP
+		return rlp.DecodeBytes(hexBytes, b)
+	}
+
+	// Otherwise try to unmarshal as structured JSON
+	var tmp []AccountAccess
+	if err := json.Unmarshal(input, &tmp); err != nil {
+		return err
+	}
+	*b = BlockAccessList(tmp)
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler to encode as RLP hex bytes
+func (b BlockAccessList) MarshalJSON() ([]byte, error) {
+	// Encode to RLP then to hex
+	rlpBytes, err := rlp.EncodeToBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(hexutil.Bytes(rlpBytes))
 }
