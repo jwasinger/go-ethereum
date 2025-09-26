@@ -978,6 +978,8 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 	london := c.LondonBlock
 
 	switch {
+	case c.IsAmsterdam(london, time):
+		return forks.Amsterdam
 	case c.IsOsaka(london, time):
 		return forks.Osaka
 	case c.IsPrague(london, time):
@@ -986,8 +988,6 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 		return forks.Cancun
 	case c.IsShanghai(london, time):
 		return forks.Shanghai
-	case c.IsAmsterdam(london, time):
-		return forks.Amsterdam
 	default:
 		return forks.Paris
 	}
