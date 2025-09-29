@@ -123,6 +123,10 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body())
 
+	if hooks := cfg.Tracer; hooks != nil && hooks.OnBlockFinalization != nil {
+		hooks.OnBlockFinalization()
+	}
+
 	return &ProcessResult{
 		Receipts: receipts,
 		Requests: requests,
@@ -232,7 +236,8 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 		return nil, err
 	}
 	// Create a new context to be used in the EVM environment
-	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, usedGas, evm)
+	receipts, err := ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, usedGas, evm)
+	return receipts, err
 }
 
 // ProcessBeaconBlockRoot applies the EIP-4788 system call to the beacon block root
