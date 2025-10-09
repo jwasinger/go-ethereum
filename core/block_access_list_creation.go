@@ -50,8 +50,8 @@ func NewBlockAccessListTracer(startIdx int) (*BlockAccessListTracer, *tracing.Ho
 		OnBalanceChange:      balTracer.OnBalanceChange,
 		OnNonceChangeV2:      balTracer.OnNonceChange,
 		OnStorageChange:      balTracer.OnStorageChange,
-		OnColdAccountRead:    balTracer.OnColdAccountRead,
-		OnColdStorageRead:    balTracer.OnColdStorageRead,
+		OnStorageRead:        balTracer.OnStorageRead,
+		OnAccountRead:        balTracer.OnAcountRead,
 		OnSelfDestructChange: balTracer.OnSelfDestruct,
 	}
 	wrappedHooks, err := tracing.WrapWithJournal(hooks)
@@ -127,11 +127,11 @@ func (a *BlockAccessListTracer) OnNonceChange(addr common.Address, prev uint64, 
 	a.accessListBuilder.NonceChange(addr, prev, new)
 }
 
-func (a *BlockAccessListTracer) OnColdStorageRead(addr common.Address, key common.Hash) {
+func (a *BlockAccessListTracer) OnStorageRead(addr common.Address, key common.Hash) {
 	a.accessListBuilder.StorageRead(addr, key)
 }
 
-func (a *BlockAccessListTracer) OnColdAccountRead(addr common.Address) {
+func (a *BlockAccessListTracer) OnAcountRead(addr common.Address) {
 	a.accessListBuilder.AccountRead(addr)
 }
 

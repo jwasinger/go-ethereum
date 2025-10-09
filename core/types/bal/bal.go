@@ -461,7 +461,7 @@ func (c *constructionAccountAccess) StorageRead(key common.Hash) {
 		c.storageReads = make(map[common.Hash]struct{})
 	}
 	if _, ok := c.storageMutations[key]; ok {
-		panic("FUCK")
+		return
 	}
 	// TODO: if a key is written in tx A, and later on read in tx B, it shoulnd't be in the read set.
 	// ^ same for account.
