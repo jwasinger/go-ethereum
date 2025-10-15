@@ -277,15 +277,32 @@ func (s *hookedStateDB) AddLog(log *types.Log) {
 
 func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 	defer s.inner.Finalise(deleteEmptyObjects)
-	if s.hooks.OnBalanceChange == nil {
-		return
-	}
-	for addr := range s.inner.journal.dirties {
-		obj := s.inner.stateObjects[addr]
-		if obj != nil && obj.selfDestructed {
-			// If ether was sent to account post-selfdestruct it is burnt.
-			if bal := obj.Balance(); bal.Sign() != 0 {
-				s.hooks.OnBalanceChange(addr, bal.ToBig(), new(big.Int), tracing.BalanceDecreaseSelfdestructBurn)
+	if s.hooks.OnBalanceChange != nil || s.hooks.OnNonceChangeV2 != nil || s.hooks.OnCodeChangeV2 != nil || s.hooks.OnCodeChange != nil {
+		for addr := range s.inner.journal.dirties {
+			obj := s.inner.stateObjects[addr]
+			if obj != nil && obj.selfDestructed {
+				// If ether was sent to account post-selfdestruct it is burnt.
+				if s.hooks.OnBalanceChange != nil {
+					if bal := obj.Balance(); bal.Sign() != 0 {
+						s.hooks.OnBalanceChange(addr, bal.ToBig(), new(big.Int), tracing.BalanceDecreaseSelfdestructBurn)
+					}
+				}
+				if s.hooks.OnNonceChangeV2 != nil {
+					prevNonce := obj.Nonce()
+					s.hooks.OnNonceChangeV2(addr, prevNonce, 0, tracing.NonceChangeSelfdestruct)
+				}
+				prevCodeHash := s.inner.GetCodeHash(addr)
+				prevCode := s.inner.GetCode(addr)
+
+				// if an initcode invokes selfdestruct, do not emit a code change.
+				if prevCodeHash == types.EmptyCodeHash {
+					continue
+				}
+				if s.hooks.OnCodeChangeV2 != nil {
+					s.hooks.OnCodeChangeV2(addr, prevCodeHash, prevCode, types.EmptyCodeHash, nil, tracing.CodeChangeSelfDestruct)
+				} else if s.hooks.OnCodeChange != nil {
+					s.hooks.OnCodeChange(addr, prevCodeHash, prevCode, types.EmptyCodeHash, nil)
+				}
 			}
 		}
 	}
