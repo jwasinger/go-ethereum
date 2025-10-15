@@ -245,6 +245,10 @@ func (s *hookedStateDB) SelfDestruct6780(address common.Address) (uint256.Int, b
 	return s.inner.SelfDestruct6780(address)
 }
 
+func (s *hookedStateDB) ExistBeforeCurTx(address common.Address) bool {
+	return s.inner.ExistBeforeCurTx(address)
+}
+
 func (s *hookedStateDB) AddLog(log *types.Log) {
 	// The inner will modify the log (add fields), so invoke that first
 	s.inner.AddLog(log)
