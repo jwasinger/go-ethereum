@@ -229,8 +229,8 @@ func (s *hookedStateDB) SelfDestruct6780(address common.Address) (uint256.Int, b
 	return s.inner.SelfDestruct6780(address)
 }
 
-func (s *hookedStateDB) ExistBeforeCurTx(address common.Address) bool {
-	return s.inner.ExistBeforeCurTx(address)
+func (s *hookedStateDB) ContractExistedBeforeCurTx(address common.Address) bool {
+	return s.inner.ContractExistedBeforeCurTx(address)
 }
 
 func (s *hookedStateDB) AddLog(log *types.Log) {
@@ -256,6 +256,9 @@ func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 				if s.hooks.OnNonceChangeV2 != nil {
 					prevNonce := obj.Nonce()
 					s.hooks.OnNonceChangeV2(addr, prevNonce, 0, tracing.NonceChangeSelfdestruct)
+				} else if s.hooks.OnNonceChange != nil {
+					prevNonce := obj.Nonce()
+					s.hooks.OnNonceChange(addr, prevNonce, 0)
 				}
 				prevCodeHash := s.inner.GetCodeHash(addr)
 				prevCode := s.inner.GetCode(addr)

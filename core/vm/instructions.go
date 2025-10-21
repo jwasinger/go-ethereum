@@ -909,7 +909,7 @@ func opSelfdestruct6780(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, erro
 	}
 	beneficiary := scope.Stack.pop()
 	balance := evm.StateDB.GetBalance(scope.Contract.Address())
-	createdInTx := !evm.StateDB.ExistBeforeCurTx(scope.Contract.Address())
+	createdInTx := !evm.StateDB.ContractExistedBeforeCurTx(scope.Contract.Address())
 
 	if createdInTx {
 		// if the contract is not preexisting, the balance is immediately burned on selfdestruct-to-self
