@@ -243,7 +243,7 @@ func (s *hookedStateDB) AddLog(log *types.Log) {
 
 func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 	defer s.inner.Finalise(deleteEmptyObjects)
-	if s.hooks.OnBalanceChange != nil || s.hooks.OnNonceChangeV2 != nil || s.hooks.ONNonceChange != nil || s.hooks.OnCodeChangeV2 != nil || s.hooks.OnCodeChange != nil {
+	if s.hooks.OnBalanceChange != nil || s.hooks.OnNonceChangeV2 != nil || s.hooks.OnNonceChange != nil || s.hooks.OnCodeChangeV2 != nil || s.hooks.OnCodeChange != nil {
 		for addr := range s.inner.journal.dirties {
 			obj := s.inner.stateObjects[addr]
 			if obj != nil && obj.selfDestructed {
