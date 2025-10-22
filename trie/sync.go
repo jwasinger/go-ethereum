@@ -620,7 +620,7 @@ func (s *Sync) children(req *nodeRequest, object node) ([]*nodeRequest, error) {
 					paths = append(paths, hexToKeybytes(child.path[:2*common.HashLength]))
 					paths = append(paths, hexToKeybytes(child.path[2*common.HashLength:]))
 				}
-				if err := req.callback(paths, child.path, node, req.hash, req.path); err != nil {
+				if err := req.callback(paths, child.path, node(), req.hash, req.path); err != nil {
 					return nil, err
 				}
 			}

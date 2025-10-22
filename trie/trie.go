@@ -194,7 +194,7 @@ func (t *Trie) get(origNode node, key []byte, pos int) (value []byte, newnode no
 	case nil:
 		return nil, nil, false, nil
 	case valueNode:
-		return n, n, false, nil
+		return n(), n, false, nil
 	case *shortNode:
 		if !bytes.HasPrefix(key[pos:], n.Key) {
 			// key not found in trie
@@ -382,12 +382,26 @@ func (t *Trie) Update(key, value []byte) error {
 	return t.update(key, value)
 }
 
+func (t *Trie) UpdateAsync(key []byte, valueResolver func() []byte) error {
+	t.unhashed++
+	t.uncommitted++
+	k := keybytesToHex(key)
+
+	// NOTE: this does not support deletions (the length of the value is not known until it is resolved)
+	_, n, err := t.insert(t.root, nil, k, valueNode(valueResolver))
+	if err != nil {
+		return err
+	}
+	t.root = n
+	return nil
+}
+
 func (t *Trie) update(key, value []byte) error {
 	t.unhashed++
 	t.uncommitted++
 	k := keybytesToHex(key)
 	if len(value) != 0 {
-		_, n, err := t.insert(t.root, nil, k, valueNode(value))
+		_, n, err := t.insert(t.root, nil, k, valueNode(func() []byte { return value }))
 		if err != nil {
 			return err
 		}
@@ -405,7 +419,7 @@ func (t *Trie) update(key, value []byte) error {
 func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error) {
 	if len(key) == 0 {
 		if v, ok := n.(valueNode); ok {
-			return !bytes.Equal(v, value.(valueNode)), value, nil
+			return !bytes.Equal(v(), value.(valueNode)()), value, nil
 		}
 		return true, value, nil
 	}
@@ -647,7 +661,7 @@ func copyNode(n node) node {
 	case nil:
 		return nil
 	case valueNode:
-		return valueNode(common.CopyBytes(n))
+		return valueNode(func() []byte { return common.CopyBytes(n()) })
 
 	case *shortNode:
 		return &shortNode{

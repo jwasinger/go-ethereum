@@ -102,5 +102,5 @@ func (n hashNode) encode(w rlp.EncoderBuffer) {
 }
 
 func (n valueNode) encode(w rlp.EncoderBuffer) {
-	w.WriteBytes(n)
+	w.WriteBytes(n())
 }

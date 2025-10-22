@@ -158,7 +158,7 @@ func (c *committer) store(path []byte, n node) node {
 	if c.collectLeaf {
 		if sn, ok := n.(*shortNode); ok {
 			if val, ok := sn.Val.(valueNode); ok {
-				c.nodes.AddLeaf(nhash, val)
+				c.nodes.AddLeaf(nhash, val())
 			}
 		}
 	}
