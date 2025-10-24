@@ -902,7 +902,6 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 			}
 		}
 	}
-	workers.Wait()
 	s.StorageUpdates += time.Since(start)
 
 	// Now we're about to start to write changes to the trie. The trie is so far
@@ -970,6 +969,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 			s.witnessStats.Add(witness, common.Hash{})
 		}
 	}
+
 	return hash
 }
 
