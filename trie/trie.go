@@ -418,9 +418,6 @@ func (t *Trie) update(key, value []byte) error {
 
 func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error) {
 	if len(key) == 0 {
-		if v, ok := n.(valueNode); ok {
-			return !bytes.Equal(v(), value.(valueNode)()), value, nil
-		}
 		return true, value, nil
 	}
 	switch n := n.(type) {
