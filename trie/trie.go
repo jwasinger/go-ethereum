@@ -322,7 +322,7 @@ func (t *Trie) getNode(origNode node, path []byte, pos int) (item []byte, newnod
 	}
 	// Path still needs to be traversed, descend into children
 	switch n := (origNode).(type) {
-	case valueNode:
+	case *valueNode:
 		// Path prematurely ended, abort
 		return nil, nil, 0, nil
 
@@ -627,7 +627,7 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 		// n still contains at least two values and cannot be reduced.
 		return true, n, nil
 
-	case valueNode:
+	case *valueNode:
 		return true, nil, nil
 
 	case nil:
