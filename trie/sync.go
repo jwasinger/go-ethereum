@@ -612,7 +612,7 @@ func (s *Sync) children(req *nodeRequest, object node) ([]*nodeRequest, error) {
 	for _, child := range children {
 		// Notify any external watcher of a new key/value node
 		if req.callback != nil {
-			if node, ok := (child.node).(valueNode); ok {
+			if node, ok := (child.node).(*valueNode); ok {
 				var paths [][]byte
 				if len(child.path) == 2*common.HashLength {
 					paths = append(paths, hexToKeybytes(child.path))

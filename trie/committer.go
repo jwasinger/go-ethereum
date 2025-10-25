@@ -157,7 +157,7 @@ func (c *committer) store(path []byte, n node) node {
 	// length of leaves should be exactly same.
 	if c.collectLeaf {
 		if sn, ok := n.(*shortNode); ok {
-			if val, ok := sn.Val.(valueNode); ok {
+			if val, ok := sn.Val.(*valueNode); ok {
 				c.nodes.AddLeaf(nhash, val.resolve())
 			}
 		}
