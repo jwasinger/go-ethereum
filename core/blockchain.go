@@ -1981,6 +1981,10 @@ func (bpr *blockProcessingResult) Witness() *stateless.Witness {
 	return bpr.witness
 }
 
+func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *types.Block, setHead bool) (_ *blockProcessingResult, blockEndErr error) {
+
+}
+
 // ProcessBlock executes and validates the given block. If there was no error
 // it writes the block and associated state to database.
 func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool) (_ *blockProcessingResult, blockEndErr error) {
