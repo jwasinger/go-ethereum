@@ -1870,7 +1870,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness 
 	// still need re-execution to generate snapshots that are missing
 	case err != nil && !errors.Is(err, ErrKnownBlock):
 		stats.ignored += len(it.chain)
-		bc.reportBlock(block, nil, err)
+		bc.reportBlock(block, nil, nil, err)
 		return nil, it.index, err
 	}
 	// Track the singleton witness from this chain insertion (if any)
@@ -2073,6 +2073,11 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 
 	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig, false)
 	if err != nil {
+		computedAccessList, innerErr := bc.computeAccessList(parentRoot, block)
+		if innerErr != nil {
+			panic("double-check that this should never occur!")
+		}
+		bc.reportBlock(block, computedAccessList, res.ProcessResult, innerErr)
 		return nil, err
 	}
 
@@ -2263,7 +2268,7 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 	pstart := time.Now()
 	res, err = bc.processor.Process(block, statedb, bc.cfg.VmConfig)
 	if err != nil {
-		bc.reportBlock(block, res, err)
+		bc.reportBlock(block, nil, res, err)
 		return nil, err
 	}
 	ptime = time.Since(pstart)
@@ -2279,7 +2284,7 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 
 	vstart := time.Now()
 	if err := bc.validator.ValidateState(block, statedb, res, false); err != nil {
-		bc.reportBlock(block, res, err)
+		bc.reportBlock(block, nil, res, err)
 		return nil, err
 	}
 	vtime = time.Since(vstart)
@@ -2868,17 +2873,13 @@ func (bc *BlockChain) skipBlock(err error, it *insertIterator) bool {
 }
 
 // reportBlock logs a bad block error.
-func (bc *BlockChain) reportBlock(block *types.Block, res *ProcessResult, err error) {
+func (bc *BlockChain) reportBlock(block *types.Block, computedAccessList *bal.BlockAccessList, res *ProcessResult, err error) {
 	var receipts types.Receipts
 	if res != nil {
 		receipts = res.Receipts
 	}
-	rawdb.WriteBadBlock(bc.db, block)
+	rawdb.WriteBadBlock(bc.db, block, computedAccessList)
 	log.Error(summarizeBadBlock(block, receipts, bc.Config(), err))
-}
-
-func (bc *BlockChain) reportBALBlock(block *types.Block, res *ProcessResult, err error) {
-
 }
 
 // logForkReadiness will write a log when a future fork is scheduled, but not
