@@ -20,6 +20,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"io"
 	"math/big"
 	"runtime"
@@ -2009,6 +2010,31 @@ func (bpr *blockProcessingResult) Witness() *stateless.Witness {
 	return bpr.witness
 }
 
+func (bc *BlockChain) computeAccessList(parentRoot common.Hash, block *types.Block) (*bal.BlockAccessList, error) {
+	reader, err := bc.statedb.Reader(parentRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	accessList := state.NewBALReader(block, reader)
+	stateTransition, err := state.NewBALStateTransition(accessList, bc.statedb, parentRoot)
+	if err != nil {
+		return nil, err
+	}
+	statedb, err := state.New(parentRoot, bc.statedb)
+	if err != nil {
+		return nil, err
+	}
+
+	statedb.SetBlockAccessList(accessList)
+
+	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig, true)
+	if err != nil {
+		return nil, err
+	}
+	return res.AccessList, nil
+}
+
 func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *types.Block, setHead bool) (procRes *blockProcessingResult, blockEndErr error) {
 	var (
 		startTime = time.Now()
@@ -2045,7 +2071,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		}()
 	}
 
-	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig)
+	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig, false)
 	if err != nil {
 		return nil, err
 	}

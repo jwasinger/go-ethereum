@@ -22,6 +22,7 @@ type ProcessResultWithMetrics struct {
 	// the time it took to execute all txs in the block
 	ExecTime        time.Duration
 	PostProcessTime time.Duration
+	AccessList      *bal.BlockAccessList
 }
 
 // ParallelStateProcessor is used to execute and verify blocks containing
@@ -40,11 +41,16 @@ func NewParallelStateProcessor(chain *HeaderChain, vmConfig *vm.Config) Parallel
 	}
 }
 
+type balIdxStateDiff struct {
+	idx  int
+	diff *bal.StateDiff
+}
+
 // called by resultHandler when all transactions have successfully executed.
 // performs post-tx state transition (system contracts and withdrawals)
 // and calculates the ProcessResult, returning it to be sent on resCh
 // by resultHandler
-func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateReads *bal.StateAccesses, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) *ProcessResultWithMetrics {
+func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateReads *bal.StateAccesses, tExecStart time.Time, postTxState *state.StateDB, receipts types.Receipts) (*ProcessResultWithMetrics, *bal.StateDiff) {
 	tExec := time.Since(tExecStart)
 	var requests [][]byte
 	tPostprocessStart := time.Now()
@@ -80,7 +86,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if receipt.CumulativeGasUsed > header.GasLimit {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: fmt.Errorf("gas limit exceeded")},
-			}
+			}, nil
 		}
 		allLogs = append(allLogs, receipt.Logs...)
 	}
@@ -92,7 +98,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err := ParseDepositLogs(&requests, allLogs, p.chainConfig()); err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}
+			}, nil
 		}
 
 		// EIP-7002
@@ -100,7 +106,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}
+			}, nil
 		}
 
 		// EIP-7251
@@ -108,7 +114,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}
+			}, nil
 		}
 	}
 
@@ -118,20 +124,20 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 	postTxState.Finalise(true)
 
 	balTracer.OnBlockFinalization()
-	diff, stateReads := balTracer.builder.FinalizedIdxChanges()
+	postTxDiff, stateReads := balTracer.builder.FinalizedIdxChanges()
 	allStateReads.Merge(stateReads)
 
 	balIdx := len(block.Transactions()) + 1
-	if err := postTxState.BlockAccessList().ValidateStateDiff(balIdx, diff); err != nil {
+	if err := postTxState.BlockAccessList().ValidateStateDiff(balIdx, postTxDiff); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
-		}
+		}, nil
 	}
 
 	if err := postTxState.BlockAccessList().ValidateStateReads(*allStateReads); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
-		}
+		}, nil
 	}
 
 	tPostprocess := time.Since(tPostprocessStart)
@@ -145,7 +151,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		},
 		PostProcessTime: tPostprocess,
 		ExecTime:        tExec,
-	}
+	}, postTxDiff
 }
 
 type txExecResult struct {
@@ -154,11 +160,15 @@ type txExecResult struct {
 	err     error // non-EVM error which would render the block invalid
 
 	stateReads bal.StateAccesses
+
+	// only set in the case where we are reexecuting a bad block to build a locally-computed block access list.
+	// validation is performed within the tx executer without re-assembling the entire block access list.
+	stateDiff *bal.StateDiff
 }
 
 // resultHandler polls until all transactions have finished executing and the
 // state root calculation is complete. The result is emitted on resCh.
-func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateReads bal.StateAccesses, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics) {
+func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateDiff *bal.StateDiff, preTxStateReads bal.StateAccesses, postTxState *state.StateDB, tExecStart time.Time, txResCh <-chan txExecResult, stateRootCalcResCh <-chan stateRootCalculationResult, resCh chan *ProcessResultWithMetrics, constructFullAccessList bool) {
 	// 1. if the block has transactions, receive the execution results from all of them and return an error on resCh if any txs err'd
 	// 2. once all txs are executed, compute the post-tx state transition and produce the ProcessResult sending it on resCh (or an error if the post-tx state didn't match what is reported in the BAL)
 	var receipts []*types.Receipt
@@ -169,11 +179,17 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateRea
 
 	allReads := make(bal.StateAccesses)
 	allReads.Merge(preTxStateReads)
+
+	var txDiffs []*bal.StateDiff
+
 	if len(block.Transactions()) > 0 {
 	loop:
 		for {
 			select {
 			case res := <-txResCh:
+				// record the first-received erring transaction, and also
+				// ensure that the transactions in the block do not go over
+				// the gas limit
 				if execErr == nil {
 					if res.err != nil {
 						execErr = res.err
@@ -185,6 +201,9 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateRea
 							allReads.Merge(res.stateReads)
 						}
 					}
+				}
+				if constructFullAccessList {
+					txDiffs = append(txDiffs, res.stateDiff)
 				}
 				numTxComplete++
 				if numTxComplete == len(block.Transactions()) {
@@ -199,16 +218,28 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateRea
 		}
 	}
 
-	execResults := p.prepareExecResult(block, &allReads, tExecStart, postTxState, receipts)
+	execResults, postTxDiff := p.prepareExecResult(block, &allReads, tExecStart, postTxState, receipts)
 	rootCalcRes := <-stateRootCalcResCh
 
+	var accessList *bal.BlockAccessList
+	if constructFullAccessList {
+		sortedDiffs := make([]*bal.StateDiff, len(block.Transactions())+2)
+		sortedDiffs[0] = preTxStateDiff
+		sortedDiffs[len(sortedDiffs)-1] = postTxDiff
+		for i, receipt := range receipts {
+			sortedDiffs[int(receipt.TransactionIndex)+1] = txDiffs[i]
+		}
+		accessList = bal.ConstructAccessList(sortedDiffs, allReads)
+	}
+
 	if execResults.ProcessResult.Error != nil {
+		execResults.AccessList = accessList
 		resCh <- execResults
 	} else if rootCalcRes.err != nil {
-		resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: rootCalcRes.err}}
+		resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: rootCalcRes.err}, AccessList: accessList}
 	} else {
-		//  &{20.39677ms 0s 1.149668ms 735.295µs 0s 0s 0s 0s}
 		execResults.StateTransitionMetrics = rootCalcRes.metrics
+		execResults.AccessList = accessList
 		resCh <- execResults
 	}
 }
@@ -239,7 +270,7 @@ func (p *ParallelStateProcessor) calcAndVerifyRoot(preState *state.StateDB, bloc
 }
 
 // execTx executes single transaction returning a result which includes state accessed/modified
-func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transaction, txIdx int, db *state.StateDB, signer types.Signer) *txExecResult {
+func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transaction, txIdx int, db *state.StateDB, signer types.Signer, recordDiff bool) *txExecResult {
 	header := block.Header()
 	balTracer, hooks := NewBlockAccessListTracer()
 	tracingStateDB := state.NewHookedState(db, hooks)
@@ -276,16 +307,21 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 		return &txExecResult{err: err}
 	}
 
-	return &txExecResult{
+	res := &txExecResult{
 		idx:        txIdx,
 		receipt:    receipt,
 		stateReads: accesses,
 	}
+
+	if recordDiff {
+		res.stateDiff = diff
+	}
+	return res
 }
 
 // Process performs EVM execution and state root computation for a block which is known
 // to contain an access list.
-func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *state.BALStateTransition, statedb *state.StateDB, cfg vm.Config) (*ProcessResultWithMetrics, error) {
+func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *state.BALStateTransition, statedb *state.StateDB, cfg vm.Config, constructAccessList bool) (*ProcessResultWithMetrics, error) {
 	//fmt.Println("Parallel Process")
 	var (
 		header = block.Header()
@@ -336,14 +372,15 @@ func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *st
 	// TODO: figure out how to funnel the state reads from the bal tracer through to the post-block-exec state/slot read
 	// validation
 	tExecStart = time.Now()
-	go p.resultHandler(block, stateReads, postTxState, tExecStart, txResCh, rootCalcResultCh, resCh)
+	// TODO: make resultHandler a non-goroutine function that blocks until the block execution is complete.
+	go p.resultHandler(block, diff, stateReads, postTxState, tExecStart, txResCh, rootCalcResultCh, resCh, constructAccessList)
 	var workers errgroup.Group
 	startingState := statedb.Copy()
 	for i, tx := range block.Transactions() {
 		tx := tx
 		i := i
 		workers.Go(func() error {
-			res := p.execTx(block, tx, i, startingState.Copy(), signer)
+			res := p.execTx(block, tx, i, startingState.Copy(), signer, constructAccessList)
 			txResCh <- *res
 			return nil
 		})
