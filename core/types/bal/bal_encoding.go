@@ -82,7 +82,7 @@ func (e *BlockAccessList) String() string {
 	enc := json.NewEncoder(&res)
 	enc.SetIndent("", "    ")
 	// TODO: check error
-	enc.Encode(e)
+	enc.Encode(e.StringableRepresentation())
 	return res.String()
 }
 

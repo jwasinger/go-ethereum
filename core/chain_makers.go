@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -52,6 +53,9 @@ type BlockGen struct {
 	withdrawals []*types.Withdrawal
 
 	engine consensus.Engine
+
+	accessListTracer      *BlockAccessListTracer
+	accessListTracerHooks *tracing.Hooks
 }
 
 // SetCoinbase sets the coinbase of the generated block.
@@ -113,9 +117,17 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 	if b.gasPool == nil {
 		b.SetCoinbase(common.Address{})
 	}
+	var statedb vm.StateDB = b.statedb
+	if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+		vmConfig.Tracer = b.accessListTracerHooks
+		statedb = state.NewHookedState(b.statedb, b.accessListTracerHooks)
+		defer func() {
+			vmConfig.Tracer = nil
+		}()
+	}
 	var (
 		blockContext = NewEVMBlockContext(b.header, bc, &b.header.Coinbase)
-		evm          = vm.NewEVM(blockContext, b.statedb, b.cm.config, vmConfig)
+		evm          = vm.NewEVM(blockContext, statedb, b.cm.config, vmConfig)
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs))
 	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed)
@@ -313,6 +325,7 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		// off the statedb before executing the system calls.
 		statedb = statedb.Copy()
 	}
+	hookedStateDB := state.NewHookedState(statedb, b.accessListTracerHooks)
 
 	if b.cm.config.IsPrague(b.header.Number, b.header.Time) {
 		requests = [][]byte{}
@@ -326,7 +339,11 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		}
 		// create EVM for system calls
 		blockContext := NewEVMBlockContext(b.header, b.cm, &b.header.Coinbase)
-		evm := vm.NewEVM(blockContext, statedb, b.cm.config, vm.Config{})
+		var vmConfig vm.Config
+		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+			vmConfig.Tracer = b.accessListTracerHooks
+		}
+		evm := vm.NewEVM(blockContext, hookedStateDB, b.cm.config, vmConfig)
 		// EIP-7002
 		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process withdrawal requests: %v", err))
@@ -335,6 +352,7 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process consolidation requests: %v", err))
 		}
+
 	}
 	return requests
 }
@@ -361,8 +379,14 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	cm := newChainMaker(parent, config, engine)
 
 	genblock := func(i int, parent *types.Block, triedb *triedb.Database, statedb *state.StateDB) (*types.Block, types.Receipts) {
-		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine}
-		b.header = cm.makeHeader(parent, statedb, b.engine)
+		header := cm.makeHeader(parent, statedb, engine)
+		isAmsterdam := config.IsAmsterdam(header.Number, header.Time)
+
+		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine, header: header}
+
+		if isAmsterdam {
+			b.accessListTracer, b.accessListTracerHooks = NewBlockAccessListTracer()
+		}
 
 		// Set the difficulty for clique block. The chain maker doesn't have access
 		// to a chain, so the difficulty will be left unset (nil). Set it here to the
@@ -390,12 +414,33 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			misc.ApplyDAOHardFork(statedb)
 		}
 
+		// TODO: generate access list for the pre/post-block system contracts
 		if config.IsPrague(b.header.Number, b.header.Time) || config.IsVerkle(b.header.Number, b.header.Time) {
+			var (
+				vmConfig       vm.Config
+				wrappedStateDB vm.StateDB = statedb
+			)
+			if isAmsterdam {
+				vmConfig.Tracer = b.accessListTracerHooks
+				wrappedStateDB = state.NewHookedState(statedb, b.accessListTracerHooks)
+			}
 			// EIP-2935
 			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
 			blockContext.Random = &common.Hash{} // enable post-merge instruction set
-			evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})
+			evm := vm.NewEVM(blockContext, wrappedStateDB, cm.config, vmConfig)
 			ProcessParentBlockHash(b.header.ParentHash, evm)
+
+			if b.header.ParentBeaconRoot != nil {
+				ProcessBeaconBlockRoot(*b.header.ParentBeaconRoot, evm)
+			} else {
+				ProcessBeaconBlockRoot(common.Hash{}, evm)
+			}
+		}
+
+		// TODO: where is beacon root applied here?
+
+		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+			b.accessListTracer.OnPreTxExecutionDone()
 		}
 
 		// Execute any user modifications to the block
@@ -410,7 +455,14 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		}
 
 		body := types.Body{Transactions: b.txs, Uncles: b.uncles, Withdrawals: b.withdrawals}
-		block, err := b.engine.FinalizeAndAssemble(cm, b.header, statedb, &body, b.receipts, nil)
+		var onFinalization func()
+		if isAmsterdam {
+			onFinalization = func() {
+				b.accessListTracer.OnBlockFinalization()
+				body.AccessList = b.accessListTracer.AccessList().ToEncodingObj()
+			}
+		}
+		block, err := b.engine.FinalizeAndAssemble(cm, b.header, statedb, &body, b.receipts, onFinalization)
 		if err != nil {
 			panic(err)
 		}
@@ -464,6 +516,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		cm.add(block, receipts)
 		parent = block
 	}
+
 	return cm.chain, cm.receipts
 }
 

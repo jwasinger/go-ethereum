@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
 	"slices"
 
@@ -799,8 +800,9 @@ func DeleteBlockWithoutNumber(db ethdb.KeyValueWriter, hash common.Hash, number 
 const badBlockToKeep = 10
 
 type badBlock struct {
-	Header *types.Header
-	Body   *types.Body
+	Header            *types.Header
+	Body              *types.Body
+	ComputeAccessList *bal.BlockAccessList
 }
 
 // ReadBadBlock retrieves the bad block with the corresponding block hash.
@@ -827,29 +829,33 @@ func ReadBadBlock(db ethdb.Reader, hash common.Hash) *types.Block {
 
 // ReadAllBadBlocks retrieves all the bad blocks in the database.
 // All returned blocks are sorted in reverse order by number.
-func ReadAllBadBlocks(db ethdb.Reader) []*types.Block {
+func ReadAllBadBlocks(db ethdb.Reader) ([]*types.Block, []*bal.BlockAccessList) {
 	blob, err := db.Get(badBlockKey)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var badBlocks []*badBlock
 	if err := rlp.DecodeBytes(blob, &badBlocks); err != nil {
-		return nil
+		return nil, nil
 	}
-	var blocks []*types.Block
+	var (
+		blocks      []*types.Block
+		accessLists []*bal.BlockAccessList
+	)
 	for _, bad := range badBlocks {
 		block := types.NewBlockWithHeader(bad.Header)
 		if bad.Body != nil {
 			block = block.WithBody(*bad.Body)
 		}
 		blocks = append(blocks, block)
+		accessLists = append(accessLists, bad.ComputeAccessList)
 	}
-	return blocks
+	return blocks, accessLists
 }
 
 // WriteBadBlock serializes the bad block into the database. If the cumulated
 // bad blocks exceeds the limitation, the oldest will be dropped.
-func WriteBadBlock(db ethdb.KeyValueStore, block *types.Block) {
+func WriteBadBlock(db ethdb.KeyValueStore, block *types.Block, computedAccessList *bal.BlockAccessList) {
 	blob, err := db.Get(badBlockKey)
 	if err != nil {
 		log.Warn("Failed to load old bad blocks", "error", err)
@@ -867,8 +873,9 @@ func WriteBadBlock(db ethdb.KeyValueStore, block *types.Block) {
 		}
 	}
 	badBlocks = append(badBlocks, &badBlock{
-		Header: block.Header(),
-		Body:   block.Body(),
+		Header:            block.Header(),
+		Body:              block.Body(),
+		ComputeAccessList: computedAccessList,
 	})
 	slices.SortFunc(badBlocks, func(a, b *badBlock) int {
 		// Note: sorting in descending number order.

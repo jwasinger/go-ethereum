@@ -231,22 +231,28 @@ func (a *idxAccessListBuilder) finalise() (*StateDiff, StateAccesses) {
 	return diff, stateAccesses
 }
 
-// FinaliseIdxChanges records all pending state mutations/accesses in the
-// access list at the given index.  The set of pending state mutations/accesse are
-// then emptied.
-func (c *AccessListBuilder) FinaliseIdxChanges(idx uint16) {
-	pendingDiff, pendingAccesses := c.idxBuilder.finalise()
-	c.idxBuilder = newAccessListBuilder()
+func ConstructAccessList(diffs []*StateDiff, accesses StateAccesses) *BlockAccessList {
+	builder := NewAccessListBuilder()
+	for i, diff := range diffs {
+		// invalid transactions will not result in a state diff
+		if diff == nil {
+			continue
+		}
+		builder.addIdxStateDiffs(uint16(i), diff)
+	}
+	builder.addStateReads(accesses)
+	return builder.ToEncodingObj()
+}
 
+func (c *AccessListBuilder) addIdxStateDiffs(idx uint16, diff *StateDiff) {
 	// if any of the newly-written storage slots were previously
 	// accessed, they must be removed from the accessed state set.
-	for addr, pendingAcctDiff := range pendingDiff.Mutations {
+	for addr, pendingAcctDiff := range diff.Mutations {
 		finalizedAcctChanges, ok := c.FinalizedAccesses[addr]
 		if !ok {
 			finalizedAcctChanges = &ConstructionAccountAccesses{}
 			c.FinalizedAccesses[addr] = finalizedAcctChanges
 		}
-
 		if pendingAcctDiff.Nonce != nil {
 			if finalizedAcctChanges.NonceChanges == nil {
 				finalizedAcctChanges.NonceChanges = make(map[uint16]uint64)
@@ -284,9 +290,12 @@ func (c *AccessListBuilder) FinaliseIdxChanges(idx uint16) {
 			}
 		}
 	}
+}
+
+func (c *AccessListBuilder) addStateReads(accesses StateAccesses) {
 	// record pending accesses in the BAL access set unless they were
 	// already written in a previous index
-	for addr, pendingAccountAccesses := range pendingAccesses {
+	for addr, pendingAccountAccesses := range accesses {
 		finalizedAcctAccesses, ok := c.FinalizedAccesses[addr]
 		if !ok {
 			finalizedAcctAccesses = &ConstructionAccountAccesses{}
@@ -303,6 +312,18 @@ func (c *AccessListBuilder) FinaliseIdxChanges(idx uint16) {
 			finalizedAcctAccesses.StorageReads[key] = struct{}{}
 		}
 	}
+}
+
+// FinaliseIdxChanges records all pending state mutations/accesses in the
+// access list at the given index.  The set of pending state mutations/accesse are
+// then emptied.
+func (c *AccessListBuilder) FinaliseIdxChanges(idx uint16) {
+	pendingDiff, pendingAccesses := c.idxBuilder.finalise()
+	c.idxBuilder = newAccessListBuilder()
+
+	c.addIdxStateDiffs(idx, pendingDiff)
+	c.addStateReads(pendingAccesses)
+
 	c.lastFinalizedMutations = pendingDiff
 	c.lastFinalizedAccesses = pendingAccesses
 }
