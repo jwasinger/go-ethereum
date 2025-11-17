@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"golang.org/x/sync/errgroup"
+	"runtime/debug"
 	"slices"
 	"time"
 )
@@ -78,6 +79,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		return cmp.Compare(a.TransactionIndex, b.TransactionIndex)
 	})
 
+	postTxStateDiff := &bal.StateDiff{make(map[common.Address]*bal.AccountMutations)}
 	var cumulativeGasUsed uint64
 	var allLogs []*types.Log
 	for _, receipt := range receipts {
@@ -86,7 +88,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if receipt.CumulativeGasUsed > header.GasLimit {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: fmt.Errorf("gas limit exceeded")},
-			}, nil
+			}, postTxStateDiff
 		}
 		allLogs = append(allLogs, receipt.Logs...)
 	}
@@ -98,7 +100,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err := ParseDepositLogs(&requests, allLogs, p.chainConfig()); err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}, nil
+			}, postTxStateDiff
 		}
 
 		// EIP-7002
@@ -106,7 +108,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}, nil
+			}, postTxStateDiff
 		}
 
 		// EIP-7251
@@ -114,7 +116,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		if err != nil {
 			return &ProcessResultWithMetrics{
 				ProcessResult: &ProcessResult{Error: err},
-			}, nil
+			}, postTxStateDiff
 		}
 	}
 
@@ -131,13 +133,13 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 	if err := postTxState.BlockAccessList().ValidateStateDiff(balIdx, postTxDiff); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
-		}, nil
+		}, postTxDiff
 	}
 
 	if err := postTxState.BlockAccessList().ValidateStateReads(*allStateReads); err != nil {
 		return &ProcessResultWithMetrics{
 			ProcessResult: &ProcessResult{Error: err},
-		}, nil
+		}, postTxDiff
 	}
 
 	tPostprocess := time.Since(tPostprocessStart)
@@ -213,7 +215,10 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateDif
 		}
 
 		if execErr != nil {
-			resCh <- &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: execErr}}
+			res := &ProcessResultWithMetrics{ProcessResult: &ProcessResult{Error: execErr}}
+			if constructFullAccessList {
+				// TODO: embed the block access list here...
+			}
 			return
 		}
 	}
@@ -223,6 +228,8 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxStateDif
 
 	var accessList *bal.BlockAccessList
 	if constructFullAccessList {
+		fmt.Printf("process result error: %v\n", execResults.ProcessResult.Error)
+		// TODO: a bad transaction could result in a situation where we don't have any state modifications
 		sortedDiffs := make([]*bal.StateDiff, len(block.Transactions())+2)
 		sortedDiffs[0] = preTxStateDiff
 		sortedDiffs[len(sortedDiffs)-1] = postTxDiff
@@ -322,7 +329,8 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 // Process performs EVM execution and state root computation for a block which is known
 // to contain an access list.
 func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *state.BALStateTransition, statedb *state.StateDB, cfg vm.Config, constructAccessList bool) (*ProcessResultWithMetrics, error) {
-	//fmt.Println("Parallel Process")
+	fmt.Printf("parallel state processor process\n")
+	debug.PrintStack()
 	var (
 		header = block.Header()
 		resCh  = make(chan *ProcessResultWithMetrics)
@@ -390,7 +398,7 @@ func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *st
 
 	res := <-resCh
 	if res.ProcessResult.Error != nil {
-		return nil, res.ProcessResult.Error
+		return res, res.ProcessResult.Error
 	}
 	res.PreProcessTime = tPreprocess
 	//	res.PreProcessLoadTime = tPreprocessLoad

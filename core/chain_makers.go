@@ -54,8 +54,8 @@ type BlockGen struct {
 
 	engine consensus.Engine
 
-	accessListTracer     *BlockAccessListTracer
-	accesListTracerHooks *tracing.Hooks
+	accessListTracer      *BlockAccessListTracer
+	accessListTracerHooks *tracing.Hooks
 }
 
 // SetCoinbase sets the coinbase of the generated block.
@@ -119,8 +119,8 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 	}
 	var statedb vm.StateDB = b.statedb
 	if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
-		vmConfig.Tracer = b.accesListTracerHooks
-		statedb = state.NewHookedState(b.statedb, b.accesListTracerHooks)
+		vmConfig.Tracer = b.accessListTracerHooks
+		statedb = state.NewHookedState(b.statedb, b.accessListTracerHooks)
 		defer func() {
 			vmConfig.Tracer = nil
 		}()
@@ -338,7 +338,11 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		}
 		// create EVM for system calls
 		blockContext := NewEVMBlockContext(b.header, b.cm, &b.header.Coinbase)
-		evm := vm.NewEVM(blockContext, statedb, b.cm.config, vm.Config{})
+		var vmConfig vm.Config
+		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+			vmConfig.Tracer = b.accessListTracerHooks
+		}
+		evm := vm.NewEVM(blockContext, statedb, b.cm.config, vmConfig)
 		// EIP-7002
 		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process withdrawal requests: %v", err))
@@ -347,6 +351,7 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process consolidation requests: %v", err))
 		}
+
 	}
 	return requests
 }
@@ -379,7 +384,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine, header: header}
 
 		if isAmsterdam {
-			b.accessListTracer, b.accesListTracerHooks = NewBlockAccessListTracer()
+			b.accessListTracer, b.accessListTracerHooks = NewBlockAccessListTracer()
 		}
 
 		// Set the difficulty for clique block. The chain maker doesn't have access
@@ -408,12 +413,27 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			misc.ApplyDAOHardFork(statedb)
 		}
 
+		// TODO: generate access list for the pre/post-block system contracts
 		if config.IsPrague(b.header.Number, b.header.Time) || config.IsVerkle(b.header.Number, b.header.Time) {
+			var (
+				vmConfig       vm.Config
+				wrappedStateDB vm.StateDB = statedb
+			)
+			if isAmsterdam {
+				vmConfig.Tracer = b.accessListTracerHooks
+				wrappedStateDB = state.NewHookedState(statedb, b.accessListTracerHooks)
+			}
 			// EIP-2935
 			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
 			blockContext.Random = &common.Hash{} // enable post-merge instruction set
-			evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})
+			evm := vm.NewEVM(blockContext, wrappedStateDB, cm.config, vmConfig)
 			ProcessParentBlockHash(b.header.ParentHash, evm)
+		}
+
+		// TODO: where is beacon root applied here?
+
+		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+			b.accessListTracer.OnPreTxExecutionDone()
 		}
 
 		// Execute any user modifications to the block
@@ -431,25 +451,12 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		var onFinalization func()
 		if isAmsterdam {
 			onFinalization = b.accessListTracer.OnBlockFinalization
+			body.AccessList = b.accessListTracer.AccessList().ToEncodingObj()
 		}
 		block, err := b.engine.FinalizeAndAssemble(cm, b.header, statedb, &body, b.receipts, onFinalization)
 		if err != nil {
 			panic(err)
 		}
-
-		if isAmsterdam {
-			b.accessListTracer.OnBlockFinalization()
-
-			// very ugly... deep-copy the block body before setting the block access
-			// list on it to prevent mutating the block instance passed by the caller.
-			existingBody := block.Body()
-			block = block.WithBody(*existingBody)
-			existingBody = block.Body()
-			existingBody.AccessList = b.accessListTracer.AccessList().ToEncodingObj()
-			block = block.WithBody(*existingBody)
-		}
-		fmt.Printf("block\n%s\n", block.Body().AccessList.String())
-		panic("FOOBAR")
 
 		// Write state changes to db
 		root, err := statedb.Commit(b.header.Number.Uint64(), config.IsEIP158(b.header.Number), config.IsCancun(b.header.Number, b.header.Time))
@@ -467,8 +474,6 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	defer triedb.Close()
 
 	for i := 0; i < n; i++ {
-		// TODO: move statedb instantiation inside of genblock so that we can create a hooked
-		// statedb in order to create block access lists
 		statedb, err := state.New(parent.Root(), state.NewDatabase(triedb, nil))
 		if err != nil {
 			panic(err)

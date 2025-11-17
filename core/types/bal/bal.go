@@ -19,9 +19,11 @@ package bal
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
 	"maps"
+	"runtime/debug"
 )
 
 // idxAccessListBuilder is responsible for producing the state accesses and
@@ -232,6 +234,9 @@ func (a *idxAccessListBuilder) finalise() (*StateDiff, StateAccesses) {
 }
 
 func ConstructAccessList(diffs []*StateDiff, accesses StateAccesses) *BlockAccessList {
+	fmt.Printf("ConstructBlockAccessList\n")
+	debug.PrintStack()
+
 	builder := NewAccessListBuilder()
 	for i, diff := range diffs {
 		builder.addIdxStateDiffs(uint16(i), diff)

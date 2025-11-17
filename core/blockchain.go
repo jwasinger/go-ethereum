@@ -1777,6 +1777,7 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 // is imported, but then new canon-head is added before the actual sidechain
 // completes, then the historic state could be pruned again
 func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness bool) (*stateless.Witness, int, error) {
+	fmt.Println("insertChain")
 	// If the chain is terminating, don't even bother starting up.
 	if bc.insertStopped() {
 		return nil, 0, nil
@@ -1877,6 +1878,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness 
 	var witness *stateless.Witness
 
 	for ; block != nil && err == nil || errors.Is(err, ErrKnownBlock); block, err = it.next() {
+		fmt.Printf("iterate %d\n", block.NumberU64())
 		// If the chain is terminating, stop processing blocks
 		if bc.insertStopped() {
 			log.Debug("Abort during block processing")
@@ -1940,6 +1942,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness 
 		constructBAL := enableBAL && !blockHasAccessList
 		validateBAL := enableBAL && blockHasAccessList
 
+		fmt.Printf("before process block %d\n", block.NumberU64())
 		res, err := bc.ProcessBlock(parent.Root, block, setHead, makeWitness && len(chain) == 1, constructBAL, validateBAL)
 		if err != nil {
 			return nil, it.index, err
@@ -2030,7 +2033,7 @@ func (bc *BlockChain) computeAccessList(parentRoot common.Hash, block *types.Blo
 
 	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig, true)
 	if err != nil {
-		return nil, err
+		return res.AccessList, err
 	}
 	return res.AccessList, nil
 }

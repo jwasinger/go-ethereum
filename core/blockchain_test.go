@@ -4536,7 +4536,7 @@ func TestBALBadBlockInsertion(t *testing.T) {
 		engine  = beacon.New(ethash.NewFaker())
 		codeBin = common.FromHex("0x608060405234801561000f575f5ffd5b507f8ae1c8c6e5f91159d0bc1c4b9a47ce45301753843012cbe641e4456bfc73538b33426040516100419291906100ff565b60405180910390a1610139565b5f73ffffffffffffffffffffffffffffffffffffffff82169050919050565b5f6100778261004e565b9050919050565b6100878161006d565b82525050565b5f819050919050565b61009f8161008d565b82525050565b5f82825260208201905092915050565b7f436f6e7374727563746f72207761732063616c6c6564000000000000000000005f82015250565b5f6100e96016836100a5565b91506100f4826100b5565b602082019050919050565b5f6060820190506101125f83018561007e565b61011f6020830184610096565b8181036040830152610130816100dd565b90509392505050565b603e806101455f395ff3fe60806040525f5ffdfea2646970667358221220e8bc3c31e3ac337eab702e8fdfc1c71894f4df1af4221bcde4a2823360f403fb64736f6c634300081e0033")
 	)
-	_, blocks, receipts := GenerateChainWithGenesis(gspec, engine, chainLength, func(i int, block *BlockGen) {
+	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, chainLength, func(i int, block *BlockGen) {
 		// SPDX-License-Identifier: MIT
 		// pragma solidity ^0.8.0;
 		//
@@ -4576,11 +4576,13 @@ func TestBALBadBlockInsertion(t *testing.T) {
 	defer chain.Stop()
 
 	// remove the access list from the block
-	body := blocks[0].Body()
-	fmt.Printf("block access list is\n%s\n%v\n", body.AccessList.String(), body.AccessList)
-	body.AccessList = nil
-	blocks[0] = blocks[0].WithBody(*body)
+	/*
+		body := blocks[0].Body()
+		fmt.Printf("block access list is\n%s\n%v\n", body.AccessList.String(), body.AccessList)
+		body.AccessList = nil
+		blocks[0] = blocks[0].WithBody(*body)
+	*/
 
-	count, err := chain.InsertReceiptChain(blocks, types.EncodeBlockReceiptLists(receipts), 0)
+	count, err := chain.InsertChain(blocks)
 	fmt.Printf("insertion result %d - %v\n", count, err)
 }
