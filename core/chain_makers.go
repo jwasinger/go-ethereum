@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -52,6 +53,9 @@ type BlockGen struct {
 	withdrawals []*types.Withdrawal
 
 	engine consensus.Engine
+
+	accessListTracer     *BlockAccessListTracer
+	accesListTracerHooks *tracing.Hooks
 }
 
 // SetCoinbase sets the coinbase of the generated block.
@@ -113,9 +117,17 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 	if b.gasPool == nil {
 		b.SetCoinbase(common.Address{})
 	}
+	var statedb vm.StateDB = b.statedb
+	if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+		vmConfig.Tracer = b.accesListTracerHooks
+		statedb = state.NewHookedState(b.statedb, b.accesListTracerHooks)
+		defer func() {
+			vmConfig.Tracer = nil
+		}()
+	}
 	var (
 		blockContext = NewEVMBlockContext(b.header, bc, &b.header.Coinbase)
-		evm          = vm.NewEVM(blockContext, b.statedb, b.cm.config, vmConfig)
+		evm          = vm.NewEVM(blockContext, statedb, b.cm.config, vmConfig)
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs))
 	receipt, err := ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, &b.header.GasUsed)
@@ -361,8 +373,14 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	cm := newChainMaker(parent, config, engine)
 
 	genblock := func(i int, parent *types.Block, triedb *triedb.Database, statedb *state.StateDB) (*types.Block, types.Receipts) {
-		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine}
-		b.header = cm.makeHeader(parent, statedb, b.engine)
+		header := cm.makeHeader(parent, statedb, engine)
+		isAmsterdam := config.IsAmsterdam(header.Number, header.Time)
+
+		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine, header: header}
+
+		if isAmsterdam {
+			b.accessListTracer, b.accesListTracerHooks = NewBlockAccessListTracer()
+		}
 
 		// Set the difficulty for clique block. The chain maker doesn't have access
 		// to a chain, so the difficulty will be left unset (nil). Set it here to the
@@ -410,10 +428,28 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		}
 
 		body := types.Body{Transactions: b.txs, Uncles: b.uncles, Withdrawals: b.withdrawals}
-		block, err := b.engine.FinalizeAndAssemble(cm, b.header, statedb, &body, b.receipts, nil)
+		var onFinalization func()
+		if isAmsterdam {
+			onFinalization = b.accessListTracer.OnBlockFinalization
+		}
+		block, err := b.engine.FinalizeAndAssemble(cm, b.header, statedb, &body, b.receipts, onFinalization)
 		if err != nil {
 			panic(err)
 		}
+
+		if isAmsterdam {
+			b.accessListTracer.OnBlockFinalization()
+
+			// very ugly... deep-copy the block body before setting the block access
+			// list on it to prevent mutating the block instance passed by the caller.
+			existingBody := block.Body()
+			block = block.WithBody(*existingBody)
+			existingBody = block.Body()
+			existingBody.AccessList = b.accessListTracer.AccessList().ToEncodingObj()
+			block = block.WithBody(*existingBody)
+		}
+		fmt.Printf("block\n%s\n", block.Body().AccessList.String())
+		panic("FOOBAR")
 
 		// Write state changes to db
 		root, err := statedb.Commit(b.header.Number.Uint64(), config.IsEIP158(b.header.Number), config.IsCancun(b.header.Number, b.header.Time))
@@ -431,6 +467,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	defer triedb.Close()
 
 	for i := 0; i < n; i++ {
+		// TODO: move statedb instantiation inside of genblock so that we can create a hooked
+		// statedb in order to create block access lists
 		statedb, err := state.New(parent.Root(), state.NewDatabase(triedb, nil))
 		if err != nil {
 			panic(err)
