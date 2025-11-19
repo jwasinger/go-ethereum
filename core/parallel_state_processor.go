@@ -223,7 +223,6 @@ type stateRootCalculationResult struct {
 // it against what is reported by the block and returning a result on resCh.
 func (p *ParallelStateProcessor) calcAndVerifyRoot(preState *state.StateDB, block *types.Block, stateTransition *state.BALStateTransition, resCh chan stateRootCalculationResult) {
 	// calculate and apply the block state modifications
-	//root, prestateLoadTime, rootCalcTime := preState.BlockAccessList().StateRoot(preState)
 	root := stateTransition.IntermediateRoot(false)
 
 	res := stateRootCalculationResult{
@@ -286,7 +285,6 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 // Process performs EVM execution and state root computation for a block which is known
 // to contain an access list.
 func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *state.BALStateTransition, statedb *state.StateDB, cfg vm.Config) (*ProcessResultWithMetrics, error) {
-	//fmt.Println("Parallel Process")
 	var (
 		header = block.Header()
 		resCh  = make(chan *ProcessResultWithMetrics)

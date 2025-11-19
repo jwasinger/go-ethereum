@@ -2050,6 +2050,8 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		return nil, err
 	}
 
+	stateTransition.CommitWithUpdate(block.NumberU64(), true, false)
+
 	if err := bc.validator.ValidateState(block, stateTransition, res.ProcessResult, false); err != nil {
 		return nil, err
 	}

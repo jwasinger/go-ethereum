@@ -1,6 +1,8 @@
 package state
 
 import (
+	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/types/bal"
@@ -102,7 +104,6 @@ func NewBALStateTransition(accessList *BALReader, db Database, parentRoot common
 	}, nil
 }
 
-// TODO: make use of this method return the error from IntermediateRoot or Commit
 func (s *BALStateTransition) Error() error {
 	return s.err
 }
@@ -348,6 +349,9 @@ func (s *BALStateTransition) CommitWithUpdate(block uint64, deleteEmptyObjects b
 	storageTriesDeletedMeter.Mark(int64(storageTrieNodesDeleted))
 
 	ret := newStateUpdate(noStorageWiping, s.parentRoot, root, block, deletes, updates, nodes)
+	fmt.Printf("state trie is\n%s\n", nodes.Sets[common.Hash{}].Summary())
+
+	return root, ret, errors.New("aborted before flush")
 
 	snapshotCommits, trieDBCommits, err := flushStateUpdate(s.db, block, ret)
 	if err != nil {
