@@ -957,6 +957,19 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 
 	hash := s.trie.Hash()
+        it, err := s.trie.NodeIterator([]byte{})
+        if err != nil {
+                panic(err)
+        }
+        fmt.Println("state trie")
+        for it.Next(true) {
+                if it.Leaf() {
+                        fmt.Printf("%x: %x\n", it.Path(), it.LeafBlob())
+                } else {
+                        fmt.Printf("%x: %x\n", it.Path(), it.Hash())
+                }
+        }
+
 
 	// If witness building is enabled, gather the account trie witness
 	if s.witness != nil {
