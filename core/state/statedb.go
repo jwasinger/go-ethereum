@@ -937,9 +937,11 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		op.applied = true
 
 		if op.isDelete() {
+			fmt.Printf("delete %x\n", addr)
 			deletedAddrs = append(deletedAddrs, addr)
 		} else {
 			s.updateStateObject(s.stateObjects[addr])
+			fmt.Printf("update %x - %+v\n", addr, s.stateObjects[addr].data)
 			s.AccountUpdated += 1
 		}
 		usedAddrs = append(usedAddrs, addr) // Copy needed for closure
@@ -1307,7 +1309,6 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	origin := s.originalRoot
 	s.originalRoot = root
 
-	fmt.Printf("account trie update:\n%s\n", nodes.Sets[common.Hash{}].Summary())
 	return newStateUpdate(noStorageWiping, origin, root, blockNumber, deletes, updates, nodes), nil
 }
 
