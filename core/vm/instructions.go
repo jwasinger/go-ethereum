@@ -518,9 +518,6 @@ func opSload(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 }
 
 func opSstore(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	if evm.readOnly {
-		return nil, ErrWriteProtection
-	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
 	evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
@@ -882,9 +879,6 @@ func opStop(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 }
 
 func opSelfdestruct(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	if evm.readOnly {
-		return nil, ErrWriteProtection
-	}
 	beneficiary := scope.Stack.pop()
 	balance := evm.StateDB.GetBalance(scope.Contract.Address())
 	evm.StateDB.AddBalance(beneficiary.Bytes20(), balance, tracing.BalanceIncreaseSelfdestruct)
@@ -901,9 +895,6 @@ func opSelfdestruct(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 }
 
 func opSelfdestruct6780(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
-	if evm.readOnly {
-		return nil, ErrWriteProtection
-	}
 	beneficiary := scope.Stack.pop()
 	balance := evm.StateDB.GetBalance(scope.Contract.Address())
 	evm.StateDB.SubBalance(scope.Contract.Address(), balance, tracing.BalanceDecreaseSelfdestruct)
