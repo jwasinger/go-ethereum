@@ -261,9 +261,14 @@ var (
 func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		var (
-			total uint64 // total dynamic gas used
-			addr  = common.Address(stack.Back(1).Bytes20())
+			total          uint64 // total dynamic gas used
+			addr           = common.Address(stack.Back(1).Bytes20())
+			transfersValue = !stack.Back(2).IsZero()
 		)
+
+		if evm.readOnly && transfersValue {
+			return 0, ErrWriteProtection
+		}
 
 		// Check slot presence in the access list
 		if !evm.StateDB.AddressInAccessList(addr) {

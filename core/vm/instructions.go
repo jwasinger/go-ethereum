@@ -740,9 +740,6 @@ func opCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	// Get the arguments from the memory.
 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-	if evm.readOnly && !value.IsZero() {
-		return nil, ErrWriteProtection
-	}
 	if !value.IsZero() {
 		gas += params.CallStipend
 	}
