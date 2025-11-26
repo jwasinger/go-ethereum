@@ -380,25 +380,42 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 	lastIdx := len(s.accessList.block.Transactions()) + 1
 
 	//1 (b): load the origin storage values for all slots which were modified during the block
-	s.originStoragesWG.Add(1)
-	go func() {
-		defer s.originStoragesWG.Done()
-		for _, addr := range s.accessList.ModifiedAccounts() {
-			diff := s.accessList.readAccountDiff(addr, lastIdx)
-			if len(diff.StorageWrites) > 0 {
-				s.originStorages[addr] = make(map[common.Hash]common.Hash)
-				for key := range diff.StorageWrites {
+
+	// in parallel:
+	// 1 b.i - read each account diff
+	// 1 b.ii - read the origins for the modified slots
+	// - compute the set of storage accounts that were
+
+	type originStorage struct {
+		addr     common.Address
+		key, val common.Hash
+	}
+	originStoragesCh := make(chan *originStorage)
+	for _, addr := range s.accessList.ModifiedAccounts() {
+		diff := s.accessList.readAccountDiff(addr, lastIdx)
+		if len(diff.StorageWrites) > 0 {
+			s.originStoragesWG.Add(len(diff.StorageWrites))
+			s.originStorages[addr] = make(map[common.Hash]common.Hash)
+
+			for key := range diff.StorageWrites {
+				go func() {
 					val, err := s.reader.Storage(addr, key)
 					if err != nil {
 						s.setError(err)
 						return
 					}
-					s.originStorages[addr][key] = val
-				}
+					originStoragesCh <- &originStorage{
+						addr,
+						key,
+						val,
+					}
+				}()
+
+				s.originStorages[addr][key] = val
 			}
 		}
-		s.metrics.OriginStorageLoadTime = time.Since(start)
-	}()
+	}
+	s.metrics.OriginStorageLoadTime = time.Since(start)
 
 	var wg sync.WaitGroup
 
