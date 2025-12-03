@@ -18,7 +18,6 @@ package vm
 
 import (
 	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -177,11 +176,14 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc, addressPosition int) g
 		if warmAccess || err != nil {
 			return gas, err
 		}
+		if !contract.UseGas(gas, evm.Config.Tracer, tracing.GasChangeIgnored) {
+			return 0, ErrOutOfGas
+		}
 		// In case of a cold access, we temporarily add the cold charge back, and also
 		// add it to the returned gas. By adding it to the return, it will be charged
 		// outside of this function, as part of the dynamic gas, and that will make it
 		// also become correctly reported to tracers.
-		contract.Gas += coldCost
+		contract.Gas += coldCost + gas
 
 		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, coldCost); overflow {
@@ -271,6 +273,22 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 			total += coldCost
 		}
 
+		// Now call the old calculator, which takes into account
+		// - create new account
+		// - transfer value
+		// - memory expansion
+		// - 63/64ths rule
+		old, err := oldCalculator(evm, contract, stack, mem, memorySize)
+		if err != nil {
+			return old, err
+		}
+
+		total += old
+
+		if !contract.UseGas(old, evm.Config.Tracer, tracing.GasChangeIgnored) {
+			return 0, ErrOutOfGas
+		}
+
 		// Check if code is a delegation and if so, charge for resolution.
 		if target, ok := types.ParseDelegation(evm.StateDB.GetCode(addr)); ok {
 			var cost uint64
@@ -286,21 +304,11 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 			total += cost
 		}
 
-		// Now call the old calculator, which takes into account
-		// - create new account
-		// - transfer value
-		// - memory expansion
-		// - 63/64ths rule
-		old, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return old, err
-		}
-
 		// Temporarily add the gas charge back to the contract and return value. By
 		// adding it to the return, it will be charged outside of this function, as
 		// part of the dynamic gas. This will ensure it is correctly reported to
 		// tracers.
-		contract.Gas += total
+		contract.Gas += total + old
 
 		var overflow bool
 		if total, overflow = math.SafeAdd(old, total); overflow {
