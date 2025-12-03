@@ -18,7 +18,6 @@ package vm
 
 import (
 	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -279,6 +278,20 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 			total += coldCost
 		}
 
+		// Now call the old calculator, which takes into account
+		// - create new account
+		// - transfer value
+		// - memory expansion
+		// - 63/64ths rule
+		old, err := oldCalculator(evm, contract, stack, mem, memorySize)
+		if err != nil {
+			return old, err
+		}
+
+		if !contract.UseGas(old, evm.Config.Tracer, tracing.GasChangeIgnored) {
+			return 0, ErrOutOfGas
+		}
+
 		// Check if code is a delegation and if so, charge for resolution.
 		if target, ok := types.ParseDelegation(evm.StateDB.GetCode(addr)); ok {
 			var cost uint64
@@ -292,16 +305,6 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 				return 0, ErrOutOfGas
 			}
 			total += cost
-		}
-
-		// Now call the old calculator, which takes into account
-		// - create new account
-		// - transfer value
-		// - memory expansion
-		// - 63/64ths rule
-		old, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return old, err
 		}
 
 		// Temporarily add the gas charge back to the contract and return value. By
