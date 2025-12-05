@@ -18,6 +18,7 @@ package vm
 
 import (
 	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -246,17 +247,18 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
 }
 
 var (
-	gasCallEIP7702         = makeCallVariantGasCallEIP7702(gasCall)
-	gasDelegateCallEIP7702 = makeCallVariantGasCallEIP7702(gasDelegateCall)
-	gasStaticCallEIP7702   = makeCallVariantGasCallEIP7702(gasStaticCall)
-	gasCallCodeEIP7702     = makeCallVariantGasCallEIP7702(gasCallCode)
+	gasCallEIP7702         = makeCallVariantGasCallEIP7702(gasCallStateless, gasCallStateful)
+	gasDelegateCallEIP7702 = makeCallVariantGasCallEIP7702(gasDelegateCallStateless, gasDelegateCallStateful)
+	gasStaticCallEIP7702   = makeCallVariantGasCallEIP7702(gasStaticCallStateless, gasStaticCallStateful)
+	gasCallCodeEIP7702     = makeCallVariantGasCallEIP7702(gasCallCodeStateless, gasCallCodeStateful)
 )
 
-func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
+func makeCallVariantGasCallEIP7702(oldCalculatorStateful, oldCalculatorStateless gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		var (
-			total uint64 // total dynamic gas used
-			addr  = common.Address(stack.Back(1).Bytes20())
+			gas      uint64 // total dynamic gas used
+			overflow bool
+			addr     = common.Address(stack.Back(1).Bytes20())
 		)
 
 		// Check slot presence in the access list
@@ -270,27 +272,30 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 			if !contract.UseGas(coldCost, evm.Config.Tracer, tracing.GasChangeCallStorageColdAccess) {
 				return 0, ErrOutOfGas
 			}
-			total += coldCost
+			gas += coldCost
 		}
+		oldStateless, _ := oldCalculatorStateless(evm, contract, stack, mem, memorySize)
 
-		// Now call the old calculator, which takes into account
-		// - create new account
-		// - transfer value
-		// - memory expansion
-		// - 63/64ths rule
-		old, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return old, err
-		}
-
-		total += old
-
-		if !contract.UseGas(old, evm.Config.Tracer, tracing.GasChangeIgnored) {
+		// TODO: overflow-safe add here
+		if !contract.UseGas(oldStateless, evm.Config.Tracer, tracing.GasChangeIgnored) {
 			return 0, ErrOutOfGas
 		}
 
+		gas += oldStateless
+
+		oldStateful, err := oldCalculatorStateful(evm, contract, stack, mem, memorySize)
+		if err != nil {
+			return oldStateful, err
+		}
+
+		if !contract.UseGas(oldStateful, evm.Config.Tracer, tracing.GasChangeIgnored) {
+			return 0, ErrOutOfGas
+		}
+		gas += oldStateful
+
 		// Check if code is a delegation and if so, charge for resolution.
 		if target, ok := types.ParseDelegation(evm.StateDB.GetCode(addr)); ok {
+			fmt.Printf("parsed %x\n", target)
 			var cost uint64
 			if evm.StateDB.AddressInAccessList(target) {
 				cost = params.WarmStorageReadCostEIP2929
@@ -298,22 +303,31 @@ func makeCallVariantGasCallEIP7702(oldCalculator gasFunc) gasFunc {
 				evm.StateDB.AddAddressToAccessList(target)
 				cost = params.ColdAccountAccessCostEIP2929
 			}
+			fmt.Printf("contract gas %d. cost %d\n", contract.Gas, cost)
 			if !contract.UseGas(cost, evm.Config.Tracer, tracing.GasChangeCallStorageColdAccess) {
 				return 0, ErrOutOfGas
 			}
-			total += cost
+			gas += cost
+		}
+
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+		if err != nil {
+			return 0, err
+		}
+		if !contract.UseGas(evm.callGasTemp, evm.Config.Tracer, tracing.GasChangeIgnored) {
+			return 0, ErrOutOfGas
+		}
+
+		if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+			return 0, ErrGasUintOverflow
 		}
 
 		// Temporarily add the gas charge back to the contract and return value. By
 		// adding it to the return, it will be charged outside of this function, as
 		// part of the dynamic gas. This will ensure it is correctly reported to
 		// tracers.
-		contract.Gas += total + old
+		contract.Gas += gas
 
-		var overflow bool
-		if total, overflow = math.SafeAdd(old, total); overflow {
-			return 0, ErrGasUintOverflow
-		}
-		return total, nil
+		return gas, nil
 	}
 }
