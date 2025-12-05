@@ -387,7 +387,7 @@ func gasCallStateless(evm *EVM, contract *Contract, stack *Stack, mem *Memory, m
 		return 0, ErrGasUintOverflow
 	}
 
-	return 0, nil
+	return gas, nil
 }
 
 func gasCallStateful(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {

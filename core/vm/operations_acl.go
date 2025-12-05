@@ -18,7 +18,6 @@ package vm
 
 import (
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -198,10 +197,6 @@ func makeCallVariantGasCallEIP2929(oldCalculatorStateful, oldCalculatorStateless
 			return oldStateful, err
 		}
 
-		if contract.Gas < oldStateful {
-			return 0, ErrOutOfGas
-		}
-
 		eip150BaseGas += oldStateful
 
 		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, eip150BaseGas, stack.Back(0))
@@ -215,7 +210,7 @@ func makeCallVariantGasCallEIP2929(oldCalculatorStateful, oldCalculatorStateless
 		// also become correctly reported to tracers.
 		contract.Gas += eip2929Cost
 
-		total := evm.callGasTemp + eip2929Cost
+		total := evm.callGasTemp + eip150BaseGas + eip2929Cost
 		return total, nil
 	}
 }
@@ -223,7 +218,7 @@ func makeCallVariantGasCallEIP2929(oldCalculatorStateful, oldCalculatorStateless
 var (
 	gasCallEIP2929         = makeCallVariantGasCallEIP2929(gasCallStateless, gasCallStateful, 1)
 	gasDelegateCallEIP2929 = makeCallVariantGasCallEIP2929(gasDelegateCallStateless, gasDelegateCallStateful, 1)
-	gasStaticCallEIP2929   = makeCallVariantGasCallEIP2929(gasStaticCallStateless, gasStaticCallStateful, 0)
+	gasStaticCallEIP2929   = makeCallVariantGasCallEIP2929(gasStaticCallStateless, gasStaticCallStateful, 1)
 	gasCallCodeEIP2929     = makeCallVariantGasCallEIP2929(gasCallCodeStateless, gasCallCodeStateful, 1)
 	gasSelfdestructEIP2929 = makeSelfdestructGasFn(true)
 	// gasSelfdestructEIP3529 implements the changes in EIP-3529 (no refunds)
@@ -273,15 +268,14 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
 }
 
 var (
-	gasCallEIP7702         = makeCallVariantGasCallEIP7702(gasCallStateless, gasCallStateful)
-	gasDelegateCallEIP7702 = makeCallVariantGasCallEIP7702(gasDelegateCallStateless, gasDelegateCallStateful)
-	gasStaticCallEIP7702   = makeCallVariantGasCallEIP7702(gasStaticCallStateless, gasStaticCallStateful)
-	gasCallCodeEIP7702     = makeCallVariantGasCallEIP7702(gasCallCodeStateless, gasCallCodeStateful)
+	gasCallEIP7702         = makeCallVariantGasCallEIP7702(gasCallStateful, gasCallStateless)
+	gasDelegateCallEIP7702 = makeCallVariantGasCallEIP7702(gasDelegateCallStateful, gasDelegateCallStateless)
+	gasStaticCallEIP7702   = makeCallVariantGasCallEIP7702(gasStaticCallStateful, gasStaticCallStateless)
+	gasCallCodeEIP7702     = makeCallVariantGasCallEIP7702(gasCallCodeStateful, gasCallCodeStateless)
 )
 
 func makeCallVariantGasCallEIP7702(oldCalculatorStateful, oldCalculatorStateless gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-		fmt.Println("here")
 		var (
 			eip150BaseGas uint64 // gas used for memory expansion, transfer costs -> input to the 63/64 bounding
 			eip7702Gas    uint64
@@ -310,16 +304,23 @@ func makeCallVariantGasCallEIP7702(oldCalculatorStateful, oldCalculatorStateless
 			return 0, ErrOutOfGas
 		}
 
+		// ^ TODO: I'm not totally sure this is compatible with the 63/64 gas reduction rule
+
 		oldStateful, err := oldCalculatorStateful(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return oldStateful, err
 		}
 
-		if contract.Gas < eip150BaseGas {
-			return 0, ErrOutOfGas
+		eip150BaseGas += oldStateful
+
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, eip150BaseGas, stack.Back(0))
+		if err != nil {
+			return 0, err
 		}
 
-		eip150BaseGas += oldStateful
+		if contract.Gas < evm.callGasTemp {
+			return 0, ErrOutOfGas
+		}
 
 		// TODO: it's not clear what happens if there is enough gas to cover the stateless component
 		// but not enough to cover the whole call:  do all the state reads happen in this case, and
@@ -344,7 +345,7 @@ func makeCallVariantGasCallEIP7702(oldCalculatorStateful, oldCalculatorStateless
 		// tracers.
 		contract.Gas += eip2929Gas + eip7702Gas
 
-		totalCost := evm.callGasTemp + eip2929Gas + eip7702Gas
+		totalCost := eip150BaseGas + evm.callGasTemp + eip2929Gas + eip7702Gas
 
 		return totalCost, nil
 	}
