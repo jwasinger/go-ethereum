@@ -143,7 +143,7 @@ func (r *BALReader) ModifiedAccounts() (res []common.Address) {
 	return res
 }
 
-func (r *BALReader) ValidateStateReads(computedReads bal.StateAccesses) error {
+func (r *BALReader) ValidateStateReads(computedReads bal.StateAccesses) bool {
 	// 1. remove any slots from 'allReads' which were written
 	// 2. validate that the read set in the BAL matches 'allReads' exactly
 	for addr, reads := range computedReads {
@@ -154,22 +154,25 @@ func (r *BALReader) ValidateStateReads(computedReads bal.StateAccesses) error {
 			}
 		}
 		if _, ok := r.accesses[addr]; !ok {
-			return fmt.Errorf("account %x was accessed during execution but is not present in the access list", addr)
+			log.Error(fmt.Sprintf("account %x was accessed during execution but is not present in the access list", addr))
+			return false
 		}
 
 		expectedReads := r.accesses[addr].StorageReads
 		if len(reads) != len(expectedReads) {
-			return fmt.Errorf("mismatch between the number of computed reads and number of expected reads")
+			log.Error(fmt.Sprintf("mismatch between the number of computed reads and number of expected reads"))
+			return false
 		}
 
 		for _, slot := range expectedReads {
 			if _, ok := reads[slot.ToHash()]; !ok {
-				return fmt.Errorf("expected read is missing from BAL")
+				log.Error("expected read is missing from BAL")
+				return false
 			}
 		}
 	}
 
-	return nil
+	return true
 }
 
 // changesAt returns all state changes occurring at the given index.

@@ -129,9 +129,9 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, allStateR
 		}
 	}
 
-	if err := postTxState.BlockAccessList().ValidateStateReads(*allStateReads); err != nil {
+	if !postTxState.BlockAccessList().ValidateStateReads(*allStateReads) {
 		return &ProcessResultWithMetrics{
-			ProcessResult: &ProcessResult{Error: err},
+			ProcessResult: &ProcessResult{Error: fmt.Errorf("BAL validation failure")},
 		}
 	}
 
@@ -314,8 +314,6 @@ func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *st
 	if p.chainConfig().IsPrague(block.Number(), block.Time()) || p.chainConfig().IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
-
-	balTracer.OnPreTxExecutionDone()
 
 	diff, stateReads := balTracer.builder.FinalizedIdxChanges()
 	if !statedb.BlockAccessList().ValidateStateDiff(0, diff) {
