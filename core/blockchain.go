@@ -211,13 +211,13 @@ type BlockChainConfig struct {
 	// If the value is -1, indexing is disabled.
 	TxLookupLimit int64
 
+	// StateSizeTracking indicates whether the state size tracking is enabled.
+	StateSizeTracking bool
+
 	// If EnableBALForTesting is enabled, block access lists will be created
 	// from block execution and embedded in the body.  The block access list
 	// hash will not be set in the header.
 	EnableBALForTesting bool
-
-	// StateSizeTracking indicates whether the state size tracking is enabled.
-	StateSizeTracking bool
 }
 
 // DefaultConfig returns the default config.
@@ -1934,12 +1934,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool, makeWitness 
 		// The traced section of block import.
 		start := time.Now()
 
-		enableBAL := (bc.cfg.EnableBALForTesting && bc.chainConfig.IsCancun(block.Number(), block.Time())) || bc.chainConfig.IsAmsterdam(block.Number(), block.Time())
-		blockHasAccessList := block.Body().AccessList != nil
-		constructBAL := enableBAL && !blockHasAccessList
-		validateBAL := enableBAL && blockHasAccessList
-
-		res, err := bc.ProcessBlock(parent.Root, block, setHead, makeWitness && len(chain) == 1, constructBAL, validateBAL)
+		res, err := bc.ProcessBlock(parent.Root, block, setHead, makeWitness && len(chain) == 1, bc.cfg.EnableBALForTesting)
 		if err != nil {
 			return nil, it.index, err
 		}
@@ -2109,10 +2104,32 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 
 // ProcessBlock executes and validates the given block. If there was no error
 // it writes the block and associated state to database.
-func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool, constructBALForTesting bool, validateBAL bool) (_ *blockProcessingResult, blockEndErr error) {
-	if block.Body().AccessList != nil {
+func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool, constructBALForTesting bool) (_ *blockProcessingResult, blockEndErr error) {
+	enableBALFork := bc.chainConfig.IsAmsterdam(block.Number(), block.Time())
+	if enableBALFork || !bc.chainConfig.IsCancun(block.Number(), block.Time()) {
+		// disable test-mode construction of BALs if we are not in the range [cancun, amsterdam)
+		constructBALForTesting = false
+	}
+	// TODO: need to check that the block is also post-cancun if it contained an access list?
+	// this should be checked during decoding (?)
+	blockHasAccessList := block.Body().AccessList != nil
+	// only construct and embed BALs in the block if:
+	// * it has been enabled for testing purposes (pre-Amsterdam/post-Cancun blocks with --experimental.bal)
+	// * we are after Amsterdam and the block was provided with bal omitted
+	//   (importing any historical block not near the chain head)
+	constructBAL := constructBALForTesting || (enableBALFork && !blockHasAccessList)
+	// do not verify the integrity of the BAL hash wrt the header-reported value
+	// for any non-Amsterdam blocks:  if the block being imported has been created
+	// via --experimental.bal, the block access list hash is unset in the header
+	// to keep the block hash unchanged (allow for importing historical blocks
+	// with BALs for testing purposes).
+	verifyBALHeader := enableBALFork
+
+	// optimized execution path for blocks which contain BALs
+	if blockHasAccessList {
 		return bc.processBlockWithAccessList(parentRoot, block, setHead)
 	}
+
 	var (
 		err       error
 		startTime = time.Now()
@@ -2196,14 +2213,8 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 			}
 		}
 
-		// access-list containing blocks don't use the prefetcher because
-		// state root computation proceeds concurrently with transaction
-		// execution, meaning the prefetcher doesn't have any time to run
-		// before the trie nodes are needed for state root computation.
-		if block.Body().AccessList == nil {
-			statedb.StartPrefetcher("chain", witness, witnessStats)
-			defer statedb.StopPrefetcher()
-		}
+		statedb.StartPrefetcher("chain", witness, witnessStats)
+		defer statedb.StopPrefetcher()
 	}
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
@@ -2226,7 +2237,7 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 	var balTracer *BlockAccessListTracer
 
 	// Process block using the parent state as reference point
-	if constructBALForTesting {
+	if constructBAL {
 		balTracer, bc.cfg.VmConfig.Tracer = NewBlockAccessListTracer()
 		defer func() {
 			bc.cfg.VmConfig.Tracer = nil
@@ -2241,9 +2252,7 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 	}
 	ptime = time.Since(pstart)
 
-	// TODO: if I remove this check before executing balTracer.Finalise, the following test fails:
-	// ExecutionSpecBlocktests/shanghai/eip3855_push0/push0/push0_storage_overwrite.json
-	if constructBALForTesting {
+	if constructBAL {
 		balTracer.OnBlockFinalization()
 	}
 
@@ -2257,8 +2266,13 @@ func (bc *BlockChain) ProcessBlock(parentRoot common.Hash, block *types.Block, s
 	}
 	vtime = time.Since(vstart)
 
-	if constructBALForTesting {
-		// very ugly... deep-copy the block body before setting the block access
+	if constructBAL {
+		if verifyBALHeader && *block.Header().BlockAccessListHash != balTracer.AccessList().ToEncodingObj().Hash() {
+			err := fmt.Errorf("block access list hash mismatch (reported=%x, computed=%x)", *block.Header().BlockAccessListHash, balTracer.AccessList().ToEncodingObj().Hash())
+			bc.reportBlock(block, res, err)
+			return nil, err
+		}
+		// very ugly... deepcopy the block body before setting the block access
 		// list on it to prevent mutating the block instance passed by the caller.
 		existingBody := block.Body()
 		block = block.WithBody(*existingBody)
