@@ -532,22 +532,3 @@ func (api *DebugAPI) ExecutionWitnessByHash(hash common.Hash) (*stateless.ExtWit
 
 	return result.Witness().ToExtWitness(), nil
 }
-
-// GetBlockAccessList returns a block access list for the given number/hash
-// or nil if one does not exist.
-func (api *DebugAPI) GetBlockAccessList(number rpc.BlockNumberOrHash) (interface{}, error) {
-	var block *types.Block
-	if num := number.BlockNumber; num != nil {
-		block = api.eth.blockchain.GetBlockByNumber(uint64(num.Int64()))
-	} else if hash := number.BlockHash; hash != nil {
-		block = api.eth.blockchain.GetBlockByHash(*hash)
-	}
-
-	if block == nil {
-		return nil, fmt.Errorf("block not found")
-	}
-	if block.Body().AccessList == nil {
-		return nil, nil
-	}
-	return block.Body().AccessList.StringableRepresentation(), nil
-}

@@ -1347,6 +1347,18 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 	}
 }
 
+// BlockAccessListByBlockNumber returns a block access list for the given block number
+// or nil if one does not exist.
+func (api *BlockChainAPI) BlockAccessListByBlockNumber(number rpc.BlockNumber) (interface{}, error) {
+	return api.b.BlockAccessListByNumberOrHash(rpc.BlockNumberOrHash{BlockNumber: &number})
+}
+
+// BlockAccessListByBlockHash returns a block access list for the given block hash
+// or nil if one does not exist.
+func (api *BlockChainAPI) BlockAccessListByBlockHash(hash common.Hash) (interface{}, error) {
+	return api.b.BlockAccessListByNumberOrHash(rpc.BlockNumberOrHash{BlockHash: &hash})
+}
+
 // TransactionAPI exposes methods for reading and creating transaction data.
 type TransactionAPI struct {
 	b         Backend
