@@ -374,8 +374,12 @@ func gasCallStateless(evm *EVM, contract *Contract, stack *Stack, mem *Memory, m
 		transfersValue = !stack.Back(2).IsZero()
 	)
 
-	if transfersValue && !evm.chainRules.IsEIP4762 {
-		gas += params.CallValueTransferGas
+	if transfersValue {
+		if evm.readOnly {
+			return 0, ErrWriteProtection
+		} else if !evm.chainRules.IsEIP4762 {
+			gas += params.CallValueTransferGas
+		}
 	}
 
 	memoryGas, err := memoryGasCost(mem, memorySize)
@@ -443,11 +447,16 @@ func gasCallCodeStateless(evm *EVM, contract *Contract, stack *Stack, mem *Memor
 		return 0, err
 	}
 	var (
-		gas      uint64
-		overflow bool
+		gas            uint64
+		overflow       bool
+		transfersValue = !stack.Back(2).IsZero()
 	)
-	if stack.Back(2).Sign() != 0 && !evm.chainRules.IsEIP4762 {
-		gas += params.CallValueTransferGas
+	if transfersValue {
+		if evm.readOnly {
+			return 0, ErrWriteProtection
+		} else if !evm.chainRules.IsEIP4762 {
+			gas += params.CallValueTransferGas
+		}
 	}
 	if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
 		return 0, ErrGasUintOverflow
@@ -537,16 +546,13 @@ func gasStaticCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 
 func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var gas uint64
-	fmt.Println("gasSelfdestruct")
 
 	// EIP150 homestead gas reprice fork:
 	if evm.chainRules.IsEIP150 {
 		gas = params.SelfdestructGasEIP150
 		var address = common.Address(stack.Back(0).Bytes20())
 
-		fmt.Println("okay we're")
 		if gas > contract.Gas {
-			fmt.Println("here")
 			return gas, nil
 		}
 
