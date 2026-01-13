@@ -806,7 +806,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 		}
 		slotnum := "nil"
 		if params.SlotNumber != nil {
-			ebg = strconv.Itoa(int(*params.SlotNumber))
+			slotnum = strconv.Itoa(int(*params.SlotNumber))
 		}
 		log.Warn("Invalid NewPayload params",
 			"params.Number", params.Number,
