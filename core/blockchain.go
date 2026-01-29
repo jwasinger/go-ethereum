@@ -2218,7 +2218,6 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 
 	// optimized execution path for blocks which contain BALs
 	if blockHasAccessList {
-		panic("TODO: strip bal from body before committing it to disk")
 		return bc.processBlockWithAccessList(parentRoot, block, setHead)
 	}
 
