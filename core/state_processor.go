@@ -115,6 +115,13 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
+
+		/*
+			enc, _ := json.MarshalIndent(receipt, "", "    ")
+			fmt.Printf("receipt json %s\n", string(enc))
+			encRLP, _ := rlp.EncodeToBytes(receipt)
+			fmt.Printf("receipt rlp %x\n", encRLP)
+		*/
 	}
 	requests, err := postExecution(ctx, config, block, allLogs, evm)
 	if err != nil {
