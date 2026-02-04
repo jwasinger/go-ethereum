@@ -1187,6 +1187,10 @@ func getBody(block *types.Block) *engine.ExecutionPayloadBody {
 		result.Withdrawals = []*types.Withdrawal{}
 	}
 
+	if block.AccessList() != nil {
+		result.AccessList = block.AccessList()
+	}
+
 	return &result
 }
 
