@@ -296,7 +296,6 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 // Process performs EVM execution and state root computation for a block which is known
 // to contain an access list.
 func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *state.BALStateTransition, statedb *state.StateDB, cfg vm.Config) (*ProcessResultWithMetrics, error) {
-	fmt.Printf("parallel process %d\n", block.NumberU64())
 	var (
 		header           = block.Header()
 		resCh            = make(chan *ProcessResultWithMetrics)
@@ -355,7 +354,7 @@ func (p *ParallelStateProcessor) Process(block *types.Block, stateTransition *st
 
 	res := <-resCh
 	if res.ProcessResult.Error != nil {
-		return nil, res.ProcessResult.Error
+		return res, res.ProcessResult.Error
 	}
 	// TODO: remove preprocess metric ?
 	res.PreProcessTime = tPreprocess

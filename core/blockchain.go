@@ -623,10 +623,17 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 
 	res, err := bc.parallelProcessor.Process(block, stateTransition, statedb, bc.cfg.VmConfig)
 	if err != nil {
+		// TODO: will res always be non-nil here?
+		if res.ProcessResult != nil {
+			bc.reportBadBlock(block, res.ProcessResult, err)
+		} else {
+			bc.reportBadBlock(block, nil, err)
+		}
 		return nil, err
 	}
 
 	if err := bc.validator.ValidateState(block, stateTransition, res.ProcessResult, false); err != nil {
+		bc.reportBadBlock(block, res.ProcessResult, err)
 		return nil, err
 	}
 
@@ -2949,6 +2956,7 @@ func (bc *BlockChain) reportBadBlock(block *types.Block, res *ProcessResult, err
 }
 
 func (bc *BlockChain) reportBALBlock(block *types.Block, res *ProcessResult, err error) {
+	// if the block contains a BAL,
 
 }
 

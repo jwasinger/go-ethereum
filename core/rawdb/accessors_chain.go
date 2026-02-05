@@ -784,8 +784,9 @@ func DeleteBlockWithoutNumber(db ethdb.KeyValueWriter, hash common.Hash, number 
 const badBlockToKeep = 10
 
 type badBlock struct {
-	Header *types.Header
-	Body   *types.Body
+	Header     *types.Header
+	Body       *types.Body
+	AccessList *bal.BlockAccessList // TODO: ensure this is compatible with bad-blocks not containing access lists pre-glamsterdam
 }
 
 // ReadBadBlock retrieves the bad block with the corresponding block hash.
@@ -803,6 +804,9 @@ func ReadBadBlock(db ethdb.Reader, hash common.Hash) *types.Block {
 			block := types.NewBlockWithHeader(bad.Header)
 			if bad.Body != nil {
 				block = block.WithBody(*bad.Body)
+			}
+			if bad.AccessList != nil {
+				block = block.WithAccessList(bad.AccessList)
 			}
 			return block
 		}
