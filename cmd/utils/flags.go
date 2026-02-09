@@ -1043,6 +1043,7 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Category: flags.MetricsCategory,
 	}
 
+<<<<<<< HEAD
 	// RPC Telemetry
 	RPCTelemetryFlag = &cli.BoolFlag{
 		Name:     "rpc.telemetry",
@@ -1098,6 +1099,26 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Usage:    "Enable generation of EIP-7928 block access lists when importing post-Cancun blocks which lack them. When this flag is specified, importing blocks containing access lists triggers validation of their correctness and execution based off them. The header block access list field is not set with blocks created when this flag is specified, nor is it validated when importing blocks that contain access lists.  This is used for development purposes only.  Do not enable it otherwise.",
 		Category: flags.MiscCategory,
 	}
+=======
+	// block access list flags
+
+	BlockAccessListExecutionModeFlag = &cli.StringFlag{
+		Name: "bal.executionmode",
+		Usage: `
+block access list execution type.  possible inputs are:
+- sequential: no performance acceleration
+- full: parallel transaction execution, state root calculation, async warming of access list reads
+- nobatchio: same as 'full', but without async warming of access list reads`,
+		Value:    BalExecutionModeFull,
+		Category: flags.MiscCategory,
+	}
+)
+
+const (
+	BalExecutionModeFull       = "full"
+	BalExecutionModeNoBatchIO  = "nobatchio"
+	BalExecutionModeSequential = "sequential"
+>>>>>>> 57c631e2a8 (* factor bal size when enforcing block size limit while adding txs to payload in miner)
 )
 
 var (
