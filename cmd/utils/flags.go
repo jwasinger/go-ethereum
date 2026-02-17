@@ -1043,7 +1043,6 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Category: flags.MetricsCategory,
 	}
 
-<<<<<<< HEAD
 	// RPC Telemetry
 	RPCTelemetryFlag = &cli.BoolFlag{
 		Name:     "rpc.telemetry",
@@ -1099,7 +1098,6 @@ Please note that --` + MetricsHTTPFlag.Name + ` must be set to start the server.
 		Usage:    "Enable generation of EIP-7928 block access lists when importing post-Cancun blocks which lack them. When this flag is specified, importing blocks containing access lists triggers validation of their correctness and execution based off them. The header block access list field is not set with blocks created when this flag is specified, nor is it validated when importing blocks that contain access lists.  This is used for development purposes only.  Do not enable it otherwise.",
 		Category: flags.MiscCategory,
 	}
-=======
 	// block access list flags
 
 	BlockAccessListExecutionModeFlag = &cli.StringFlag{
@@ -1118,7 +1116,6 @@ const (
 	BalExecutionModeFull       = "full"
 	BalExecutionModeNoBatchIO  = "nobatchio"
 	BalExecutionModeSequential = "sequential"
->>>>>>> 57c631e2a8 (* factor bal size when enforcing block size limit while adding txs to payload in miner)
 )
 
 var (
@@ -2087,8 +2084,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			cfg.VMTraceJsonConfig = ctx.String(VMTraceJsonConfigFlag.Name)
 		}
 	}
-
-	cfg.ExperimentalBAL = ctx.Bool(ExperimentalBALFlag.Name)
 }
 
 // MakeBeaconLightConfig constructs a beacon light client config based on the
@@ -2502,7 +2497,6 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	}
 	options.VmConfig = vmcfg
 
-	options.EnableBALForTesting = ctx.Bool(ExperimentalBALFlag.Name)
 	chain, err := core.NewBlockChain(chainDb, gspec, engine, options)
 	if err != nil {
 		Fatalf("Can't create BlockChain: %v", err)
