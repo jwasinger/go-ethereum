@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
 	"slices"
 
@@ -421,10 +422,27 @@ func WriteBodyRLP(db ethdb.KeyValueWriter, hash common.Hash, number uint64, rlp 
 	}
 }
 
+func WriteAccessListRLP(db ethdb.KeyValueWriter, hash common.Hash, number uint64, rlp rlp.RawValue) {
+	if err := db.Put(accessListKey(number, hash), rlp); err != nil {
+		log.Crit("failed to store block access list", "err", err)
+	}
+}
+
+func ReadAccessListRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
+	data, _ := db.Get(accessListKey(number, hash))
+	return data
+}
+
 // HasBody verifies the existence of a block body corresponding to the hash.
 func HasBody(db ethdb.Reader, hash common.Hash, number uint64) bool {
 	if isCanon(db, number, hash) {
-		return true
+		// Block is in ancient store, but bodies can be pruned.
+		// Check if the block number is above the pruning tail.
+		tail, _ := db.Tail()
+		if number >= tail {
+			return true
+		}
+		return false
 	}
 	if has, err := db.Has(blockBodyKey(number, hash)); !has || err != nil {
 		return false
@@ -455,6 +473,26 @@ func WriteBody(db ethdb.KeyValueWriter, hash common.Hash, number uint64, body *t
 	WriteBodyRLP(db, hash, number, data)
 }
 
+func ReadAccessList(db ethdb.Reader, hash common.Hash, number uint64) *bal.BlockAccessList {
+	var al bal.BlockAccessList
+	data := ReadAccessListRLP(db, hash, number)
+	if data != nil {
+		err := rlp.DecodeBytes(data, &al)
+		if err != nil {
+			log.Crit("failed to RLP decode access list", "err", err)
+		}
+	}
+	return &al
+}
+
+func WriteAccessList(db ethdb.KeyValueWriter, hash common.Hash, number uint64, al *bal.BlockAccessList) {
+	data, err := rlp.EncodeToBytes(al)
+	if err != nil {
+		log.Crit("failed to RLP encode block access list", "err", err)
+	}
+	WriteAccessListRLP(db, hash, number, data)
+}
+
 // DeleteBody removes all block body data associated with a hash.
 func DeleteBody(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	if err := db.Delete(blockBodyKey(number, hash)); err != nil {
@@ -466,7 +504,13 @@ func DeleteBody(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 // to a block.
 func HasReceipts(db ethdb.Reader, hash common.Hash, number uint64) bool {
 	if isCanon(db, number, hash) {
-		return true
+		// Block is in ancient store, but receipts can be pruned.
+		// Check if the block number is above the pruning tail.
+		tail, _ := db.Tail()
+		if number >= tail {
+			return true
+		}
+		return false
 	}
 	if has, err := db.Has(blockReceiptsKey(number, hash)); !has || err != nil {
 		return false
@@ -659,13 +703,25 @@ func ReadBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.Block {
 	if body == nil {
 		return nil
 	}
-	return types.NewBlockWithHeader(header).WithBody(*body)
+
+	block := types.NewBlockWithHeader(header).WithBody(*body)
+
+	if header.BlockAccessListHash != nil {
+		accessList := ReadAccessList(db, hash, number)
+		if accessList != nil {
+			block = block.WithAccessList(accessList)
+		}
+	}
+	return block
 }
 
 // WriteBlock serializes a block into the database, header and body separately.
 func WriteBlock(db ethdb.KeyValueWriter, block *types.Block) {
 	WriteBody(db, block.Hash(), block.NumberU64(), block.Body())
 	WriteHeader(db, block.Header())
+	if block.AccessList() != nil {
+		WriteAccessList(db, block.Hash(), block.NumberU64(), block.AccessList())
+	}
 }
 
 // WriteAncientBlocks writes entire block data into ancient store and returns the total written size.

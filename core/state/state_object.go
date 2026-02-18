@@ -48,11 +48,11 @@ func (s Storage) Copy() Storage {
 // - Account values as well as storages can be accessed and modified through the object.
 // - Finally, call commit to return the changes of storage trie and update account data.
 type stateObject struct {
-	db       *StateDB
-	address  common.Address      // address of ethereum account
-	addrHash common.Hash         // hash of ethereum address of the account
-	origin   *types.StateAccount // Account original data without any change applied, nil means it was not existent
-	data     types.StateAccount  // Account data with all mutations applied in the scope of block
+	db          *StateDB
+	address     common.Address      // address of ethereum account
+	addressHash *common.Hash        // hash of ethereum address of the account
+	origin      *types.StateAccount // Account original data without any change applied, nil means it was not existent
+	data        types.StateAccount  // Account data with all mutations applied in the scope of block
 
 	// Write caches.
 	trie Trie   // storage trie, which becomes non-nil on first access
@@ -85,6 +85,8 @@ type stateObject struct {
 	// the contract is just created within the current transaction, or when the
 	// object was previously existent and is being deployed as a contract within
 	// the current transaction.
+	//
+	// the flag is set upon beginning of contract initcode execution, not when the code is actually deployed to the address.
 	newContract bool
 }
 
@@ -102,7 +104,6 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 	return &stateObject{
 		db:                 db,
 		address:            address,
-		addrHash:           crypto.Keccak256Hash(address[:]),
 		origin:             origin,
 		data:               *acct,
 		originStorage:      make(Storage),
@@ -110,6 +111,14 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		pendingStorage:     make(Storage),
 		uncommittedStorage: make(Storage),
 	}
+}
+
+func (s *stateObject) addrHash() common.Hash {
+	if s.addressHash == nil {
+		h := crypto.Keccak256Hash(s.address[:])
+		s.addressHash = &h
+	}
+	return *s.addressHash
 }
 
 func (s *stateObject) markSelfdestructed() {
@@ -151,7 +160,7 @@ func (s *stateObject) getPrefetchedTrie() Trie {
 		return nil
 	}
 	// Attempt to retrieve the trie from the prefetcher
-	return s.db.prefetcher.trie(s.addrHash, s.data.Root)
+	return s.db.prefetcher.trie(s.addrHash(), s.data.Root)
 }
 
 // GetState retrieves a value associated with the given storage key.
@@ -178,6 +187,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	if value, pending := s.pendingStorage[key]; pending {
 		return value
 	}
+
 	if value, cached := s.originStorage[key]; cached {
 		return value
 	}
@@ -188,6 +198,19 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	//      have been handles via pendingStorage above.
 	//   2) we don't have new values, and can deliver empty response back
 	if _, destructed := s.db.stateObjectsDestruct[s.address]; destructed {
+		// Invoke the reader regardless and discard the returned value.
+		// The returned value may not be empty, as it could belong to a
+		// self-destructed contract.
+		//
+		// The read operation is still essential for correctly building
+		// the block-level access list.
+		//
+		// TODO(rjl493456442) the reader interface can be extended with
+		// Touch, recording the read access without the actual disk load.
+		_, err := s.db.reader.Storage(s.address, key)
+		if err != nil {
+			s.db.setError(err)
+		}
 		s.originStorage[key] = common.Hash{} // track the empty slot as origin value
 		return common.Hash{}
 	}
@@ -203,7 +226,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 
 	// Schedule the resolved storage slots for prefetching if it's enabled.
 	if s.db.prefetcher != nil && s.data.Root != types.EmptyRootHash {
-		if err = s.db.prefetcher.prefetch(s.addrHash, s.origin.Root, s.address, nil, []common.Hash{key}, true); err != nil {
+		if err = s.db.prefetcher.prefetch(s.addrHash(), s.origin.Root, s.address, nil, []common.Hash{key}, true); err != nil {
 			log.Error("Failed to prefetch storage slot", "addr", s.address, "key", key, "err", err)
 		}
 	}
@@ -220,6 +243,7 @@ func (s *stateObject) SetState(key, value common.Hash) common.Hash {
 	if prev == value {
 		return prev
 	}
+
 	// New value is different, update and journal the change
 	s.db.journal.storageChange(s.address, key, prev, origin)
 	s.setState(key, value, origin)
@@ -246,9 +270,10 @@ func (s *stateObject) finalise() {
 			// The slot is reverted to its original value, delete the entry
 			// to avoid thrashing the data structures.
 			delete(s.uncommittedStorage, key)
+
 		} else if exist {
 			// The slot is modified to another value and the slot has been
-			// tracked for commit, do nothing here.
+			// tracked for commit in uncommittedStorage.
 		} else {
 			// The slot is different from its original value and hasn't been
 			// tracked for commit yet.
@@ -264,7 +289,7 @@ func (s *stateObject) finalise() {
 		s.pendingStorage[key] = value
 	}
 	if s.db.prefetcher != nil && len(slotsToPrefetch) > 0 && s.data.Root != types.EmptyRootHash {
-		if err := s.db.prefetcher.prefetch(s.addrHash, s.data.Root, s.address, nil, slotsToPrefetch, false); err != nil {
+		if err := s.db.prefetcher.prefetch(s.addrHash(), s.data.Root, s.address, nil, slotsToPrefetch, false); err != nil {
 			log.Error("Failed to prefetch slots", "addr", s.address, "slots", len(slotsToPrefetch), "err", err)
 		}
 	}
@@ -294,6 +319,7 @@ func (s *stateObject) updateTrie() (Trie, error) {
 			return s.trie, nil
 		}
 	}
+
 	// Retrieve a pretecher populated trie, or fall back to the database. This will
 	// block until all prefetch tasks are done, which are needed for witnesses even
 	// for unmodified state objects.
@@ -325,8 +351,10 @@ func (s *stateObject) updateTrie() (Trie, error) {
 	// into a shortnode. This requires `B` to be resolved from disk.
 	// Whereas if the created node is handled first, then the collapse is avoided, and `B` is not resolved.
 	var (
-		deletions []common.Hash
-		used      = make([]common.Hash, 0, len(s.uncommittedStorage))
+		deletions    []common.Hash
+		used         = make([]common.Hash, 0, len(s.uncommittedStorage))
+		updateKeys   [][]byte
+		updateValues [][]byte
 	)
 	for key, origin := range s.uncommittedStorage {
 		// Skip noop changes, persist actual changes
@@ -340,16 +368,20 @@ func (s *stateObject) updateTrie() (Trie, error) {
 			continue
 		}
 		if (value != common.Hash{}) {
-			if err := tr.UpdateStorage(s.address, key[:], common.TrimLeftZeroes(value[:])); err != nil {
-				s.db.setError(err)
-				return nil, err
-			}
+			updateKeys = append(updateKeys, key[:])
+			updateValues = append(updateValues, common.TrimLeftZeroes(value[:]))
 			s.db.StorageUpdated.Add(1)
 		} else {
 			deletions = append(deletions, key)
 		}
 		// Cache the items for preloading
 		used = append(used, key) // Copy needed for closure
+	}
+	if len(updateKeys) > 0 {
+		if err := tr.UpdateStorageBatch(common.Address{}, updateKeys, updateValues); err != nil {
+			s.db.setError(err)
+			return nil, err
+		}
 	}
 	for _, key := range deletions {
 		if err := tr.DeleteStorage(s.address, key[:]); err != nil {
@@ -359,7 +391,7 @@ func (s *stateObject) updateTrie() (Trie, error) {
 		s.db.StorageDeleted.Add(1)
 	}
 	if s.db.prefetcher != nil {
-		s.db.prefetcher.used(s.addrHash, s.data.Root, nil, used)
+		s.db.prefetcher.used(s.addrHash(), s.data.Root, nil, used)
 	}
 	s.uncommittedStorage = make(Storage) // empties the commit markers
 	return tr, nil
@@ -491,7 +523,7 @@ func (s *stateObject) deepCopy(db *StateDB) *stateObject {
 	obj := &stateObject{
 		db:                 db,
 		address:            s.address,
-		addrHash:           s.addrHash,
+		addressHash:        nil,
 		origin:             s.origin,
 		data:               s.data,
 		code:               s.code,
@@ -541,6 +573,7 @@ func (s *stateObject) Code() []byte {
 	defer func(start time.Time) {
 		s.db.CodeLoaded += 1
 		s.db.CodeReads += time.Since(start)
+		s.db.CodeLoadBytes += len(s.code)
 	}(time.Now())
 
 	code, err := s.db.reader.Code(s.address, common.BytesToHash(s.CodeHash()))
@@ -582,13 +615,18 @@ func (s *stateObject) CodeSize() int {
 func (s *stateObject) SetCode(codeHash common.Hash, code []byte) (prev []byte) {
 	prev = slices.Clone(s.code)
 	s.db.journal.setCode(s.address, prev)
-	s.setCode(codeHash, code)
+	s.setCodeModified(codeHash, code)
 	return prev
 }
 
 func (s *stateObject) setCode(codeHash common.Hash, code []byte) {
 	s.code = code
 	s.data.CodeHash = codeHash[:]
+}
+
+// setCodeModified sets the code and hash and dirty markers.
+func (s *stateObject) setCodeModified(codeHash common.Hash, code []byte) {
+	s.setCode(codeHash, code)
 	s.dirtyCode = true
 }
 
