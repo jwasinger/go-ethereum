@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -74,8 +73,8 @@ type environment struct {
 	sidecars []*types.BlobTxSidecar
 	blobs    int
 
-	witness  *stateless.Witness
-	alTracer *core.BlockAccessListTracer
+	witness    *stateless.Witness
+	accessList bal.ConstructionBlockAccessList
 }
 
 // txFits reports whether the transaction fits into the block size limit.
@@ -157,7 +156,10 @@ func (miner *Miner) generateWork(genParam *generateParams, witness bool) *newPay
 	}
 
 	// Collect consensus-layer requests if Prague is enabled.
-	var requests [][]byte
+	var (
+		requests [][]byte
+		postMut  = make(bal.StateMutations)
+	)
 	if miner.chainConfig.IsPrague(work.header.Number, work.header.Time) {
 		requests = [][]byte{}
 		// EIP-6110 deposits
@@ -165,13 +167,21 @@ func (miner *Miner) generateWork(genParam *generateParams, witness bool) *newPay
 			return &newPayloadResult{err: err}
 		}
 		// EIP-7002
-		if err := core.ProcessWithdrawalQueue(&requests, work.evm); err != nil {
+		mut, err := core.ProcessWithdrawalQueue(&requests, work.evm)
+		if err != nil {
 			return &newPayloadResult{err: err}
 		}
+
+		postMut.Merge(mut)
 		// EIP-7251 consolidations
-		if err := core.ProcessConsolidationQueue(&requests, work.evm); err != nil {
+		mut, err = core.ProcessConsolidationQueue(&requests, work.evm)
+		if err != nil {
 			return &newPayloadResult{err: err}
 		}
+		postMut.Merge(mut)
+
+		work.accessList.AccumulateMutations(postMut, uint16(work.tcount)+1)
+		work.accessList.AccumulateReads(work.state.Reader().(state.StateReaderTracker).GetStateAccessList())
 	}
 	if requests != nil {
 		reqHash := types.CalcRequestsHash(requests)
@@ -184,11 +194,12 @@ func (miner *Miner) generateWork(genParam *generateParams, witness bool) *newPay
 	// I considered trying to instantiate the beacon consensus engine with a tracer.
 	// however, the BAL tracer instance is used once per block, while the engine object
 	// lives for the entire time the client is running.
-	var onBlockFinalization func() *bal.BlockAccessList
+	var onBlockFinalization func(mutations bal.StateMutations) *bal.BlockAccessList
 	if miner.chainConfig.IsAmsterdam(work.header.Number, work.header.Time) {
-		onBlockFinalization = func() *bal.BlockAccessList {
-			work.alTracer.OnBlockFinalization()
-			return work.alTracer.AccessList().ToEncodingObj()
+		onBlockFinalization = func(withdrawalMut bal.StateMutations) *bal.BlockAccessList {
+			work.accessList.AccumulateMutations(withdrawalMut, uint16(work.tcount)+1)
+			work.accessList.AccumulateReads(work.state.Reader().(state.StateReaderTracker).GetStateAccessList())
+			return work.accessList.ToEncodingObj()
 		}
 	}
 
@@ -288,14 +299,14 @@ func (miner *Miner) prepareWork(genParams *generateParams, witness bool) (*envir
 		log.Error("Failed to create sealing context", "err", err)
 		return nil, err
 	}
+	mut := make(bal.StateMutations)
 	if header.ParentBeaconRoot != nil {
-		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, env.evm)
+		mut.Merge(core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, env.evm))
 	}
 	if miner.chainConfig.IsPrague(header.Number, header.Time) {
-		core.ProcessParentBlockHash(header.ParentHash, env.evm)
+		mut.Merge(core.ProcessParentBlockHash(header.ParentHash, env.evm))
 	}
-	// TODO: verify that we can make blocks that correctly record the pre-tx system calls
-	// TODO ^ comprehensive miner unit tests
+	env.accessList.AccumulateMutations(mut, 0)
 	return env, nil
 }
 
@@ -306,32 +317,32 @@ func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase
 	if err != nil {
 		return nil, err
 	}
+	var accessListBuilder bal.ConstructionBlockAccessList
+	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
+		accessListBuilder = make(bal.ConstructionBlockAccessList)
+		sdb = sdb.WithReader(state.NewReaderWithTracker(sdb.Reader()))
+	}
 	if witness {
+		if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
+			panic("fix this edge case so that the prefetcher invocation below doesn't populate the readset for constructing the BAL")
+		}
 		bundle, err := stateless.NewWitness(header, miner.chain)
 		if err != nil {
 			return nil, err
 		}
 		sdb.StartPrefetcher("miner", bundle, nil)
 	}
-	var alTracer *core.BlockAccessListTracer
-	var hooks *tracing.Hooks
-	var hookedState vm.StateDB = sdb
-	var vmConfig vm.Config
-	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
-		alTracer, hooks = core.NewBlockAccessListTracer()
-		hookedState = state.NewHookedState(sdb, hooks)
-		vmConfig.Tracer = hooks
-	}
+
 	// Note the passed coinbase may be different with header.Coinbase.
 	return &environment{
-		signer:   types.MakeSigner(miner.chainConfig, header.Number, header.Time),
-		state:    sdb,
-		size:     uint64(header.Size()),
-		coinbase: coinbase,
-		header:   header,
-		witness:  sdb.Witness(),
-		evm:      vm.NewEVM(core.NewEVMBlockContext(header, miner.chain, &coinbase), hookedState, miner.chainConfig, vmConfig),
-		alTracer: alTracer,
+		signer:     types.MakeSigner(miner.chainConfig, header.Number, header.Time),
+		state:      sdb,
+		size:       uint64(header.Size()),
+		coinbase:   coinbase,
+		header:     header,
+		witness:    sdb.Witness(),
+		evm:        vm.NewEVM(core.NewEVMBlockContext(header, miner.chain, &coinbase), sdb, miner.chainConfig, vm.Config{}),
+		accessList: accessListBuilder,
 	}, nil
 }
 
@@ -342,14 +353,6 @@ var (
 func (miner *Miner) commitTransaction(env *environment, tx *types.Transaction) (err error) {
 	if tx.Type() == types.BlobTxType {
 		return miner.commitBlobTransaction(env, tx)
-	}
-	if env.alTracer != nil {
-		env.alTracer.Checkpoint()
-		defer func() {
-			if err != nil {
-				env.alTracer.ResetToCheckpoint()
-			}
-		}()
 	}
 
 	receipt, err := miner.applyTransaction(env, tx)
@@ -377,14 +380,6 @@ func (miner *Miner) commitBlobTransaction(env *environment, tx *types.Transactio
 	if env.blobs+len(sc.Blobs) > maxBlobs {
 		return errors.New("max data blobs reached")
 	}
-	if env.alTracer != nil {
-		env.alTracer.Checkpoint()
-		defer func() {
-			if err != nil {
-				env.alTracer.ResetToCheckpoint()
-			}
-		}()
-	}
 	receipt, err := miner.applyTransaction(env, tx)
 	if err != nil {
 		return err
@@ -407,17 +402,42 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 		gp   = env.gasPool.Gas()
 	)
 
-	receipt, cumulativeGas, err := core.ApplyTransaction(env.evm, env.gasPool, env.state, env.header, tx, env.cumulativeGas)
+	var stateCopy *state.StateDB
+	var prevReader state.Reader
+	if env.accessList != nil {
+		prevReader = env.state.Reader()
+		stateCopy = env.state.WithReader(state.NewReaderWithTracker(env.state.Reader()))
+		env.evm.StateDB = stateCopy
+	}
+
+	mutations, receipt, cumulativeGas, err := core.ApplyTransaction(env.evm, env.gasPool, stateCopy, env.header, tx, env.cumulativeGas)
 	if err != nil {
-		env.state.RevertToSnapshot(snap)
+		if env.accessList != nil {
+			// transaction couldn't be applied.  reset env state to what it was before
+			env.state = env.state.WithReader(prevReader)
+			env.evm.StateDB = env.state
+		} else {
+			env.state.RevertToSnapshot(snap)
+		}
 		env.gasPool.SetGas(gp)
 		return nil, err
 	}
-	isOversizedAccessList := env.alTracer != nil && env.size+tx.Size()+uint64(env.alTracer.AccessList().ToEncodingObj().EncodedSize()) >= params.MaxBlockSize-maxBlockSizeBufferZone
-	if isOversizedAccessList {
-		env.state.RevertToSnapshot(snap)
-		env.gasPool.SetGas(gp)
-		return nil, errAccessListOversized
+	if env.accessList != nil {
+		al := env.accessList.Copy()
+		al.AccumulateMutations(mutations, uint16(env.tcount)+1)
+		al.AccumulateReads(stateCopy.Reader().(state.StateReaderTracker).GetStateAccessList())
+		if env.size+tx.Size()+uint64(al.ToEncodingObj().EncodedSize()) >= params.MaxBlockSize-maxBlockSizeBufferZone {
+			env.gasPool.SetGas(gp)
+
+			// transaction couldn't be applied.  reset env state to what it was before
+			env.state = env.state.WithReader(prevReader)
+			env.evm.StateDB = env.state
+			return nil, errAccessListOversized
+		}
+
+		env.state = stateCopy.WithReader(prevReader)
+		env.evm.StateDB = env.state
+		env.accessList = al
 	}
 	env.cumulativeGas = cumulativeGas
 	env.header.GasUsed += receipt.GasUsed

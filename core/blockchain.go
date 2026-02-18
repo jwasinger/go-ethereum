@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"io"
 	"math/big"
 	"runtime"
@@ -602,23 +603,19 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		procTime  time.Duration
 	)
 
-	_, reader, err := bc.statedb.ReadersWithCacheStats(parentRoot)
-	if err != nil {
-		return nil, err
-	}
-
 	useAsyncReads := bc.cfg.BALExecutionMode != BALExecutionModeNoBatchIO
-	stateReader := state.NewBALReader(block, reader, useAsyncReads)
-	stateTransition, err := state.NewBALStateTransition(stateReader, bc.statedb, parentRoot)
-	if err != nil {
-		return nil, err
-	}
-	statedb, err := state.New(parentRoot, bc.statedb)
+	al := block.AccessList() // TODO: make the return of this method not be a pointer
+	accessListReader := bal.NewAccessListReader(*al)
+	prefetchReader, err := bc.statedb.ReaderEIP7928(parentRoot, accessListReader.StorageKeys(useAsyncReads), runtime.NumCPU())
 	if err != nil {
 		return nil, err
 	}
 
-	statedb.SetBlockAccessList(stateReader)
+	stateTransition, err := state.NewBALStateTransition(block, prefetchReader, bc.statedb, parentRoot)
+	if err != nil {
+		return nil, err
+	}
+	statedb, err := state.NewWithReader(parentRoot, bc.statedb, prefetchReader)
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
@@ -689,7 +686,8 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	stats.SnapshotCommit = stateTransition.Metrics().SnapshotCommits
 	stats.TrieDBCommit = stateTransition.Metrics().TrieDBCommits
 
-	stats.StateReadCacheStats = reader.GetStats()
+	// stats.StateReadCacheStats = whichReader.GetStats()
+	// ^ TODO fix this
 
 	elapsed := time.Since(startTime) + 1 // prevent zero division
 	stats.TotalTime = elapsed
@@ -2216,7 +2214,7 @@ func (bpr *blockProcessingResult) Stats() *ExecuteStats {
 // ProcessBlock executes and validates the given block. If there was no error
 // it writes the block and associated state to database.
 func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, block *types.Block, setHead bool, makeWitness bool) (result *blockProcessingResult, blockEndErr error) {
-	enableBALFork := bc.chainConfig.IsAmsterdam(block.Number(), block.Time())
+	isAmsterdam := bc.chainConfig.IsAmsterdam(block.Number(), block.Time())
 	// TODO: need to check that the block is also postcancun if it contained an access list?
 	// this should be checked during decoding (?)
 	blockHasAccessList := block.AccessList() != nil
@@ -2235,10 +2233,22 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	defer interrupt.Store(true) // terminate the prefetch at the end
 
 	if bc.cfg.NoPrefetch {
-		statedb, err = state.New(parentRoot, bc.statedb)
+		if isAmsterdam {
+			reader, err := bc.statedb.Reader(parentRoot)
+			if err != nil {
+				return nil, err
+			}
 
-		if err != nil {
-			return nil, err
+			readerTracker := state.NewReaderWithTracker(reader)
+			statedb, err = state.NewWithReader(parentRoot, bc.statedb, readerTracker)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			statedb, err = state.New(parentRoot, bc.statedb)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		// If prefetching is enabled, run that against the current state to pre-cache
@@ -2253,6 +2263,9 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 		throwaway, err := state.NewWithReader(parentRoot, bc.statedb, prefetch)
 		if err != nil {
 			return nil, err
+		}
+		if isAmsterdam {
+			process = state.NewReaderWithTracker(process)
 		}
 		statedb, err = state.NewWithReader(parentRoot, bc.statedb, process)
 		if err != nil {
@@ -2326,16 +2339,6 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	var res *ProcessResult
 	var ptime, vtime time.Duration
 
-	// BAL Tracer used for creating BALs in ProcessBlock in testing path only
-	var balTracer *BlockAccessListTracer
-
-	// Process block using the parent state as reference point
-	if enableBALFork {
-		balTracer, bc.cfg.VmConfig.Tracer = NewBlockAccessListTracer()
-		defer func() {
-			bc.cfg.VmConfig.Tracer = nil
-		}()
-	}
 	// Process block using the parent state as reference point
 	pstart := time.Now()
 	pctx, _, spanEnd := telemetry.StartSpan(ctx, "bc.processor.Process")
@@ -2347,13 +2350,6 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	}
 	ptime = time.Since(pstart)
 
-	if enableBALFork {
-		balTracer.OnBlockFinalization()
-	}
-
-	// unset the BAL-creation tracer (dirty)
-	bc.cfg.VmConfig.Tracer = nil
-
 	vstart := time.Now()
 	_, _, spanEnd = telemetry.StartSpan(ctx, "bc.validator.ValidateState")
 	err = bc.validator.ValidateState(block, statedb, res, false)
@@ -2364,9 +2360,8 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	}
 	vtime = time.Since(vstart)
 
-	if enableBALFork {
-
-		computedAccessList := balTracer.AccessList().ToEncodingObj()
+	if isAmsterdam {
+		computedAccessList := res.AccessList.ToEncodingObj()
 		computedAccessListHash := computedAccessList.Hash()
 
 		if *block.Header().BlockAccessListHash != computedAccessListHash {

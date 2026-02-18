@@ -19,7 +19,7 @@ import (
 // and commit for EIP 7928 access-list-containing blocks.  An instance of
 // this object is only used for a single block.
 type BALStateTransition struct {
-	accessList *BALReader
+	accessList bal.AccessListReader
 	db         Database
 	reader     Reader
 	stateTrie  Trie
@@ -28,7 +28,8 @@ type BALStateTransition struct {
 	// the computed state root of the block
 	rootHash common.Hash
 	// the state modifications performed by the block
-	diffs map[common.Address]*bal.AccountMutations
+	diffs bal.StateMutations
+
 	// a map of common.Address -> *types.StateAccount containing the block
 	// prestate of all accounts that will be modified
 	prestates sync.Map
@@ -46,7 +47,8 @@ type BALStateTransition struct {
 
 	stateUpdate *stateUpdate
 
-	metrics BALStateTransitionMetrics
+	metrics   BALStateTransitionMetrics
+	maxBALIdx int
 
 	err error
 }
@@ -71,29 +73,26 @@ type BALStateTransitionMetrics struct {
 	TotalCommitTime time.Duration
 }
 
-func NewBALStateTransition(accessList *BALReader, db Database, parentRoot common.Hash) (*BALStateTransition, error) {
-	reader, err := db.Reader(parentRoot)
-	if err != nil {
-		return nil, err
-	}
+func NewBALStateTransition(block *types.Block, prefetchReader Reader, db Database, parentRoot common.Hash) (*BALStateTransition, error) {
 	stateTrie, err := db.OpenTrie(parentRoot)
 	if err != nil {
 		return nil, err
 	}
 
 	return &BALStateTransition{
-		accessList:  accessList,
+		accessList:  bal.NewAccessListReader(*block.AccessList()),
 		db:          db,
-		reader:      reader,
+		reader:      prefetchReader,
 		stateTrie:   stateTrie,
 		parentRoot:  parentRoot,
 		rootHash:    common.Hash{},
-		diffs:       make(map[common.Address]*bal.AccountMutations),
+		diffs:       make(bal.StateMutations),
 		prestates:   sync.Map{},
 		postStates:  make(map[common.Address]*types.StateAccount),
 		tries:       sync.Map{},
 		deletions:   make(map[common.Address]struct{}),
 		stateUpdate: nil,
+		maxBALIdx:   len(block.Transactions()) + 1,
 	}, nil
 }
 
@@ -113,7 +112,7 @@ func (s *BALStateTransition) setError(err error) {
 // isAccountDeleted checks whether the state account was deleted in this block.  Post selfdestruct-removal,
 // deletions can only occur if an account which has a balance becomes the target of a CREATE2 initcode
 // which calls SENDALL, clearing the account and marking it for deletion.
-func isAccountDeleted(prestate *types.StateAccount, mutations *bal.AccountMutations) bool {
+func isAccountDeleted(prestate *types.StateAccount, mutations bal.AccountMutations) bool {
 	// TODO: figure out how to simplify this method
 	if mutations.Code != nil && len(mutations.Code) != 0 {
 		return false
@@ -200,7 +199,11 @@ func (s *BALStateTransition) commitAccount(addr common.Address) (*accountUpdate,
 	for key, value := range s.diffs[addr].StorageWrites {
 		hash := crypto.Keccak256Hash(key[:])
 		op.storages[hash] = encode(value)
-		origin := encode(*s.accessList.Storage(addr, key))
+		storage, err := s.reader.Storage(addr, key)
+		if err != nil {
+			return nil, nil, err
+		}
+		origin := encode(storage)
 		op.storagesOriginByHash[hash] = origin
 		op.storagesOriginByKey[key] = origin
 	}
@@ -379,24 +382,25 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 	// Steps 1/2 are performed sequentially, with steps 1a-d performed in parallel
 
 	start := time.Now()
-	lastIdx := len(s.accessList.block.Transactions()) + 1
 
 	var wg sync.WaitGroup
 
-	for _, addr := range s.accessList.ModifiedAccounts() {
-		diff := s.accessList.readAccountDiff(addr, lastIdx)
-		s.diffs[addr] = diff
-	}
+	s.diffs = *s.accessList.Mutations(s.maxBALIdx + 1)
 
-	for _, addr := range s.accessList.ModifiedAccounts() {
+	for addr, d := range s.diffs {
 		wg.Add(1)
 		address := addr
+		diff := d
 		go func() {
 			defer wg.Done()
 
 			// 1 (c): update each mutated account, producing the post-block state object by applying the state mutations to the prestate (retrieved in 1a).
-			acct := s.accessList.prestateReader.account(address)
-			diff := s.diffs[address]
+			acct, err := s.reader.Account(address)
+			if err != nil {
+				s.setError(err)
+				return
+			}
+
 			if acct == nil {
 				acct = types.NewEmptyStateAccount()
 			}
@@ -450,7 +454,11 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 	go func() {
 		defer wg.Done()
 		prefetchStart := time.Now()
-		if err := s.stateTrie.PrefetchAccount(s.accessList.ModifiedAccounts()); err != nil {
+		var prefetchAddrs []common.Address
+		for addr, _ := range s.diffs {
+			prefetchAddrs = append(prefetchAddrs, addr)
+		}
+		if err := s.stateTrie.PrefetchAccount(prefetchAddrs); err != nil {
 			s.setError(err)
 			return
 		}

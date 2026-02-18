@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
 	"sort"
 
@@ -266,11 +267,10 @@ func (s *hookedStateDB) AddLog(log *types.Log) {
 	}
 }
 
-func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
+func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) bal.StateMutations {
 	if s.hooks.OnBalanceChange == nil && s.hooks.OnNonceChangeV2 == nil && s.hooks.OnNonceChange == nil && s.hooks.OnCodeChangeV2 == nil && s.hooks.OnCodeChange == nil {
 		// Short circuit if no relevant hooks are set.
-		s.inner.Finalise(deleteEmptyObjects)
-		return
+		return s.inner.Finalise(deleteEmptyObjects)
 	}
 
 	// Collect all self-destructed addresses first, then sort them to ensure
@@ -323,7 +323,7 @@ func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 		}
 	}
 
-	s.inner.Finalise(deleteEmptyObjects)
+	return s.inner.Finalise(deleteEmptyObjects)
 }
 
 func (s *hookedStateDB) TxIndex() int {

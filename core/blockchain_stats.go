@@ -311,8 +311,8 @@ func (s *ExecuteStats) reportBALMetrics() {
 
 	// Cache hit rates
 
-	accountCacheHitMeter.Mark(s.StateReadCacheStats.AccountCacheHit)
-	accountCacheMissMeter.Mark(s.StateReadCacheStats.AccountCacheMiss)
-	storageCacheHitMeter.Mark(s.StateReadCacheStats.StorageCacheHit)
-	storageCacheMissMeter.Mark(s.StateReadCacheStats.StorageCacheMiss)
+	accountCacheHitMeter.Mark(s.StateReadCacheStats.StateStats.AccountCacheHit)
+	accountCacheMissMeter.Mark(s.StateReadCacheStats.StateStats.AccountCacheMiss)
+	storageCacheHitMeter.Mark(s.StateReadCacheStats.StateStats.StorageCacheHit)
+	storageCacheMissMeter.Mark(s.StateReadCacheStats.StateStats.StorageCacheMiss)
 }

@@ -338,10 +338,9 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) bal.StateMutations {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, body)
-		return
+		return beacon.ethone.Finalize(chain, header, state, body)
 	}
 	// Withdrawals processing.
 	for _, w := range body.Withdrawals {
@@ -353,12 +352,13 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		amount = amount.Mul(amount, uint256.NewInt(params.GWei))
 		state.AddBalance(w.Address, amount, tracing.BalanceIncreaseWithdrawal)
 	}
+	return state.Finalise(true)
 	// No block reward which is issued by consensus layer instead.
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
-func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, onFinalizeAccessList func() *bal.BlockAccessList) (*types.Block, error) {
+func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, onFinalizeAccessList func(postMut bal.StateMutations) *bal.BlockAccessList) (*types.Block, error) {
 	if !beacon.IsPoSHeader(header) {
 		return beacon.ethone.FinalizeAndAssemble(chain, header, state, body, receipts, nil)
 	}
@@ -375,14 +375,14 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	}
 
 	// Finalize and assemble the block.
-	beacon.Finalize(chain, header, state, body)
+	postMut := beacon.Finalize(chain, header, state, body)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
 
 	// Assemble the final block.
 	if onFinalizeAccessList != nil {
-		al := onFinalizeAccessList()
+		al := onFinalizeAccessList(postMut)
 		alHash := al.Hash()
 
 		header.BlockAccessListHash = &alHash

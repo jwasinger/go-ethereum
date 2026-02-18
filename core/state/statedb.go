@@ -20,6 +20,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"iter"
 	"maps"
 	"slices"
@@ -155,8 +156,6 @@ type StateDB struct {
 	witness      *stateless.Witness
 	witnessStats *stateless.WitnessStats
 
-	blockAccessList *BALReader
-
 	// Measurements gathered during execution for debugging purposes
 	AccountReads   time.Duration
 	AccountHashes  time.Duration
@@ -185,10 +184,6 @@ type StateDB struct {
 	CodeLoadBytes   int // Total bytes of resolved code
 	CodeUpdated     int // Number of contracts with code changes that persisted
 	CodeUpdateBytes int // Total bytes of persisted code written
-}
-
-func (s *StateDB) BlockAccessList() *BALReader {
-	return s.blockAccessList
 }
 
 // New creates a new state from a given trie.
@@ -220,6 +215,13 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 		sdb.accessEvents = NewAccessEvents()
 	}
 	return sdb, nil
+}
+
+// WithReader returns a copy of the statedb instance with the specified reader.
+func (s *StateDB) WithReader(reader Reader) *StateDB {
+	cpy := s.Copy()
+	cpy.reader = reader
+	return cpy
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
@@ -319,38 +321,6 @@ func (s *StateDB) Preimages() map[common.Hash][]byte {
 func (s *StateDB) AddRefund(gas uint64) {
 	s.journal.refundChange(s.refund)
 	s.refund += gas
-}
-
-func (s *StateDB) SetBlockAccessList(al *BALReader) {
-	s.blockAccessList = al
-}
-
-// LoadModifiedPrestate instantiates the live object based on accounts
-// which appeared in the total state diff of a block, and were also preexisting.
-func (s *StateDB) LoadModifiedPrestate(addrs []common.Address) (res map[common.Address]*types.StateAccount) {
-	stateAccounts := new(sync.Map)
-	wg := new(sync.WaitGroup)
-	res = make(map[common.Address]*types.StateAccount)
-
-	for _, addr := range addrs {
-		wg.Add(1)
-		go func(addr common.Address) {
-			acct, err := s.reader.Account(addr)
-			if err == nil && acct != nil { // TODO: what should we do if the error is not nil?
-				stateAccounts.Store(addr, acct)
-			}
-			wg.Done()
-		}(addr)
-	}
-	wg.Wait()
-	stateAccounts.Range(func(addr any, val any) bool {
-		address := addr.(common.Address)
-		stateAccount := val.(*types.StateAccount)
-		res[address] = stateAccount
-		return true
-	})
-
-	return res
 }
 
 // SubRefund removes gas from the refund counter.
@@ -668,23 +638,6 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 		return nil
 	}
 
-	// if we are executing against a block access list, construct the account
-	// state at the current tx index by applying the access-list diff on top
-	// of the prestate value for the account.
-	if s.blockAccessList != nil && s.balIndex != 0 && s.blockAccessList.isModified(addr) {
-		acct := s.blockAccessList.readAccount(s, addr, s.balIndex-1)
-		if acct != nil {
-			s.setStateObject(acct)
-			return acct
-		}
-		return nil
-
-		// if the acct was nil, it might be non-existent or was not explicitly requested for loading from the blockAcccessList object.
-		// try to load it from the snapshot.
-
-		// TODO: if the acct was non-existent because it was deleted, we should just return nil herre.
-	}
-
 	s.AccountLoaded++
 
 	start := time.Now()
@@ -785,9 +738,6 @@ func (s *StateDB) Copy() *StateDB {
 		logSize:              s.logSize,
 		preimages:            maps.Clone(s.preimages),
 
-		// don't deep-copy these
-		blockAccessList: s.blockAccessList,
-
 		// Do we need to copy the access list and transient storage?
 		// In practice: No. At the start of a transaction, these two lists are empty.
 		// In practice, we only ever copy state _between_ transactions/blocks, never
@@ -871,8 +821,10 @@ func (s *StateDB) GetRemovedAccountsWithBalance() (list []RemovedAccountWithBala
 // Finalise finalises the state by removing the destructed objects and clears
 // the journal as well as the refunds. Finalise, however, will not push any updates
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
-func (s *StateDB) Finalise(deleteEmptyObjects bool) {
+func (s *StateDB) Finalise(deleteEmptyObjects bool) (mutations bal.StateMutations) {
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
+	mutations = make(bal.StateMutations)
+
 	for addr := range s.journal.dirties {
 		obj, exist := s.stateObjects[addr]
 		if !exist {
@@ -893,8 +845,19 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			if _, ok := s.stateObjectsDestruct[obj.address]; !ok {
 				s.stateObjectsDestruct[obj.address] = obj
 			}
+
+			// a pre-existing account can only be removed from the state under the following circumstance:
+			// it had a balance and was the target of a create2 which selfdestructed in the initcode
+			if !obj.txPreBalance.IsZero() {
+				mutations[addr] = bal.AccountMutations{
+					Balance: uint256.NewInt(0),
+				}
+			}
 		} else {
-			obj.finalise()
+			mut := obj.finalise()
+			if mut != nil {
+				mutations[addr] = *mut
+			}
 			s.markUpdate(addr)
 		}
 		// At this point, also ship the address off to the precacher. The precacher
@@ -909,6 +872,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 	}
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
+	return mutations
 }
 
 // IntermediateRoot computes the current root hash of the state trie.

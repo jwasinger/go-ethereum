@@ -120,7 +120,7 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 		err          error
 	)
 	b.statedb.SetTxContext(tx.Hash(), len(b.txs))
-	receipt, b.cumulativeGas, err = ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, b.cumulativeGas)
+	_, receipt, b.cumulativeGas, err = ApplyTransaction(evm, b.gasPool, b.statedb, b.header, tx, b.cumulativeGas)
 	if err != nil {
 		panic(err)
 	}
@@ -331,11 +331,11 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		blockContext := NewEVMBlockContext(b.header, b.cm, &b.header.Coinbase)
 		evm := vm.NewEVM(blockContext, statedb, b.cm.config, vm.Config{})
 		// EIP-7002
-		if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+		if _, err := ProcessWithdrawalQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process withdrawal requests: %v", err))
 		}
 		// EIP-7251
-		if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+		if _, err := ProcessConsolidationQueue(&requests, evm); err != nil {
 			panic(fmt.Sprintf("could not process consolidation requests: %v", err))
 		}
 	}
