@@ -195,10 +195,11 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc, addressPosition int) g
 }
 
 var (
-	gasCallEIP2929         = makeCallVariantGasCallEIP2929(gasCall, 1)
-	gasDelegateCallEIP2929 = makeCallVariantGasCallEIP2929(gasDelegateCall, 1)
-	gasStaticCallEIP2929   = makeCallVariantGasCallEIP2929(gasStaticCall, 1)
-	gasCallCodeEIP2929     = makeCallVariantGasCallEIP2929(gasCallCode, 1)
+	// TODO: we can use the same functions already defined above for the 7702 gas handlers
+	gasCallEIP2929         = makeCallVariantGasCall(gasCallStateless, gasCallStateful)
+	gasDelegateCallEIP2929 = makeCallVariantGasCall(gasDelegateCallStateless, gasDelegateCallStateful)
+	gasStaticCallEIP2929   = makeCallVariantGasCall(gasStaticCallStateless, gasStaticCallStateful)
+	gasCallCodeEIP2929     = makeCallVariantGasCall(gasCallCodeStateless, gasCallCodeStateful)
 	gasSelfdestructEIP2929 = makeSelfdestructGasFn(true)
 	// gasSelfdestructEIP3529 implements the changes in EIP-3529 (no refunds)
 	gasSelfdestructEIP3529 = makeSelfdestructGasFn(false)
@@ -243,6 +244,10 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
 				return GasCosts{}, ErrOutOfGas
 			}
 		}
+		if contract.Gas < gas {
+			return gas, nil
+		}
+
 		// if empty and transfers value
 		if evm.StateDB.Empty(address) && evm.StateDB.GetBalance(contract.Address()).Sign() != 0 {
 			gas += params.CreateBySelfdestructGas

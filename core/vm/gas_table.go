@@ -477,11 +477,14 @@ func gasCallCodeIntrinsic(evm *EVM, contract *Contract, stack *Stack, mem *Memor
 		return 0, err
 	}
 	var (
-		gas      uint64
-		overflow bool
+		gas            uint64
+		overflow       bool
+		transfersValue = !stack.Back(2).IsZero()
 	)
-	if stack.Back(2).Sign() != 0 && !evm.chainRules.IsEIP4762 {
-		gas += params.CallValueTransferGas
+	if transfersValue {
+		if !evm.chainRules.IsEIP4762 {
+			gas += params.CallValueTransferGas
+		}
 	}
 	if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
 		return 0, ErrGasUintOverflow
@@ -502,10 +505,15 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		return GasCosts{}, ErrWriteProtection
 	}
 	var gas uint64
+
 	// EIP150 homestead gas reprice fork:
 	if evm.chainRules.IsEIP150 {
 		gas = params.SelfdestructGasEIP150
 		var address = common.Address(stack.Back(0).Bytes20())
+
+		if gas > contract.Gas {
+			return gas, nil
+		}
 
 		if evm.chainRules.IsEIP158 {
 			// if empty and transfers value
