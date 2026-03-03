@@ -479,29 +479,32 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 }
 
 // create creates a new contract using code as deployment code.
-func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas GasCosts, gasUsed GasUsed, err error) {
+func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas GasCosts, used GasUsed, err error) {
+	// Depth check execution. Fail if we're trying to execute above the
+	// limit.
+	var nonce uint64
+	if evm.depth > int(params.CallCreateDepth) {
+		err = ErrDepth
+	} else if !evm.Context.CanTransfer(evm.StateDB, caller, value) {
+		err = ErrInsufficientBalance
+	} else {
+		nonce = evm.StateDB.GetNonce(caller)
+		if nonce+1 < nonce {
+			err = ErrNonceUintOverflow
+		}
+	}
+
+	if err == nil {
+		evm.StateDB.SetNonce(caller, nonce+1, tracing.NonceChangeContractCreator)
+	}
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas, value.ToBig())
 		defer func(startGas GasCosts) {
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// Depth check execution. Fail if we're trying to execute above the
-	// limit.
-	if evm.depth > int(params.CallCreateDepth) {
-		err = ErrDepth
-	} else if !evm.Context.CanTransfer(evm.StateDB, caller, value) {
-		err = ErrInsufficientBalance
-	} else {
-		nonce := evm.StateDB.GetNonce(caller)
-		if nonce+1 < nonce {
-			err = ErrNonceUintOverflow
-		} else {
-			evm.StateDB.SetNonce(caller, nonce+1, tracing.NonceChangeContractCreator)
-		}
-	}
 	if err != nil {
-		return nil, common.Address{}, gas, GasUsed{}, err
+		return nil, common.Address{}, GasCosts{}, GasUsed{}, err
 	}
 
 	// Charge the contract creation init gas in verkle mode
@@ -528,6 +531,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *
 	// - the storage is non-empty
 	contractHash := evm.StateDB.GetCodeHash(address)
 	storageRoot := evm.StateDB.GetStorageRoot(address)
+
 	if evm.StateDB.GetNonce(address) != 0 ||
 		(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
 		(storageRoot != (common.Hash{}) && storageRoot != types.EmptyRootHash) { // non-empty storage

@@ -45,9 +45,12 @@ type ContractCodeReader interface {
 	// requested contract code doesn't exist.
 	Code(addr common.Address, codeHash common.Hash) []byte
 
-	// CodeSize retrieves a particular contracts code's size. Returns zero code
-	// size if the requested contract code doesn't exist.
-	CodeSize(addr common.Address, codeHash common.Hash) int
+	// CodeSize retrieves a particular contracts code's size.
+	//
+	// - Returns zero code size along with nil error if the requested contract code
+	//   doesn't exist
+	// - Returns an error only if an unexpected issue occurs
+	CodeSize(addr common.Address, codeHash common.Hash) (int, error)
 }
 
 // StateReader defines the interface for accessing accounts and storage slots

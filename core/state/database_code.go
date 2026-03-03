@@ -116,12 +116,12 @@ func (r *CodeReader) Code(addr common.Address, codeHash common.Hash) []byte {
 
 // CodeSize implements state.ContractCodeReader, retrieving a particular contract
 // code's size. Zero is returned if the contract code is not present.
-func (r *CodeReader) CodeSize(addr common.Address, codeHash common.Hash) int {
+func (r *CodeReader) CodeSize(addr common.Address, codeHash common.Hash) (int, error) {
 	if cached, ok := r.cache.GetSize(codeHash); ok {
 		r.hit.Add(1)
-		return cached
+		return cached, nil
 	}
-	return len(r.Code(addr, codeHash))
+	return len(r.Code(addr, codeHash)), nil
 }
 
 // CodeWithPrefix retrieves the contract code for the specified account address

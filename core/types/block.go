@@ -28,9 +28,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types/bal"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -167,10 +168,8 @@ func (h *Header) SanityCheck() error {
 // EmptyBody returns true if there is no additional 'body' to complete the header
 // that is: no transactions, no uncles and no withdrawals.
 func (h *Header) EmptyBody() bool {
-	var (
-		emptyWithdrawals = h.WithdrawalsHash == nil || *h.WithdrawalsHash == EmptyWithdrawalsHash
-	)
-	return h.TxHash == EmptyTxsHash && h.UncleHash == EmptyUncleHash && emptyWithdrawals
+	// quick hack to ensure that we download bodies for empty blocks so that we receive the BALs
+	return false
 }
 
 // EmptyReceipts returns true if there are no receipts for this header/block.
@@ -225,7 +224,8 @@ type extblock struct {
 	Header      *Header
 	Txs         []*Transaction
 	Uncles      []*Header
-	Withdrawals []*Withdrawal `rlp:"optional"`
+	Withdrawals []*Withdrawal        `rlp:"optional"`
+	AccessList  *bal.BlockAccessList `rlp:"optional"`
 }
 
 // NewBlock creates a new block. The input data is copied, changes to header and to the
@@ -289,6 +289,14 @@ func NewBlock(header *Header, body *Body, receipts []*Receipt, hasher ListHasher
 	return b
 }
 
+func NewBlockWithAccessList(header *Header, body *Body, receipts []*Receipt, accessList *bal.BlockAccessList, hasher ListHasher) *Block {
+	block := NewBlock(header, body, receipts, hasher)
+	block.accessList = accessList
+	balHash := accessList.Hash()
+	block.header.BlockAccessListHash = &balHash
+	return block
+}
+
 // CopyHeader creates a deep copy of a block header.
 func CopyHeader(h *Header) *Header {
 	cpy := *h
@@ -334,12 +342,14 @@ func CopyHeader(h *Header) *Header {
 
 // DecodeRLP decodes a block from RLP.
 func (b *Block) DecodeRLP(s *rlp.Stream) error {
-	var eb extblock
+	var (
+		eb extblock
+	)
 	_, size, _ := s.Kind()
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
+	b.header, b.uncles, b.transactions, b.withdrawals, b.accessList = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals, eb.AccessList
 	b.size.Store(rlp.ListSize(size))
 	return nil
 }
@@ -351,6 +361,7 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 		Txs:         b.transactions,
 		Uncles:      b.uncles,
 		Withdrawals: b.withdrawals,
+		AccessList:  b.accessList,
 	})
 }
 

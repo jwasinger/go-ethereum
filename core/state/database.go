@@ -73,7 +73,7 @@ type Trie interface {
 	// be returned.
 	GetAccount(address common.Address) (*types.StateAccount, error)
 
-	// PrefetchAccount attempts to resolve specific accounts from the database
+	// PrefetchAccount attempts to schedule specific accounts from the database
 	// to accelerate subsequent trie operations.
 	PrefetchAccount([]common.Address) error
 
@@ -82,7 +82,7 @@ type Trie interface {
 	// a trie.MissingNodeError is returned.
 	GetStorage(addr common.Address, key []byte) ([]byte, error)
 
-	// PrefetchStorage attempts to resolve specific storage slots from the database
+	// PrefetchStorage attempts to schedule specific storage slots from the database
 	// to accelerate subsequent trie operations.
 	PrefetchStorage(addr common.Address, keys [][]byte) error
 
@@ -91,11 +91,17 @@ type Trie interface {
 	// in the trie with provided address.
 	UpdateAccount(address common.Address, account *types.StateAccount, codeLen int) error
 
+	// UpdateAccountBatch attempts to update a list accounts in the batch manner.
+	UpdateAccountBatch(addresses []common.Address, accounts []*types.StateAccount, _ []int) error
+
 	// UpdateStorage associates key with value in the trie. If value has length zero,
 	// any existing value is deleted from the trie. The value bytes must not be modified
 	// by the caller while they are stored in the trie. If a node was not found in the
 	// database, a trie.MissingNodeError is returned.
 	UpdateStorage(addr common.Address, key, value []byte) error
+
+	// UpdateStorageBatch attempts to update a list storages in the batch manner.
+	UpdateStorageBatch(_ common.Address, keys [][]byte, values [][]byte) error
 
 	// DeleteAccount abstracts an account deletion from the trie.
 	DeleteAccount(address common.Address) error
@@ -232,6 +238,21 @@ func (db *CachingDB) ReadersWithCacheStats(stateRoot common.Hash) (Reader, Reade
 	ra := newReader(db.codedb.Reader(), newStateReaderWithStats(sr))
 	rb := newReader(db.codedb.Reader(), newStateReaderWithStats(sr))
 	return ra, rb, nil
+}
+
+// ReaderEIP7928 creates a state reader with the manner of Block-level accessList.
+func (db *CachingDB) ReaderEIP7928(stateRoot common.Hash, accessList map[common.Address][]common.Hash, threads int) (Reader, error) {
+	base, err := db.StateReader(stateRoot)
+	if err != nil {
+		return nil, err
+	}
+	// Construct the state reader with native cache and associated statistics
+	r := newStateReaderWithStats(newStateReaderWithCache(base))
+
+	// Construct the state reader with background prefetching
+	pr := newPrefetchStateReader(r, accessList, threads)
+
+	return newReader(db.codedb.Reader(), pr), nil
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
