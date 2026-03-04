@@ -604,6 +604,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	var (
 		startTime = time.Now()
 		procTime  time.Duration
+		statedb   *state.StateDB
 	)
 
 	useAsyncReads := bc.cfg.BALExecutionMode != BALExecutionModeNoBatchIO
@@ -618,7 +619,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	if err != nil {
 		return nil, err
 	}
-	statedb, err := state.NewWithReader(parentRoot, bc.statedb, prefetchReader)
+	statedb, err = state.NewWithReader(parentRoot, bc.statedb, prefetchReader)
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
