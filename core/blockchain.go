@@ -604,6 +604,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	var (
 		startTime = time.Now()
 		procTime  time.Duration
+		statedb   *state.StateDB
 	)
 
 	sdb := state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
@@ -620,7 +621,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	if err != nil {
 		return nil, err
 	}
-	statedb, err := state.NewWithReader(parentRoot, sdb, prefetchReader)
+	statedb, err = state.NewWithReader(parentRoot, sdb, prefetchReader)
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
