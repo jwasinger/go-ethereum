@@ -322,7 +322,9 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 			}
 			gas.RegularGas = 0
+			// state gas is charged
 		}
+		_, _ = savedTotalStateGas, savedStateGas
 		// State changes are rolled back on any error, so state gas charges
 		// from the reverted execution should not count toward block accounting.
 		// Also restore the state gas reservoir since state creation was undone.

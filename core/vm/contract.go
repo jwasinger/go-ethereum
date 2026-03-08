@@ -139,13 +139,11 @@ func (c *Contract) UseGas(gas GasCosts, logger *tracing.Hooks, reason tracing.Ga
 
 // RefundGas refunds gas to the contract
 func (c *Contract) RefundGas(gas GasCosts, logger *tracing.Hooks, reason tracing.GasChangeReason) {
-	if gas.Max() == 0 {
-		return
-	}
-	if logger != nil && logger.OnGasChange != nil && reason != tracing.GasChangeIgnored {
+	c.Gas.Add(gas)
+	// TODO (jwasinger): change Max to MaxSpendable?
+	if gas.Max() != 0 && logger != nil && logger.OnGasChange != nil && reason != tracing.GasChangeIgnored {
 		logger.OnGasChange(c.Gas.RegularGas, c.Gas.RegularGas+gas.RegularGas, reason)
 	}
-	c.Gas.Add(gas)
 }
 
 // Address returns the contracts address

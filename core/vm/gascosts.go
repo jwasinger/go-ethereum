@@ -2,6 +2,9 @@ package vm
 
 import "fmt"
 
+// TODO: suggest rename to GasCounter to signal it's a stateful object representing the current gas available
+// it's weird that this object contains RegularGas/StateGas which represent the current gas available to the call (only valid for the context of a single call).
+// but also TotalStateGasCharged and RevertedStateGasSpill which are accumulated from all previous calls in the transaction.
 type GasCosts struct {
 	RegularGas uint64
 	StateGas   uint64
@@ -62,8 +65,8 @@ func (g *GasCosts) Sub(b GasCosts) {
 func (g *GasCosts) Add(b GasCosts) {
 	g.RegularGas += b.RegularGas
 	g.StateGas += b.StateGas
-	g.TotalStateGasCharged += b.TotalStateGasCharged
 	g.RevertedStateGasSpill += b.RevertedStateGasSpill
+	g.TotalStateGasCharged += b.TotalStateGasCharged
 }
 
 // RevertStateGas handles state gas accounting when a call reverts (EIP-8037).
@@ -75,6 +78,8 @@ func (g *GasCosts) RevertStateGas(savedTotalStateGas, savedStateGas uint64, isRe
 	spilledFromRegular := chargedDuringCall - fromReservoir
 
 	if isRevert {
+		// TODO (jwasinger): shouldn't reverted state gas (incl spill) be returned to the parent's state gas reservoir?
+		//
 		// REVERT: return the spilled state gas to regular gas since the caller
 		// keeps unused gas and state operations were undone.
 		g.RegularGas += spilledFromRegular

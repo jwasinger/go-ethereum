@@ -2145,12 +2145,15 @@ func (bc *BlockChain) insertChain(ctx context.Context, chain types.Blocks, setHe
 		if err != nil {
 			return nil, it.index, err
 		}
-		blockHasAccessList := block.AccessList() != nil
-		if blockHasAccessList && bc.cfg.BALExecutionMode != BALExecutionModeSequential {
-			res.stats.reportBALMetrics()
-		} else {
-			res.stats.reportMetrics()
-		}
+		/*
+			blockHasAccessList := block.AccessList() != nil
+				if blockHasAccessList && bc.cfg.BALExecutionMode != BALExecutionModeSequential {
+					res.stats.reportBALMetrics()
+				} else {
+					res.stats.reportMetrics()
+				}
+		*/
+		res.stats.reportMetrics()
 
 		// Log slow block only if a single block is inserted (usually after the
 		// initial sync) to not overwhelm the users.
@@ -2262,12 +2265,14 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	isAmsterdam := bc.chainConfig.IsAmsterdam(block.Number(), block.Time())
 	// TODO: need to check that the block is also postcancun if it contained an access list?
 	// this should be checked during decoding (?)
-	blockHasAccessList := block.AccessList() != nil
+	//blockHasAccessList := block.AccessList() != nil
 
 	// optimized execution path for blocks which contain BALs
-	if blockHasAccessList && bc.cfg.BALExecutionMode != BALExecutionModeSequential {
-		return bc.processBlockWithAccessList(parentRoot, block, config.WriteHead)
-	}
+	/*
+		if blockHasAccessList && bc.cfg.BALExecutionMode != BALExecutionModeSequential {
+			return bc.processBlockWithAccessList(parentRoot, block, config.WriteHead)
+		}
+	*/
 
 	var (
 		err       error

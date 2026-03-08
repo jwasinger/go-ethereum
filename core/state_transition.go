@@ -781,6 +781,7 @@ func (st *stateTransition) blockGasUsed(intrinsicGas, execGasStart vm.GasCosts) 
 	totalExecUsed := (execGasStart.RegularGas + execGasStart.StateGas) -
 		(st.gasRemaining.RegularGas + st.gasRemaining.StateGas)
 	execStateUsed := st.gasRemaining.TotalStateGasCharged
+
 	// Exclude state gas that was charged from regular gas but then reverted.
 	// This gas was consumed from the regular pool but was for state operations
 	// that didn't persist, so it shouldn't count in the regular dimension.
