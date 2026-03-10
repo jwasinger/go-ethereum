@@ -532,3 +532,11 @@ func (a *AccountMutations) Eq(other *AccountMutations) bool {
 	}
 	return true
 }
+
+type BALExecutionMode int
+
+const (
+	BALExecutionOptimized BALExecutionMode = iota
+	BALExecutionNoBatchIO
+	BALExecutionSequential
+)
