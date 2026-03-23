@@ -31,8 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types/bal"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/common/mclock"
@@ -46,6 +44,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -95,6 +94,7 @@ var (
 	accountReadSingleTimer = metrics.NewRegisteredResettingTimer("chain/account/single/reads", nil)
 	storageReadSingleTimer = metrics.NewRegisteredResettingTimer("chain/storage/single/reads", nil)
 	codeReadSingleTimer    = metrics.NewRegisteredResettingTimer("chain/code/single/reads", nil)
+	snapshotCommitTimer    = metrics.NewRegisteredResettingTimer("chain/snapshot/commits", nil)
 	triedbCommitTimer      = metrics.NewRegisteredResettingTimer("chain/triedb/commits", nil)
 
 	blockInsertTimer          = metrics.NewRegisteredResettingTimer("chain/inserts", nil)
@@ -103,20 +103,12 @@ var (
 	blockExecutionTimer       = metrics.NewRegisteredResettingTimer("chain/execution", nil)
 	blockWriteTimer           = metrics.NewRegisteredResettingTimer("chain/write", nil)
 
-	// BALspecific timers
-	blockPreprocessingTimer = metrics.NewRegisteredResettingTimer("chain/preprocess", nil)
-	txExecutionTimer        = metrics.NewRegisteredResettingTimer("chain/txexecution", nil)
-
+	// BAL-specific timers
 	stateTrieHashTimer      = metrics.NewRegisteredResettingTimer("chain/statetriehash", nil)
 	accountTriesUpdateTimer = metrics.NewRegisteredResettingTimer("chain/accounttriesupdate", nil)
 	stateTriePrefetchTimer  = metrics.NewRegisteredResettingTimer("chain/statetrieprefetch", nil)
 	stateTrieUpdateTimer    = metrics.NewRegisteredResettingTimer("chain/statetrieupdate", nil)
-	originStorageLoadTimer  = metrics.NewRegisteredResettingTimer("chain/originstorageload", nil)
-
-	stateRootComputeTimer = metrics.NewRegisteredResettingTimer("chain/staterootcompute", nil)
-	stateCommitTimer      = metrics.NewRegisteredResettingTimer("chain/statetriecommit", nil)
-
-	blockPostprocessingTimer = metrics.NewRegisteredResettingTimer("chain/postprocess", nil)
+	stateRootComputeTimer   = metrics.NewRegisteredResettingTimer("chain/staterootcompute", nil)
 
 	blockReorgMeter     = metrics.NewRegisteredMeter("chain/reorg/executes", nil)
 	blockReorgAddMeter  = metrics.NewRegisteredMeter("chain/reorg/add", nil)
@@ -600,19 +592,24 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		statedb   *state.StateDB
 	)
 
+	sdb := state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+
 	useAsyncReads := bc.cfg.BALExecutionMode != bal.BALExecutionNoBatchIO
 	al := block.AccessList() // TODO: make the return of this method not be a pointer
 	accessListReader := bal.NewAccessListReader(*al)
-	prefetchReader, err := bc.statedb.ReaderEIP7928(parentRoot, accessListReader.StorageKeys(useAsyncReads), runtime.NumCPU())
+	prefetchReader, err := sdb.ReaderEIP7928(parentRoot, accessListReader.StorageKeys(useAsyncReads), runtime.NumCPU())
 	if err != nil {
 		return nil, err
 	}
 
-	stateTransition, err := state.NewBALStateTransition(block, prefetchReader, bc.statedb, parentRoot)
+	stateTransition, err := state.NewBALStateTransition(block, prefetchReader, sdb, parentRoot)
 	if err != nil {
 		return nil, err
 	}
-	statedb, err = state.NewWithReader(parentRoot, bc.statedb, prefetchReader)
+	statedb, err = state.NewWithReader(parentRoot, sdb, prefetchReader)
+	if err != nil {
+		return nil, err
+	}
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
@@ -2288,7 +2285,7 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 		//
 		// Note: the main processor and prefetcher share the same reader with a local
 		// cache for mitigating the overhead of state access.
-		prefetch, process, err := sdb.ReadersWithCache(parentRoot)
+		prefetch, process, err := sdb.ReadersWithCacheStats(parentRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -3001,10 +2998,6 @@ func (bc *BlockChain) reportBadBlock(block *types.Block, res *ProcessResult, err
 	}
 	rawdb.WriteBadBlock(bc.db, block)
 	log.Error(summarizeBadBlock(block, receipts, bc.Config(), err))
-}
-
-func (bc *BlockChain) reportBALBlock(block *types.Block, res *ProcessResult, err error) {
-
 }
 
 // logForkReadiness will write a log when a future fork is scheduled, but not

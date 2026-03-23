@@ -511,8 +511,8 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		gas = params.SelfdestructGasEIP150
 		var address = common.Address(stack.Back(0).Bytes20())
 
-		if gas > contract.Gas {
-			return gas, nil
+		if gas > contract.Gas.RegularGas {
+			return GasCosts{RegularGas: gas}, nil
 		}
 
 		if evm.chainRules.IsEIP158 {

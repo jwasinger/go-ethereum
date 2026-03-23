@@ -196,10 +196,10 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc, addressPosition int) g
 
 var (
 	// TODO: we can use the same functions already defined above for the 7702 gas handlers
-	gasCallEIP2929         = makeCallVariantGasCall(gasCallStateless, gasCallStateful)
-	gasDelegateCallEIP2929 = makeCallVariantGasCall(gasDelegateCallStateless, gasDelegateCallStateful)
-	gasStaticCallEIP2929   = makeCallVariantGasCall(gasStaticCallStateless, gasStaticCallStateful)
-	gasCallCodeEIP2929     = makeCallVariantGasCall(gasCallCodeStateless, gasCallCodeStateful)
+	gasCallEIP2929         = makeCallVariantGasCallEIP2929(gasCall, 1)
+	gasDelegateCallEIP2929 = makeCallVariantGasCallEIP2929(gasDelegateCall, 1)
+	gasStaticCallEIP2929   = makeCallVariantGasCallEIP2929(gasStaticCall, 1)
+	gasCallCodeEIP2929     = makeCallVariantGasCallEIP2929(gasCallCode, 1)
 	gasSelfdestructEIP2929 = makeSelfdestructGasFn(true)
 	// gasSelfdestructEIP3529 implements the changes in EIP-3529 (no refunds)
 	gasSelfdestructEIP3529 = makeSelfdestructGasFn(false)
@@ -244,8 +244,8 @@ func makeSelfdestructGasFn(refundsEnabled bool) gasFunc {
 				return GasCosts{}, ErrOutOfGas
 			}
 		}
-		if contract.Gas < gas {
-			return gas, nil
+		if contract.Gas.RegularGas < gas {
+			return GasCosts{RegularGas: gas}, nil
 		}
 
 		// if empty and transfers value

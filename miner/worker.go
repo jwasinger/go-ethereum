@@ -388,10 +388,6 @@ func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase
 	}, nil
 }
 
-var (
-	errAccessListOversized = errors.New("access list oversized")
-)
-
 func (miner *Miner) commitTransaction(ctx context.Context, env *environment, tx *types.Transaction) (err error) {
 	_, _, spanEnd := telemetry.StartSpan(ctx, "miner.commitTransaction")
 	defer spanEnd(&err)
@@ -447,9 +443,7 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 		gp   = env.gasPool.Snapshot()
 	)
 	var stateCopy *state.StateDB
-	var prevReader state.Reader
 	if env.accessList != nil {
-		prevReader = env.state.Reader()
 		stateCopy = env.state.WithReader(state.NewReaderWithTracker(env.state.Reader()))
 		env.evm.StateDB = stateCopy
 	}

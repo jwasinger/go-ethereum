@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"io"
 	"maps"
 	"slices"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
@@ -176,11 +176,11 @@ type EncodedStorage struct {
 var _ rlp.Encoder = &EncodedStorage{}
 var _ rlp.Decoder = &EncodedStorage{}
 
-func (e *EncodedStorage) ToHash() common.Hash {
-	if e == nil {
+func (s *EncodedStorage) ToHash() common.Hash {
+	if s == nil {
 		return common.Hash{}
 	}
-	return e.inner.Bytes32()
+	return s.inner.Bytes32()
 }
 
 func newEncodedStorageFromHash(hash common.Hash) *EncodedStorage {

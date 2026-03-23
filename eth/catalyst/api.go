@@ -206,7 +206,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.
 		}
 
 		if api.checkFork(params.Timestamp, forks.Amsterdam) {
-			return api.forkchoiceUpdated(update, params, engine.PayloadV4, false)
+			return api.forkchoiceUpdated(ctx, update, params, engine.PayloadV4, false)
 		}
 	}
 	// TODO(matt): the spec requires that fcu is applied when called on a valid
@@ -503,7 +503,6 @@ func (api *ConsensusAPI) GetPayloadV6(payloadID engine.PayloadID) (*engine.Execu
 //
 // Note passing nil `forks`, `versions` disables the respective check.
 func (api *ConsensusAPI) getPayload(payloadID engine.PayloadID, full bool, versions []engine.PayloadVersion, forks []forks.Fork) (*engine.ExecutionPayloadEnvelope, error) {
-
 	log.Trace("Engine API request received", "method", "GetPayload", "id", payloadID)
 	if versions != nil && !payloadID.Is(versions...) {
 		return nil, engine.UnsupportedFork

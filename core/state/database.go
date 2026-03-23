@@ -252,7 +252,7 @@ func (db *CachingDB) ReaderEIP7928(stateRoot common.Hash, accessList map[common.
 	// Construct the state reader with background prefetching
 	pr := newPrefetchStateReader(r, accessList, threads)
 
-	return newReader(newCachingCodeReader(db.disk, db.codeCache, db.codeSizeCache), pr), nil
+	return newReader(db.codedb.Reader(), pr), nil
 }
 
 // OpenTrie opens the main account trie at a specific root hash.

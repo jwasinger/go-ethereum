@@ -247,7 +247,6 @@ func (r *ReaderWithBlockLevelAccessList) Account(addr common.Address) (acct *typ
 // Storage implements Reader, returning the storage slot with the specific
 // address and slot key.
 func (r *ReaderWithBlockLevelAccessList) Storage(addr common.Address, slot common.Hash) (common.Hash, error) {
-
 	val := r.AccessList.Storage(addr, slot, r.TxIndex)
 	if val != nil {
 		return *val, nil
@@ -267,11 +266,11 @@ func (r *ReaderWithBlockLevelAccessList) Has(addr common.Address, codeHash commo
 
 // Code implements Reader, returning the contract code with specified address
 // and hash.
-func (r *ReaderWithBlockLevelAccessList) Code(addr common.Address, codeHash common.Hash) ([]byte, error) {
+func (r *ReaderWithBlockLevelAccessList) Code(addr common.Address, codeHash common.Hash) []byte {
 	mut := r.AccessList.AccountMutations(addr, r.TxIndex)
 	if mut != nil && mut.Code != nil && crypto.Keccak256Hash(mut.Code) == codeHash {
 		// TODO: need to copy here?
-		return mut.Code, nil
+		return mut.Code
 	}
 	return r.Reader.Code(addr, codeHash)
 }

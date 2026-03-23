@@ -3,10 +3,11 @@ package types
 import (
 	"bytes"
 	"fmt"
-	"github.com/ethereum/go-ethereum/rlp"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func TestBALDecoding(t *testing.T) {

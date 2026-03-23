@@ -340,7 +340,6 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 	}
 
 	return types.NewBlockWithHeader(header).WithBody(body), nil
-
 }
 
 // BlockToExecutableData constructs the ExecutableData structure by filling the
