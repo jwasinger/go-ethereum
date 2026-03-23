@@ -503,7 +503,6 @@ func (api *ConsensusAPI) GetPayloadV6(payloadID engine.PayloadID) (*engine.Execu
 //
 // Note passing nil `forks`, `versions` disables the respective check.
 func (api *ConsensusAPI) getPayload(payloadID engine.PayloadID, full bool, versions []engine.PayloadVersion, forks []forks.Fork) (*engine.ExecutionPayloadEnvelope, error) {
-
 	log.Trace("Engine API request received", "method", "GetPayload", "id", payloadID)
 	if versions != nil && !payloadID.Is(versions...) {
 		return nil, engine.UnsupportedFork

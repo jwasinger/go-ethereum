@@ -22,6 +22,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	stdmath "math"
+	"math/big"
+	"os"
+	"reflect"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -40,11 +46,6 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
-	stdmath "math"
-	"math/big"
-	"os"
-	"reflect"
-	"strings"
 )
 
 // A BlockTest checks handling of entire blocks.

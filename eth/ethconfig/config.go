@@ -19,8 +19,9 @@ package ethconfig
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"

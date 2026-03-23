@@ -20,8 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/types/bal"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -420,7 +421,6 @@ func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	}
 	blockSpanEnd(nil)
 	return block, nil
-
 }
 
 // Seal generates a new sealing request for the given input block and pushes

@@ -19,13 +19,13 @@ package state
 import (
 	"bytes"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"maps"
 	"slices"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -672,7 +672,11 @@ func (s *stateObject) CodeSize() int {
 		s.db.CodeReads += time.Since(start)
 	}(time.Now())
 
-	size, _ := s.db.reader.CodeSize(s.address, common.BytesToHash(s.CodeHash()))
+	size, err := s.db.reader.CodeSize(s.address, common.BytesToHash(s.CodeHash()))
+	if err != nil {
+		s.db.setError(err)
+		return 0
+	}
 	if size == 0 {
 		s.db.setError(fmt.Errorf("code is not found %x", s.CodeHash()))
 	}

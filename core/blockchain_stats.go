@@ -52,6 +52,8 @@ type ExecuteStats struct {
 	Execution       time.Duration // Time spent on the EVM execution
 	Validation      time.Duration // Time spent on the block validation
 	CrossValidation time.Duration // Optional, time spent on the block cross validation
+	SnapshotCommit  time.Duration // Time spent on the snapshot commit
+	TrieDBCommit    time.Duration // Time spent on the trie database commit
 	DatabaseCommit  time.Duration // Time spent on database commit
 	BlockWrite      time.Duration // Time spent on block write
 	TotalTime       time.Duration // The total time spent on block execution

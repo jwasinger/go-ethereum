@@ -31,8 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types/bal"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/common/mclock"
@@ -46,6 +44,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
@@ -95,6 +94,7 @@ var (
 	accountReadSingleTimer = metrics.NewRegisteredResettingTimer("chain/account/single/reads", nil)
 	storageReadSingleTimer = metrics.NewRegisteredResettingTimer("chain/storage/single/reads", nil)
 	codeReadSingleTimer    = metrics.NewRegisteredResettingTimer("chain/code/single/reads", nil)
+	snapshotCommitTimer    = metrics.NewRegisteredResettingTimer("chain/snapshot/commits", nil)
 	triedbCommitTimer      = metrics.NewRegisteredResettingTimer("chain/triedb/commits", nil)
 
 	blockInsertTimer          = metrics.NewRegisteredResettingTimer("chain/inserts", nil)
@@ -103,20 +103,12 @@ var (
 	blockExecutionTimer       = metrics.NewRegisteredResettingTimer("chain/execution", nil)
 	blockWriteTimer           = metrics.NewRegisteredResettingTimer("chain/write", nil)
 
-	// BALspecific timers
-	blockPreprocessingTimer = metrics.NewRegisteredResettingTimer("chain/preprocess", nil)
-	txExecutionTimer        = metrics.NewRegisteredResettingTimer("chain/txexecution", nil)
-
+	// BAL-specific timers
 	stateTrieHashTimer      = metrics.NewRegisteredResettingTimer("chain/statetriehash", nil)
 	accountTriesUpdateTimer = metrics.NewRegisteredResettingTimer("chain/accounttriesupdate", nil)
 	stateTriePrefetchTimer  = metrics.NewRegisteredResettingTimer("chain/statetrieprefetch", nil)
 	stateTrieUpdateTimer    = metrics.NewRegisteredResettingTimer("chain/statetrieupdate", nil)
-	originStorageLoadTimer  = metrics.NewRegisteredResettingTimer("chain/originstorageload", nil)
-
-	stateRootComputeTimer = metrics.NewRegisteredResettingTimer("chain/staterootcompute", nil)
-	stateCommitTimer      = metrics.NewRegisteredResettingTimer("chain/statetriecommit", nil)
-
-	blockPostprocessingTimer = metrics.NewRegisteredResettingTimer("chain/postprocess", nil)
+	stateRootComputeTimer   = metrics.NewRegisteredResettingTimer("chain/staterootcompute", nil)
 
 	blockReorgMeter     = metrics.NewRegisteredMeter("chain/reorg/executes", nil)
 	blockReorgAddMeter  = metrics.NewRegisteredMeter("chain/reorg/add", nil)
@@ -615,6 +607,9 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		return nil, err
 	}
 	statedb, err = state.NewWithReader(parentRoot, sdb, prefetchReader)
+	if err != nil {
+		return nil, err
+	}
 
 	if bc.logger != nil && bc.logger.OnBlockStart != nil {
 		bc.logger.OnBlockStart(tracing.BlockEvent{
@@ -2994,10 +2989,6 @@ func (bc *BlockChain) reportBadBlock(block *types.Block, res *ProcessResult, err
 	}
 	rawdb.WriteBadBlock(bc.db, block)
 	log.Error(summarizeBadBlock(block, receipts, bc.Config(), err))
-}
-
-func (bc *BlockChain) reportBALBlock(block *types.Block, res *ProcessResult, err error) {
-
 }
 
 // logForkReadiness will write a log when a future fork is scheduled, but not

@@ -3,15 +3,15 @@ package core
 import (
 	"cmp"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
+	"runtime"
+	"slices"
+	"time"
+
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"golang.org/x/sync/errgroup"
-	"runtime"
-	"slices"
-	"time"
 )
 
 // ProcessResultWithMetrics wraps ProcessResult with some metrics that are
@@ -253,7 +253,6 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxReads ba
 type stateRootCalculationResult struct {
 	err     error
 	metrics *state.BALStateTransitionMetrics
-	root    common.Hash
 }
 
 // calcAndVerifyRoot performs the post-state root hash calculation, verifying
