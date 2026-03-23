@@ -3,7 +3,6 @@
 package ethconfig
 
 import (
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -11,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/history"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/miner"
 )
@@ -181,7 +181,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		TxSyncDefaultTimeout    *time.Duration `toml:",omitempty"`
 		TxSyncMaxTimeout        *time.Duration `toml:",omitempty"`
 		RangeLimit              *uint64        `toml:",omitempty"`
-		BALExecutionMode        *int
+		BALExecutionMode        *bal.BALExecutionMode
 	}
 	var dec Config
 	if err := unmarshal(&dec); err != nil {
@@ -341,7 +341,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		c.RangeLimit = *dec.RangeLimit
 	}
 	if dec.BALExecutionMode != nil {
-		c.BALExecutionMode = bal.BALExecutionMode(*dec.BALExecutionMode)
+		c.BALExecutionMode = *dec.BALExecutionMode
 	}
 	return nil
 }
