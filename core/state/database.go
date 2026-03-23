@@ -17,8 +17,6 @@
 package state
 
 import (
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -29,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/bintrie"
-	"github.com/ethereum/go-ethereum/trie/transitiontrie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb"
 )
@@ -39,6 +36,13 @@ type Database interface {
 	// Reader returns a state reader associated with the specified state root.
 	Reader(root common.Hash) (Reader, error)
 
+	// Iteratee returns a state iteratee associated with the specified state root,
+	// through which the account iterator and storage iterator can be created.
+	Iteratee(root common.Hash) (Iteratee, error)
+
+	// Hasher returns a state hasher associated with the specified state root.
+	Hasher(root common.Hash) (Hasher, error)
+
 	// OpenTrie opens the main account trie.
 	OpenTrie(root common.Hash) (Trie, error)
 
@@ -47,9 +51,6 @@ type Database interface {
 
 	// TrieDB returns the underlying trie database for managing trie nodes.
 	TrieDB() *triedb.Database
-
-	// Snapshot returns the underlying state snapshot.
-	Snapshot() *snapshot.Tree
 
 	// Commit flushes all pending writes and finalizes the state transition,
 	// committing the changes to the underlying storage. It returns an error
@@ -220,6 +221,12 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 	return newReader(db.codedb.Reader(), sr), nil
 }
 
+// Hasher implements Database, returning a hasher associated with the specified
+// state root.
+func (db *CachingDB) Hasher(stateRoot common.Hash) (Hasher, error) {
+	return newMerkleHasher(stateRoot, db.triedb)
+}
+
 // ReadersWithCacheStats creates a pair of state readers that share the same
 // underlying state reader and internal state cache, while maintaining separate
 // statistics respectively.
@@ -296,7 +303,11 @@ func (db *CachingDB) Commit(update *stateUpdate) error {
 	}
 	// If snapshotting is enabled, update the snapshot tree with this new version
 	if db.snap != nil && db.snap.Snapshot(update.originRoot) != nil {
-		if err := db.snap.Update(update.root, update.originRoot, update.accounts, update.storages); err != nil {
+		accounts, _, storages, _, err := update.encodeMerkle()
+		if err != nil {
+			return err
+		}
+		if err := db.snap.Update(update.root, update.originRoot, accounts, storages); err != nil {
 			log.Warn("Failed to update snapshot tree", "from", update.originRoot, "to", update.root, "err", err)
 		}
 		// Keep 128 diff layers in the memory, persistent layer is 129th.
@@ -307,17 +318,15 @@ func (db *CachingDB) Commit(update *stateUpdate) error {
 			log.Warn("Failed to cap snapshot tree", "root", update.root, "layers", TriesInMemory, "err", err)
 		}
 	}
-	return db.triedb.Update(update.root, update.originRoot, update.blockNumber, update.nodes, update.stateSet())
+	stateSet, err := update.stateSet()
+	if err != nil {
+		return err
+	}
+	return db.triedb.Update(update.root, update.originRoot, update.blockNumber, update.nodes, stateSet)
 }
 
-// mustCopyTrie returns a deep-copied trie.
-func mustCopyTrie(t Trie) Trie {
-	switch t := t.(type) {
-	case *trie.StateTrie:
-		return t.Copy()
-	case *transitiontrie.TransitionTrie:
-		return t.Copy()
-	default:
-		panic(fmt.Errorf("unknown trie type %T", t))
-	}
+// Iteratee returns a state iteratee associated with the specified state root,
+// through which the account iterator and storage iterator can be created.
+func (db *CachingDB) Iteratee(root common.Hash) (Iteratee, error) {
+	return newStateIteratee(!db.triedb.IsVerkle(), root, db.triedb, db.snap)
 }
