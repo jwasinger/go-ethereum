@@ -504,7 +504,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *
 		}(gas)
 	}
 	if err != nil {
-		return nil, common.Address{}, GasCosts{}, GasUsed{}, err
+		return nil, common.Address{}, gas, GasUsed{}, err
 	}
 
 	// Charge the contract creation init gas in verkle mode
@@ -538,8 +538,10 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *
 		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 			evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 		}
+		// Burn all gas on collision
+		collisionUsed := GasUsed{RegularGasUsed: gas.RegularGas}
 		gas.RegularGas = 0
-		return nil, common.Address{}, gas, GasUsed{}, ErrContractAddressCollision
+		return nil, common.Address{}, gas, collisionUsed, ErrContractAddressCollision
 	}
 	// Create a new account on the state only if the object was not present.
 	// It might be possible the contract code is deployed to a pre-existent
@@ -584,6 +586,9 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasCosts, value *
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
+			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
+				evm.Config.Tracer.OnGasChange(contract.Gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
+			}
 			contract.GasUsed.RegularGasUsed += contract.Gas.RegularGas
 			contract.Gas.RegularGas = 0
 		}
@@ -605,35 +610,39 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 		return ret, ErrInvalidCode
 	}
 
-	if !evm.chainRules.IsEIP4762 {
-		if evm.chainRules.IsAmsterdam {
-			// EIP-8037: Split code deposit into state gas (code storage) and
-			// regular gas (keccak256 hashing).
-			stateGas := GasCosts{StateGas: uint64(len(ret)) * evm.Context.CostPerGasByte}
-			if !contract.UseGas(stateGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
-				return ret, ErrCodeStoreOutOfGas
-			}
-			regularGas := GasCosts{RegularGas: toWordSize(uint64(len(ret))) * params.Keccak256WordGas}
-			if !contract.UseGas(regularGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
-				return ret, ErrCodeStoreOutOfGas
-			}
-		} else {
-			createDataGas := GasCosts{RegularGas: uint64(len(ret)) * params.CreateDataGas}
-			if !contract.UseGas(createDataGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
-				return ret, ErrCodeStoreOutOfGas
-			}
+	if evm.chainRules.IsAmsterdam {
+		// Check max code size BEFORE charging gas so over-max code
+		// does not consume state gas (which would inflate tx_state).
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
 		}
-	} else {
+		// EIP-8037: Charge regular gas (keccak256 hash) first, then state gas
+		// (code storage). Regular-before-state prevents reservoir inflation.
+		regularGas := GasCosts{RegularGas: toWordSize(uint64(len(ret))) * params.Keccak256WordGas}
+		if !contract.UseGas(regularGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
+			return ret, ErrCodeStoreOutOfGas
+		}
+		stateGas := GasCosts{StateGas: uint64(len(ret)) * evm.Context.CostPerGasByte}
+		if !contract.UseGas(stateGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
+			return ret, ErrCodeStoreOutOfGas
+		}
+	} else if evm.chainRules.IsEIP4762 {
 		consumed, wanted := evm.AccessEvents.CodeChunksRangeGas(address, 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas.RegularGas)
 		contract.UseGas(GasCosts{RegularGas: consumed}, evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
 		if len(ret) > 0 && (consumed < wanted) {
 			return ret, ErrCodeStoreOutOfGas
 		}
-	}
-
-	// Verify max code size after gas calculation.
-	if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
-		return ret, err
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
+		}
+	} else {
+		createDataGas := GasCosts{RegularGas: uint64(len(ret)) * params.CreateDataGas}
+		if !contract.UseGas(createDataGas, evm.Config.Tracer, tracing.GasChangeCallCodeStorage) {
+			return ret, ErrCodeStoreOutOfGas
+		}
+		if err := CheckMaxCodeSize(&evm.chainRules, uint64(len(ret))); err != nil {
+			return ret, err
+		}
 	}
 
 	if len(ret) > 0 {
