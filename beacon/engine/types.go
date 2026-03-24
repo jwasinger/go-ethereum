@@ -261,10 +261,20 @@ func ExecutableDataToBlock(data ExecutableData, versionedHashes []common.Hash, b
 	return block, nil
 }
 
-// ExecutableDataToBlockNoHash is analogous to ExecutableDataToBlock, but is used
+func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte) (*types.Block, error) {
+	var requestsHash *common.Hash
+	if requests != nil {
+		h := types.CalcRequestsHash(requests)
+		requestsHash = &h
+	}
+
+	return ExecutableDataToBlockNoHashWithRequestsHash(data, versionedHashes, beaconRoot, requestsHash)
+}
+
+// ExecutableDataToBlockNoHashWithRequestsHash is analogous to ExecutableDataToBlock, but is used
 // for stateless execution, so it skips checking if the executable data hashes to
 // the requested hash (stateless has to *compute* the root hash, it's not given).
-func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte) (*types.Block, error) {
+func ExecutableDataToBlockNoHashWithRequestsHash(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requestsHash *common.Hash) (*types.Block, error) {
 	txs, err := DecodeTransactions(data.Transactions)
 	if err != nil {
 		return nil, err
@@ -300,14 +310,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		withdrawalsRoot = &h
 	}
 
-	var requestsHash *common.Hash
-	if requests != nil {
-		h := types.CalcRequestsHash(requests)
-		requestsHash = &h
-	}
-
 	body := types.Body{Transactions: txs, Uncles: nil, Withdrawals: data.Withdrawals}
-
 	header := &types.Header{
 		ParentHash:       data.ParentHash,
 		UncleHash:        types.EmptyUncleHash,

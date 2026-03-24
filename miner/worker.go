@@ -126,6 +126,7 @@ type generateParams struct {
 	forceOverrides    bool // Flag whether we should overwrite extraData and transactions
 	overrideExtraData []byte
 	overrideTxs       []*types.Transaction
+	overrideGasLimit  *uint64
 }
 
 // generateWork generates a sealing block based on the given parameters.
@@ -162,9 +163,9 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 	work.size += uint64(genParam.withdrawals.Size())
 
 	if !genParam.noTxs {
-		// If forceOverrides is true and overrideTxs is not empty, commit the override transactions
+		// If forceOverrides is true, commit the override transactions
 		// otherwise, fill the block with the current transactions from the txpool
-		if genParam.forceOverrides && len(genParam.overrideTxs) > 0 {
+		if genParam.forceOverrides {
 			for _, tx := range genParam.overrideTxs {
 				work.state.SetTxContext(tx.Hash(), work.tcount)
 				if err := miner.commitTransaction(ctx, work, tx); err != nil {
@@ -311,6 +312,9 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 			parentGasLimit := parent.GasLimit * miner.chainConfig.ElasticityMultiplier()
 			header.GasLimit = core.CalcGasLimit(parentGasLimit, miner.config.GasCeil)
 		}
+	}
+	if genParams.overrideGasLimit != nil {
+		header.GasLimit = *genParams.overrideGasLimit
 	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	// Note that the `header.Time` may be changed.
