@@ -124,6 +124,7 @@ type generateParams struct {
 	forceOverrides    bool // Flag whether we should overwrite extraData and transactions
 	overrideExtraData []byte
 	overrideTxs       []*types.Transaction
+	overrideGasLimit  *uint64
 }
 
 // generateWork generates a sealing block based on the given parameters.
@@ -160,15 +161,15 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 	work.size += uint64(genParam.withdrawals.Size())
 
 	if !genParam.noTxs {
-		// If forceOverrides is true and overrideTxs is not empty, commit the override transactions
+		// If forceOverrides is true, commit the override transactions
 		// otherwise, fill the block with the current transactions from the txpool
-		if genParam.forceOverrides && len(genParam.overrideTxs) > 0 {
-			for _, tx := range genParam.overrideTxs {
-				work.state.SetTxContext(tx.Hash(), work.tcount)
-				if err := miner.commitTransaction(ctx, work, tx); err != nil {
-					// all passed transactions HAVE to be valid at this point
-					return &newPayloadResult{err: err}
-				}
+		if genParam.forceOverrides {
+			overrideSource, err := newOrderedTxSource(genParam.overrideTxs, work.signer)
+			if err != nil {
+				return &newPayloadResult{err: err}
+			}
+			if err := miner.commitTransactions(ctx, work, overrideSource, new(atomic.Int32)); err != nil {
+				log.Warn("block building failed", "err", err)
 			}
 		} else {
 			interrupt := new(atomic.Int32)
@@ -280,6 +281,9 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 			parentGasLimit := parent.GasLimit * miner.chainConfig.ElasticityMultiplier()
 			header.GasLimit = core.CalcGasLimit(parentGasLimit, miner.config.GasCeil)
 		}
+	}
+	if genParams.overrideGasLimit != nil {
+		header.GasLimit = *genParams.overrideGasLimit
 	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	// Note that the `header.Time` may be changed.
@@ -410,7 +414,12 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 	return receipt, nil
 }
 
-func (miner *Miner) commitTransactions(ctx context.Context, env *environment, plainTxs, blobTxs *transactionsByPriceAndNonce, interrupt *atomic.Int32) error {
+func (miner *Miner) commitTransactions(
+	ctx context.Context,
+	env *environment,
+	allTxs transactionSource,
+	interrupt *atomic.Int32,
+) error {
 	ctx, _, spanEnd := telemetry.StartSpan(ctx, "miner.commitTransactions")
 	defer spanEnd(nil)
 	isCancun := miner.chainConfig.IsCancun(env.header.Number, env.header.Time)
@@ -426,39 +435,20 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 			log.Trace("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
 			break
 		}
-		// If we don't have enough blob space for any further blob transactions,
-		// skip that list altogether
-		if !blobTxs.Empty() && env.blobs >= miner.maxBlobsPerBlock(env.header.Time) {
-			log.Trace("Not enough blob space for further blob transactions")
-			blobTxs.Clear()
-			// Fall though to pick up any plain txs
-		}
-		// Retrieve the next transaction and abort if all done.
-		var (
-			ltx *txpool.LazyTransaction
-			txs *transactionsByPriceAndNonce
-		)
-		pltx, ptip := plainTxs.Peek()
-		bltx, btip := blobTxs.Peek()
 
-		switch {
-		case pltx == nil:
-			txs, ltx = blobTxs, bltx
-		case bltx == nil:
-			txs, ltx = plainTxs, pltx
-		default:
-			if ptip.Lt(btip) {
-				txs, ltx = blobTxs, bltx
-			} else {
-				txs, ltx = plainTxs, pltx
-			}
-		}
+		ltx, txs := allTxs.Peek()
 		if ltx == nil {
 			break
 		}
+
+		if txs.HasBlobTxs() && env.blobs >= miner.maxBlobsPerBlock(env.header.Time) {
+			log.Trace("Not enough blob space for further blob transactions")
+			txs.ClearBlobTxs()
+			continue
+		}
 		// If we don't have enough space for the next transaction, skip the account.
-		if env.gasPool.Gas() < ltx.Gas {
-			log.Trace("Not enough gas left for transaction", "hash", ltx.Hash, "left", env.gasPool.Gas(), "needed", ltx.Gas)
+		if env.gasPool.Gas() < ltx.Gas() {
+			log.Trace("Not enough gas left for transaction", "hash", ltx.Hash(), "left", env.gasPool.Gas(), "needed", ltx.Gas())
 			txs.Pop()
 			continue
 		}
@@ -468,8 +458,8 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 		// a defined schedule, so we need to verify it's safe to call.
 		if isCancun {
 			left := miner.maxBlobsPerBlock(env.header.Time) - env.blobs
-			if left < int(ltx.BlobGas/params.BlobTxBlobGasPerBlob) {
-				log.Trace("Not enough blob space left for transaction", "hash", ltx.Hash, "left", left, "needed", ltx.BlobGas/params.BlobTxBlobGasPerBlob)
+			if left < int(ltx.BlobGas()/params.BlobTxBlobGasPerBlob) {
+				log.Trace("Not enough blob space left for transaction", "hash", ltx.Hash(), "left", left, "needed", ltx.BlobGas()/params.BlobTxBlobGasPerBlob)
 				txs.Pop()
 				continue
 			}
@@ -478,7 +468,7 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 		// Transaction seems to fit, pull it up from the pool
 		tx := ltx.Resolve()
 		if tx == nil {
-			log.Trace("Ignoring evicted transaction", "hash", ltx.Hash)
+			log.Trace("Ignoring evicted transaction", "hash", ltx.Hash())
 			txs.Pop()
 			continue
 		}
@@ -495,7 +485,7 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !miner.chainConfig.IsEIP155(env.header.Number) {
-			log.Trace("Ignoring replay protected transaction", "hash", ltx.Hash, "eip155", miner.chainConfig.EIP155Block)
+			log.Trace("Ignoring replay protected transaction", "hash", ltx.Hash(), "eip155", miner.chainConfig.EIP155Block)
 			txs.Pop()
 			continue
 		}
@@ -506,7 +496,7 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
-			log.Trace("Skipping transaction with low nonce", "hash", ltx.Hash, "sender", from, "nonce", tx.Nonce())
+			log.Trace("Skipping transaction with low nonce", "hash", ltx.Hash(), "sender", from, "nonce", tx.Nonce())
 			txs.Shift()
 
 		case errors.Is(err, nil):
@@ -516,7 +506,7 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
 			// the same sender because of `nonce-too-high` clause.
-			log.Debug("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
+			log.Debug("Transaction failed, account skipped", "hash", ltx.Hash(), "err", err)
 			txs.Pop()
 		}
 	}
@@ -581,7 +571,7 @@ func (miner *Miner) fillTransactions(ctx context.Context, interrupt *atomic.Int3
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, prioPlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, prioBlobTxs, env.header.BaseFee)
 
-		if err := miner.commitTransactions(ctx, env, plainTxs, blobTxs, interrupt); err != nil {
+		if err := miner.commitTransactions(ctx, env, newFeeOrderedTxSource(plainTxs, blobTxs), interrupt); err != nil {
 			return err
 		}
 	}
@@ -589,7 +579,7 @@ func (miner *Miner) fillTransactions(ctx context.Context, interrupt *atomic.Int3
 		plainTxs := newTransactionsByPriceAndNonce(env.signer, normalPlainTxs, env.header.BaseFee)
 		blobTxs := newTransactionsByPriceAndNonce(env.signer, normalBlobTxs, env.header.BaseFee)
 
-		if err := miner.commitTransactions(ctx, env, plainTxs, blobTxs, interrupt); err != nil {
+		if err := miner.commitTransactions(ctx, env, newFeeOrderedTxSource(plainTxs, blobTxs), interrupt); err != nil {
 			return err
 		}
 	}
