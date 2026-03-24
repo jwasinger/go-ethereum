@@ -442,12 +442,6 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 		snap = env.state.Snapshot()
 		gp   = env.gasPool.Snapshot()
 	)
-	var stateCopy *state.StateDB
-	if env.accessList != nil {
-		stateCopy = env.state.WithReader(state.NewReaderWithTracker(env.state.Reader()))
-		env.evm.StateDB = stateCopy
-	}
-
 	mutations, receipt, err := core.ApplyTransaction(env.evm, env.gasPool, env.state, env.header, tx)
 	if err != nil {
 		if env.accessList != nil {
@@ -461,6 +455,7 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 		env.accessList.AccumulateMutations(mutations, uint16(env.tcount)+1)
 		env.accessList.AccumulateReads(env.state.Reader().(state.StateReaderTracker).GetStateAccessList())
 	}
+	env.header.GasUsed = env.gasPool.Used()
 	return receipt, err
 }
 
