@@ -169,6 +169,9 @@ func (c ConstructionBlockAccessList) AccumulateMutations(muts StateMutations, id
 					c[addr].StorageWrites[key] = make(map[uint16]common.Hash)
 				}
 				c[addr].StorageWrites[key][idx] = val
+
+				// delete the key from the tracked reads if it was previously read.
+				delete(c[addr].StorageReads, key)
 			}
 		}
 	}
