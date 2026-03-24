@@ -131,6 +131,30 @@ func (e BlockAccessList) Validate(blockTxCount int) error {
 	return nil
 }
 
+// ValidateGasLimit checks that the number of BAL items does not exceed the
+// block gas limit divided by the per-item cost (EIP-7928).
+func (e BlockAccessList) ValidateGasLimit(blockGasLimit uint64) error {
+	var balItems uint64
+	for _, account := range e {
+		// Count each address as one item
+		balItems++
+		// Count unique storage keys across both reads and writes
+		uniqueSlots := make(map[common.Hash]struct{})
+		for _, sc := range account.StorageChanges {
+			uniqueSlots[sc.Slot.ToHash()] = struct{}{}
+		}
+		for _, sr := range account.StorageReads {
+			uniqueSlots[sr.ToHash()] = struct{}{}
+		}
+		balItems += uint64(len(uniqueSlots))
+	}
+	limit := blockGasLimit / params.GasBlockAccessListItem
+	if balItems > limit {
+		return fmt.Errorf("block access list exceeds gas limit: %d items exceeds limit of %d", balItems, limit)
+	}
+	return nil
+}
+
 // Hash computes the keccak256 hash of the access list
 func (e *BlockAccessList) Hash() common.Hash {
 	var enc bytes.Buffer
@@ -391,7 +415,7 @@ func (e *AccountAccess) validate(blockTxCount int) error {
 	// validate that code changes could plausibly be correct (none exceed
 	// max code size of a contract)
 	for _, codeChange := range e.CodeChanges {
-		if len(codeChange.Code) > params.MaxCodeSize {
+		if len(codeChange.Code) > params.MaxCodeSizeAmsterdam {
 			return fmt.Errorf("code change contained oversized code")
 		}
 	}
