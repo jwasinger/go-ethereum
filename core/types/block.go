@@ -224,8 +224,7 @@ type extblock struct {
 	Header      *Header
 	Txs         []*Transaction
 	Uncles      []*Header
-	Withdrawals []*Withdrawal        `rlp:"optional"`
-	AccessList  *bal.BlockAccessList `rlp:"optional"`
+	Withdrawals []*Withdrawal `rlp:"optional"`
 }
 
 // NewBlock creates a new block. The input data is copied, changes to header and to the
@@ -349,7 +348,7 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions, b.withdrawals, b.accessList = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals, eb.AccessList
+	b.header, b.uncles, b.transactions, b.withdrawals = eb.Header, eb.Uncles, eb.Txs, eb.Withdrawals
 	b.size.Store(rlp.ListSize(size))
 	return nil
 }
@@ -361,7 +360,6 @@ func (b *Block) EncodeRLP(w io.Writer) error {
 		Txs:         b.transactions,
 		Uncles:      b.uncles,
 		Withdrawals: b.withdrawals,
-		AccessList:  b.accessList,
 	})
 }
 
