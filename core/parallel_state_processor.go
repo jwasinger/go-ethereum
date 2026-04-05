@@ -106,6 +106,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 	for _, result := range results {
 		sumRegular += result.txRegular
 		sumState += result.txState
+
 		cumulativeReceipt += result.execGas
 		result.receipt.CumulativeGasUsed = cumulativeReceipt
 		allLogs = append(allLogs, result.receipt.Logs...)
@@ -156,14 +157,14 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 	accessList := bal.NewAccessListReader(*block.AccessList())
 	if !postMut.Eq(*accessList.MutationsAt(lastBALIdx)) {
 		return &ProcessResultWithMetrics{
-			ProcessResult: &ProcessResult{Error: fmt.Errorf("mismatch between local/remote access list mutations for final idx")},
+			ProcessResult: &ProcessResult{Error: fmt.Errorf("invalid block access list: mismatch between local/remote access list mutations for final idx")},
 		}
 	}
 
 	accesses.Merge(postTxAccesses)
 	if !validateStateAccesses(lastBALIdx, accessList, accesses) {
 		return &ProcessResultWithMetrics{
-			ProcessResult: &ProcessResult{Error: fmt.Errorf("mismatch between local/remote access list for state accesses")},
+			ProcessResult: &ProcessResult{Error: fmt.Errorf("invalid block access list: mismatch between local/remote access list for state accesses")},
 		}
 	}
 
@@ -300,7 +301,7 @@ func (p *ParallelStateProcessor) execTx(block *types.Block, tx *types.Transactio
 
 	accessList := bal.NewAccessListReader(*block.AccessList())
 	if !accessList.MutationsAt(balIdx).Eq(mut) {
-		err := fmt.Errorf("mismatch between local/remote computed state mutations at bal idx %d. got:\n%s\nexpected:\n%s\n", balIdx, mut.String(), accessList.MutationsAt(balIdx).String())
+		err := fmt.Errorf("invalid block access list: mismatch between local/remote computed state mutations at bal idx %d. got:\n%s\nexpected:\n%s\n", balIdx, mut.String(), accessList.MutationsAt(balIdx).String())
 		return &txExecResult{err: err}
 	}
 
@@ -338,7 +339,7 @@ func (p *ParallelStateProcessor) processBlockPreTx(block *types.Block, statedb *
 	mutations.Merge(pbhMutations)
 	reads := readerWithTracker.(state.StateReaderTracker).GetStateAccessList()
 	if !accessList.MutationsAt(0).Eq(mutations) {
-		return nil, fmt.Errorf("mismatch between local/remote access list mutations at idx 0")
+		return nil, fmt.Errorf("invalid block access list: mismatch between local/remote access list mutations at idx 0")
 	}
 	return reads, nil
 }
