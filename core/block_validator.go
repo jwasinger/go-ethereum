@@ -117,14 +117,16 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 			// TODO: verify that this check isn't also done elsewhere
 			return fmt.Errorf("block access list hash not set in header")
 		}
+		// if the block does not come with an access list, it will be recomputed
+		// as part of execution and validated against the header's acess list hash.
 		if block.AccessList() != nil {
 			if *block.Header().BlockAccessListHash != block.AccessList().Hash() {
 				return fmt.Errorf("access list hash mismatch.  local: %x. remote: %x\n", block.AccessList().Hash(), *block.Header().BlockAccessListHash)
 			} else if err := block.AccessList().Validate(len(block.Transactions())); err != nil {
 				return fmt.Errorf("invalid block access list: %v", err)
+			} else if err := block.AccessList().ValidateGasLimit(block.GasLimit()); err != nil {
+				return fmt.Errorf("invalid block access list: %v", err)
 			}
-		} else {
-			//panic("TODO: implement local access list construction path if importing a block without an access list")
 		}
 	} else {
 		// if experimental.bal is not enabled, block headers cannot have access list hash and bodies cannot have access lists.
