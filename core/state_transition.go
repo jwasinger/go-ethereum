@@ -309,8 +309,16 @@ func (st *stateTransition) buyGas() error {
 	if have, want := st.state.GetBalance(st.msg.From), balanceCheckU256; have.Cmp(want) < 0 {
 		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From.Hex(), have, want)
 	}
-	if err := st.gp.SubGas(st.msg.GasLimit); err != nil {
-		return err
+
+	// post-amsterdam the regular/state gas used determines how a transaction
+	// contributes to the fullness of the block's bottleneck resource.
+	// It isn't drawn from the pool, and it isn't returned as ReturnAmsterdamGas
+	// would suggest (TODO: jwasinger I changed ReturnGasAmsterdam and now the name doesn't match what it does)
+	isAmsterdam := st.evm.ChainConfig().IsAmsterdam(st.evm.Context.BlockNumber, st.evm.Context.Time)
+	if !isAmsterdam {
+		if err := st.gp.SubGas(st.msg.GasLimit); err != nil {
+			return err
+		}
 	}
 
 	if st.evm.Config.Tracer != nil && st.evm.Config.Tracer.OnGasChange != nil {
@@ -320,7 +328,7 @@ func (st *stateTransition) buyGas() error {
 
 	// After Amsterdam we limit the regular gas to 16k, the data gas to the transaction limit
 	limit := st.msg.GasLimit
-	if st.evm.ChainConfig().IsAmsterdam(st.evm.Context.BlockNumber, st.evm.Context.Time) {
+	if isAmsterdam {
 		limit = min(st.msg.GasLimit, params.MaxTxGas)
 	}
 	st.initialGas = vm.GasCosts{RegularGas: limit, StateGas: st.msg.GasLimit - limit}
