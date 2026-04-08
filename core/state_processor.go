@@ -286,7 +286,7 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) bal.StateMutati
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.BeaconRootsAddress)
-	_, _, _, _ = evm.Call(msg.From, *msg.To, msg.Data, vm.GasCosts{RegularGas: 30_000_000}, common.U2560)
+	_, _, _, _ = evm.Call(msg.From, *msg.To, msg.Data, vm.GasBudget{RegularGas: 30_000_000}, common.U2560)
 	return evm.StateDB.Finalise(true)
 }
 
@@ -310,7 +310,7 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) bal.StateMutation
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.HistoryStorageAddress)
-	_, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasCosts{RegularGas: 30_000_000}, common.U2560)
+	_, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasBudget{RegularGas: 30_000_000}, common.U2560)
 	if err != nil {
 		panic(err)
 	}
@@ -350,8 +350,13 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(addr)
+<<<<<<< HEAD
 	ret, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasCosts{RegularGas: 30_000_000}, common.U2560)
 	mut := evm.StateDB.Finalise(true)
+=======
+	ret, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasBudget{RegularGas: 30_000_000}, common.U2560)
+	evm.StateDB.Finalise(true)
+>>>>>>> 96f0b19c51 (core: introduce vm.GasBudget)
 	if err != nil {
 		return nil, fmt.Errorf("system call failed to execute: %v", err)
 	}
