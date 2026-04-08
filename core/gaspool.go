@@ -74,19 +74,21 @@ func (gp *GasPool) ReturnGas(returned uint64, gasUsed uint64) error {
 }
 
 // ReturnGasAmsterdam calculates the new remaining gas in the pool after the
-// execution of a message. The remaining gas in the pool is
-// block.gasLimit - max(cumulative_regular, cumulative_state)
+// execution of a message.
 func (gp *GasPool) ReturnGasAmsterdam(txRegular, txState, receiptGasUsed uint64) error {
 	gp.cumulativeRegular += txRegular
 	gp.cumulativeState += txState
 	gp.cumulativeUsed += receiptGasUsed
 
+	// Block validity: both dimensions must fit within the gas limit.
 	blockUsed := max(gp.cumulativeRegular, gp.cumulativeState)
 	if gp.initial < blockUsed {
 		return fmt.Errorf("%w: block gas overflow: initial %d, used %d (regular: %d, state: %d)",
 			ErrGasLimitReached, gp.initial, blockUsed, gp.cumulativeRegular, gp.cumulativeState)
 	}
-	gp.remaining = gp.initial - blockUsed
+	// TX inclusion: only the regular dimension is checked when deciding
+	// whether the next transaction fits.
+	gp.remaining = gp.initial - gp.cumulativeRegular
 	return nil
 }
 
