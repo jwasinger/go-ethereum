@@ -350,13 +350,8 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(addr)
-<<<<<<< HEAD
-	ret, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasCosts{RegularGas: 30_000_000}, common.U2560)
-	mut := evm.StateDB.Finalise(true)
-=======
 	ret, _, _, err := evm.Call(msg.From, *msg.To, msg.Data, vm.GasBudget{RegularGas: 30_000_000}, common.U2560)
-	evm.StateDB.Finalise(true)
->>>>>>> 96f0b19c51 (core: introduce vm.GasBudget)
+	mut := evm.StateDB.Finalise(true)
 	if err != nil {
 		return nil, fmt.Errorf("system call failed to execute: %v", err)
 	}
