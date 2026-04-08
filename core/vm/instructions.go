@@ -767,7 +767,7 @@ func opCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	if !value.IsZero() {
 		gas += params.CallStipend
 	}
-	regularGasUsed := scope.Contract.GasUsed.RegularGas
+	regularGasUsed := scope.Contract.GasUsed.RegularGas - gas // exclude forwarded gas (incl. stipend)
 	ret, returnGas, childGasUsed, err := evm.Call(scope.Contract.Address(), toAddr, args, GasCosts{RegularGas: gas, StateGas: scope.Contract.Gas.StateGas}, &value)
 
 	if err != nil {
@@ -802,7 +802,7 @@ func opCallCode(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 		gas += params.CallStipend
 	}
 
-	regularGasUsed := scope.Contract.GasUsed.RegularGas
+	regularGasUsed := scope.Contract.GasUsed.RegularGas - gas // exclude forwarded gas (incl. stipend)
 	ret, returnGas, childGasUsed, err := evm.CallCode(scope.Contract.Address(), toAddr, args, GasCosts{RegularGas: gas, StateGas: scope.Contract.Gas.StateGas}, &value)
 	if err != nil {
 		temp.Clear()
@@ -832,7 +832,7 @@ func opDelegateCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-	regularGasUsed := scope.Contract.GasUsed.RegularGas
+	regularGasUsed := scope.Contract.GasUsed.RegularGas - gas // exclude forwarded gas
 	ret, returnGas, childGasUsed, err := evm.DelegateCall(scope.Contract.Caller(), scope.Contract.Address(), toAddr, args, GasCosts{RegularGas: gas, StateGas: scope.Contract.Gas.StateGas}, scope.Contract.value)
 	if err != nil {
 		temp.Clear()
@@ -862,7 +862,7 @@ func opStaticCall(pc *uint64, evm *EVM, scope *ScopeContext) ([]byte, error) {
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(inOffset.Uint64(), inSize.Uint64())
 
-	regularGasUsed := scope.Contract.GasUsed.RegularGas
+	regularGasUsed := scope.Contract.GasUsed.RegularGas - gas // exclude forwarded gas
 	ret, returnGas, childGasUsed, err := evm.StaticCall(scope.Contract.Address(), toAddr, args, GasCosts{RegularGas: gas, StateGas: scope.Contract.Gas.StateGas})
 	if err != nil {
 		temp.Clear()
