@@ -309,7 +309,14 @@ func (st *stateTransition) buyGas() error {
 	if have, want := st.state.GetBalance(st.msg.From), balanceCheckU256; have.Cmp(want) < 0 {
 		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From.Hex(), have, want)
 	}
-	if err := st.gp.SubGas(st.msg.GasLimit); err != nil {
+
+	regularGas := st.msg.GasLimit
+	if st.evm.ChainConfig().IsAmsterdam(st.evm.Context.BlockNumber, st.evm.Context.Time) {
+		regularGas = min(st.msg.GasLimit, params.MaxTxGas)
+	}
+	// Make sure that we have enough gas in the block to pay for the regular gas portion.
+	// The stateGas is not metered in the block.
+	if err := st.gp.SubGas(regularGas); err != nil {
 		return err
 	}
 
@@ -317,13 +324,7 @@ func (st *stateTransition) buyGas() error {
 		st.evm.Config.Tracer.OnGasChange(0, st.msg.GasLimit, tracing.GasChangeTxInitialBalance)
 	}
 	st.gasRemaining.RegularGas = st.msg.GasLimit
-
-	// After Amsterdam we limit the regular gas to 16k, the data gas to the transaction limit
-	limit := st.msg.GasLimit
-	if st.evm.ChainConfig().IsAmsterdam(st.evm.Context.BlockNumber, st.evm.Context.Time) {
-		limit = min(st.msg.GasLimit, params.MaxTxGas)
-	}
-	st.initialGas = vm.GasBudget{RegularGas: limit, StateGas: st.msg.GasLimit - limit}
+	st.initialGas = vm.GasBudget{RegularGas: regularGas, StateGas: st.msg.GasLimit - regularGas}
 	mgvalU256, _ := uint256.FromBig(mgval)
 	st.state.SubBalance(st.msg.From, mgvalU256, tracing.BalanceDecreaseGasBuy)
 	return nil
