@@ -2,6 +2,7 @@
 
 package bal
 
+import "github.com/ethereum/go-ethereum/common"
 import "github.com/ethereum/go-ethereum/rlp"
 import "github.com/holiman/uint256"
 import "io"
@@ -11,7 +12,7 @@ func (obj *AccountAccess) EncodeRLP(_w io.Writer) error {
 	_tmp0 := w.List()
 	w.WriteBytes(obj.Address[:])
 	_tmp1 := w.List()
-	for _, _tmp2 := range obj.StorageWrites {
+	for _, _tmp2 := range obj.StorageChanges {
 		_tmp3 := w.List()
 		if _tmp2.Slot == nil {
 			w.Write(rlp.EmptyString)
@@ -81,12 +82,12 @@ func (obj *AccountAccess) DecodeRLP(dec *rlp.Stream) error {
 			return err
 		}
 		// Address:
-		var _tmp1 [20]byte
+		var _tmp1 common.Address
 		if err := dec.ReadBytes(_tmp1[:]); err != nil {
 			return err
 		}
 		_tmp0.Address = _tmp1
-		// StorageWrites:
+		// StorageChanges:
 		var _tmp2 []encodingSlotWrites
 		if _, err := dec.List(); err != nil {
 			return err
@@ -145,7 +146,7 @@ func (obj *AccountAccess) DecodeRLP(dec *rlp.Stream) error {
 		if err := dec.ListEnd(); err != nil {
 			return err
 		}
-		_tmp0.StorageWrites = _tmp2
+		_tmp0.StorageChanges = _tmp2
 		// StorageReads:
 		var _tmp9 []*uint256.Int
 		if _, err := dec.List(); err != nil {
