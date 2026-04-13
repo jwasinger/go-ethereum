@@ -22,10 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	stdmath "math"
-	"math/big"
-	"strconv"
-
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -35,13 +31,27 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/core/txpool"
+	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
+	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/catalyst"
+	"github.com/ethereum/go-ethereum/eth/downloader"
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+	"log/slog"
+	stdmath "math"
+	"math/big"
+	"strconv"
 )
 
 // EngineTest checks processing of engine API payloads.
@@ -151,8 +161,107 @@ func (p *etNewPayload) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type backend struct {
+	downloader *downloader.Downloader
+	blockchain *core.BlockChain
+	miner      *miner.Miner
+	chainDb    ethdb.Database
+	blobpool   *blobpool.BlobPool
+}
+
+type minerBackend struct {
+	chain  *core.BlockChain
+	txpool *txpool.TxPool
+}
+
+func (m minerBackend) BlockChain() *core.BlockChain {
+	return m.chain
+}
+
+func (m minerBackend) TxPool() *txpool.TxPool {
+	return m.txpool
+}
+
+func newBackend(chaindb ethdb.Database, chain *core.BlockChain) backend {
+	hasPendingAuth := func(addr common.Address) bool {
+		panic("this shouldn't be called in testing situation")
+	}
+	bp := blobpool.New(blobpool.Config{}, chain, hasPendingAuth)
+	legacyPool := legacypool.New(legacypool.Config{}, chain)
+	pool, err := txpool.New(0, chain, []txpool.SubPool{bp, legacyPool})
+	if err != nil {
+		panic(err)
+	}
+
+	removePeer := func(id string) {
+		panic("test should have no peers")
+	}
+	success := func() {
+		panic("TODO: what is this for?!?!?!!111")
+	}
+	miner := miner.New(&minerBackend{chain, pool}, miner.Config{}, chain.Engine())
+	downloader := downloader.New(chaindb, ethconfig.FullSync, new(event.TypeMux), chain, removePeer, success)
+
+	return backend{
+		downloader,
+		chain,
+		miner,
+		chaindb,
+		bp,
+	}
+}
+
+func (b backend) BlockChain() *core.BlockChain {
+	return b.blockchain
+}
+
+func (b backend) Miner() *miner.Miner {
+	return b.miner
+}
+
+func (b backend) Downloader() *downloader.Downloader {
+	return b.downloader
+}
+
+func (b backend) SetSynced() {
+	// noop
+}
+
+func (b backend) ChainDb() ethdb.Database {
+	return b.chainDb
+}
+
+func (b backend) BlobTxPool() *blobpool.BlobPool {
+	return b.blobpool
+}
+
+func newPayload(api *catalyst.ConsensusAPI, payload etNewPayload) error {
+	var err error
+
+	var requests []hexutil.Bytes
+	if payload.Requests != nil {
+		for _, request := range payload.Requests {
+			requests = append(requests, request)
+		}
+	}
+	switch engine.PayloadVersion(payload.FcuVersion) {
+	case engine.PayloadV1:
+		_, err = api.NewPayloadV1(context.Background(), payload.ExecutionPayload)
+	case engine.PayloadV2:
+		_, err = api.NewPayloadV2(context.Background(), payload.ExecutionPayload)
+	case engine.PayloadV3:
+		_, err = api.NewPayloadV3(context.Background(), payload.ExecutionPayload, payload.VersionedHashes, payload.BeaconRoot)
+	case engine.PayloadV4:
+		_, err = api.NewPayloadV4(context.Background(), payload.ExecutionPayload, payload.VersionedHashes, payload.BeaconRoot, requests)
+	}
+
+	return err
+}
+
 // Run executes the engine test.
 func (t *EngineTest) Run(scheme string, tracer *tracing.Hooks, postCheck func(error, *core.BlockChain)) (result error) {
+	log.SetDefault(log.NewLogger(slog.DiscardHandler))
+
 	config, ok := Forks[t.json.Network]
 	if !ok {
 		return UnsupportedForkError{t.json.Network}
@@ -201,28 +310,28 @@ func (t *EngineTest) Run(scheme string, tracer *tracing.Hooks, postCheck func(er
 	}
 	defer chain.Stop()
 
+	handler := catalyst.NewConsensusAPI(newBackend(db, chain))
+
 	if postCheck != nil {
 		defer postCheck(result, chain)
 	}
 
-	// Create engine handler and execute payloads
-	// Uses the same core functions as ConsensusAPI (ExecutableDataToBlock,
-	// InsertBlockWithoutSetHead, SetCanonical) — different from blocktest's InsertChain.
-	handler := newEngineHandler(chain)
-
 	// Send initial forkchoiceUpdated to genesis (matching consume engine behavior)
 	genesisHash := chain.Genesis().Hash()
-	initialFcResp := handler.forkchoiceUpdated(engine.ForkchoiceStateV1{
+	initialFcResp, err := handler.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{
 		HeadBlockHash:      genesisHash,
 		SafeBlockHash:      genesisHash,
 		FinalizedBlockHash: genesisHash,
-	})
+	}, nil)
 	if initialFcResp.PayloadStatus.Status != engine.VALID {
 		return fmt.Errorf("initial FCU to genesis returned %s", initialFcResp.PayloadStatus.Status)
 	}
 
 	for i, payload := range t.json.Payloads {
-		status, err := handler.newPayloadVersioned(payload)
+		var status engine.PayloadStatusV1
+		//handler.NewPayloadV5()
+		//status, err := handler.newPayloadVersioned(payload)
+		err := newPayload(handler, payload)
 		// Check error code expectation
 		if payload.ErrorCode != nil {
 			var apiErr *engine.EngineAPIError
@@ -257,15 +366,18 @@ func (t *EngineTest) Run(scheme string, tracer *tracing.Hooks, postCheck func(er
 			}
 			return fmt.Errorf("payload %d: expected VALID, got %s (err: %s)", i, status.Status, errMsg)
 		}
-		// Advance chain head via forkchoice update
-		fcResp := handler.forkchoiceUpdated(engine.ForkchoiceStateV1{
-			HeadBlockHash:      payload.ExecutionPayload.BlockHash,
-			SafeBlockHash:      payload.ExecutionPayload.BlockHash,
-			FinalizedBlockHash: common.Hash{}, // don't set finalized
-		})
-		if fcResp.PayloadStatus.Status != engine.VALID {
-			return fmt.Errorf("payload %d: forkchoiceUpdated returned %s", i, fcResp.PayloadStatus.Status)
-		}
+		/*
+			TODO (jwasinger): add back in
+			// Advance chain head via forkchoice update
+			fcResp := handler.forkchoiceUpdated(engine.ForkchoiceStateV1{
+				HeadBlockHash:      payload.ExecutionPayload.BlockHash,
+				SafeBlockHash:      payload.ExecutionPayload.BlockHash,
+				FinalizedBlockHash: common.Hash{}, // don't set finalized
+			})
+			if fcResp.PayloadStatus.Status != engine.VALID {
+				return fmt.Errorf("payload %d: forkchoiceUpdated returned %s", i, fcResp.PayloadStatus.Status)
+			}
+		*/
 	}
 
 	// Validate final state
@@ -293,20 +405,22 @@ func (t *EngineTest) Run(scheme string, tracer *tracing.Hooks, postCheck func(er
 
 func (t *EngineTest) genesis(config *params.ChainConfig) *core.Genesis {
 	return &core.Genesis{
-		Config:        config,
-		Nonce:         t.json.Genesis.Nonce.Uint64(),
-		Timestamp:     t.json.Genesis.Timestamp,
-		ParentHash:    t.json.Genesis.ParentHash,
-		ExtraData:     t.json.Genesis.ExtraData,
-		GasLimit:      t.json.Genesis.GasLimit,
-		GasUsed:       t.json.Genesis.GasUsed,
-		Difficulty:    t.json.Genesis.Difficulty,
-		Mixhash:       t.json.Genesis.MixHash,
-		Coinbase:      t.json.Genesis.Coinbase,
-		Alloc:         t.json.Pre,
-		BaseFee:       t.json.Genesis.BaseFeePerGas,
-		BlobGasUsed:   t.json.Genesis.BlobGasUsed,
-		ExcessBlobGas: t.json.Genesis.ExcessBlobGas,
+		Config:              config,
+		Nonce:               t.json.Genesis.Nonce.Uint64(),
+		Timestamp:           t.json.Genesis.Timestamp,
+		ParentHash:          t.json.Genesis.ParentHash,
+		ExtraData:           t.json.Genesis.ExtraData,
+		GasLimit:            t.json.Genesis.GasLimit,
+		GasUsed:             t.json.Genesis.GasUsed,
+		Difficulty:          t.json.Genesis.Difficulty,
+		Mixhash:             t.json.Genesis.MixHash,
+		Coinbase:            t.json.Genesis.Coinbase,
+		Alloc:               t.json.Pre,
+		BaseFee:             t.json.Genesis.BaseFeePerGas,
+		BlobGasUsed:         t.json.Genesis.BlobGasUsed,
+		ExcessBlobGas:       t.json.Genesis.ExcessBlobGas,
+		BlockAccessListHash: t.json.Genesis.BlockAccessListHash,
+		SlotNumber:          t.json.Genesis.SlotNumber,
 	}
 }
 

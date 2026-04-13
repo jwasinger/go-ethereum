@@ -21,6 +21,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
+	"github.com/ethereum/go-ethereum/eth/downloader"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"reflect"
 	"strconv"
 	"sync"
@@ -84,8 +87,17 @@ const (
 	beaconUpdateWarnFrequency = 5 * time.Minute
 )
 
+type Backend interface {
+	BlockChain() *core.BlockChain
+	Miner() *miner.Miner
+	Downloader() *downloader.Downloader
+	SetSynced()
+	//GetHeader() *types.Header
+	ChainDb() ethdb.Database
+	BlobTxPool() *blobpool.BlobPool
+}
 type ConsensusAPI struct {
-	eth *eth.Ethereum
+	eth Backend
 
 	remoteBlocks *headerQueue  // Cache of remote payloads received
 	localBlocks  *payloadQueue // Cache of local payloads generated
@@ -129,14 +141,14 @@ type ConsensusAPI struct {
 //
 // This function creates a long-lived object with an attached background thread.
 // For testing or other short-term use cases, please use newConsensusAPIWithoutHeartbeat.
-func NewConsensusAPI(eth *eth.Ethereum) *ConsensusAPI {
+func NewConsensusAPI(eth Backend) *ConsensusAPI {
 	api := newConsensusAPIWithoutHeartbeat(eth)
 	go api.heartbeat()
 	return api
 }
 
 // newConsensusAPIWithoutHeartbeat creates a new consensus api for the SimulatedBeacon Node.
-func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum) *ConsensusAPI {
+func newConsensusAPIWithoutHeartbeat(eth Backend) *ConsensusAPI {
 	if eth.BlockChain().Config().TerminalTotalDifficulty == nil {
 		log.Warn("Engine API started but chain not configured for merge yet")
 	}
