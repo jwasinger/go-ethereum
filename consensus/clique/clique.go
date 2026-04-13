@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"io"
 	"math/big"
 	"math/rand"
@@ -576,13 +577,17 @@ func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 
 // Finalize implements consensus.Engine. There is no post-transaction
 // consensus rules in clique, do nothing here.
-func (c *Clique) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
+func (c *Clique) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) (*bal.StateAccessList, *bal.StateMutations) {
 	// No block rewards in PoA, so the state remains as is
+	return nil, nil
 }
 
 // FinalizeAndAssemble implements consensus.Engine, ensuring no uncles are set,
 // nor block rewards given, and returns the final block.
-func (c *Clique) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+func (c *Clique) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, createBAL func(*bal.StateAccessList, *bal.StateMutations) *bal.BlockAccessList) (*types.Block, error) {
+	if createBAL != nil {
+		panic("BALs not supported")
+	}
 	if len(body.Withdrawals) > 0 {
 		return nil, errors.New("clique does not support withdrawals")
 	}

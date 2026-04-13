@@ -19,6 +19,7 @@ package consensus
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -86,14 +87,14 @@ type Engine interface {
 	//
 	// Note: The state database might be updated to reflect any consensus rules
 	// that happen at finalization (e.g. block rewards).
-	Finalize(chain ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body)
+	Finalize(chain ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) (*bal.StateAccessList, *bal.StateMutations)
 
 	// FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
 	// rewards or process withdrawals) and assembles the final block.
 	//
 	// Note: The block header and state database might be updated to reflect any
 	// consensus rules that happen at finalization (e.g. block rewards).
-	FinalizeAndAssemble(ctx context.Context, chain ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error)
+	FinalizeAndAssemble(ctx context.Context, chain ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, createBAL func(finalizeAccesses *bal.StateAccessList, finalizeMut *bal.StateMutations) *bal.BlockAccessList) (*types.Block, error)
 
 	// Seal generates a new sealing request for the given input block and pushes
 	// the result into the given channel.

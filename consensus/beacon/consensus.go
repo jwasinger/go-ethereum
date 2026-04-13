@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -346,24 +347,31 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) (*bal.StateAccessList, *bal.StateMutations) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, body)
-		return
+		return beacon.ethone.Finalize(chain, header, state, body)
 	}
 	// Withdrawals processing.
 	for _, w := range body.Withdrawals {
+		// ensure that target account is included as a read in the BAL even if the withdrawal amount is zero
+		state.GetBalance(w.Address)
+
 		// Convert amount from gwei to wei.
 		amount := new(uint256.Int).SetUint64(w.Amount)
 		amount = amount.Mul(amount, uint256.NewInt(params.GWei))
 		state.AddBalance(w.Address, amount, tracing.BalanceIncreaseWithdrawal)
 	}
+	return state.Finalise(true)
 	// No block reward which is issued by consensus layer instead.
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
-func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (result *types.Block, err error) {
+// createBAL if non-nil, returns a block access list for addition to theblock.
+// The call-back takes as parameter the state mutations that occurred as part
+// of block finalization after the execution of system contracts.  This is the
+// EIP-4895 withdrawals post-amsterdam post
+func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt, createBAL func(finalizeAccesses *bal.StateAccessList, finalizeMut *bal.StateMutations) *bal.BlockAccessList) (block *types.Block, err error) {
 	ctx, _, spanEnd := telemetry.StartSpan(ctx, "consensus.beacon.FinalizeAndAssemble",
 		telemetry.Int64Attribute("block.number", int64(header.Number.Uint64())),
 		telemetry.Int64Attribute("txs.count", int64(len(body.Transactions))),
@@ -372,7 +380,8 @@ func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	defer spanEnd(&err)
 
 	if !beacon.IsPoSHeader(header) {
-		block, delegateErr := beacon.ethone.FinalizeAndAssemble(ctx, chain, header, state, body, receipts)
+		fmt.Println("HERE")
+		block, delegateErr := beacon.ethone.FinalizeAndAssemble(ctx, chain, header, state, body, receipts, nil)
 		return block, delegateErr
 	}
 	shanghai := chain.Config().IsShanghai(header.Number, header.Time)
@@ -388,7 +397,7 @@ func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 	}
 	// Finalize and assemble the block.
 	_, _, finalizeSpanEnd := telemetry.StartSpan(ctx, "consensus.beacon.Finalize")
-	beacon.Finalize(chain, header, state, body)
+	postAccesses, postMut := beacon.Finalize(chain, header, state, body)
 	finalizeSpanEnd(nil)
 
 	// Assign the final state root to header.
@@ -398,7 +407,15 @@ func (beacon *Beacon) FinalizeAndAssemble(ctx context.Context, chain consensus.C
 
 	// Assemble the final block.
 	_, _, blockSpanEnd := telemetry.StartSpan(ctx, "consensus.beacon.NewBlock")
-	block := types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
+	if createBAL != nil {
+		al := createBAL(postAccesses, postMut)
+		alHash := al.Hash()
+
+		header.BlockAccessListHash = &alHash
+		block = types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)).WithAccessList(al)
+	} else {
+		block = types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
+	}
 	blockSpanEnd(nil)
 	return block, nil
 }

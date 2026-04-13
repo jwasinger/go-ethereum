@@ -199,11 +199,11 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 			return &newPayloadResult{err: err}
 		}
 		// EIP-7002
-		if err := core.ProcessWithdrawalQueue(&requests, work.evm); err != nil {
+		if _, _, err := core.ProcessWithdrawalQueue(&requests, work.evm); err != nil {
 			return &newPayloadResult{err: err}
 		}
 		// EIP-7251 consolidations
-		if err := core.ProcessConsolidationQueue(&requests, work.evm); err != nil {
+		if _, _, err := core.ProcessConsolidationQueue(&requests, work.evm); err != nil {
 			return &newPayloadResult{err: err}
 		}
 	}
@@ -212,7 +212,7 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 		work.header.RequestsHash = &reqHash
 	}
 
-	block, err := miner.engine.FinalizeAndAssemble(ctx, miner.chain, work.header, work.state, &body, work.receipts)
+	block, err := miner.engine.FinalizeAndAssemble(ctx, miner.chain, work.header, work.state, &body, work.receipts, nil)
 	if err != nil {
 		return &newPayloadResult{err: err}
 	}
@@ -400,7 +400,7 @@ func (miner *Miner) applyTransaction(env *environment, tx *types.Transaction) (*
 		snap = env.state.Snapshot()
 		gp   = env.gasPool.Snapshot()
 	)
-	receipt, err := core.ApplyTransaction(env.evm, env.gasPool, env.state, env.header, tx)
+	_, _, receipt, err := core.ApplyTransaction(env.evm, env.gasPool, env.state, env.header, tx)
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
 		env.gasPool.Set(gp)
