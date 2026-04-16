@@ -164,7 +164,7 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 		// otherwise, fill the block with the current transactions from the txpool
 		if genParam.forceOverrides && len(genParam.overrideTxs) > 0 {
 			for _, tx := range genParam.overrideTxs {
-				work.state.SetTxContext(tx.Hash(), work.tcount)
+				work.state.SetTxContext(tx.Hash(), work.tcount, uint32(work.tcount+1))
 				if err := miner.commitTransaction(ctx, work, tx); err != nil {
 					// all passed transactions HAVE to be valid at this point
 					return &newPayloadResult{err: err}
@@ -205,21 +205,9 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 	}
 
 	// Collect consensus-layer requests if Prague is enabled.
-	var requests [][]byte
-	if miner.chainConfig.IsPrague(work.header.Number, work.header.Time) {
-		requests = [][]byte{}
-		// EIP-6110 deposits
-		if err := core.ParseDepositLogs(&requests, allLogs, miner.chainConfig); err != nil {
-			return &newPayloadResult{err: err}
-		}
-		// EIP-7002
-		if err := core.ProcessWithdrawalQueue(&requests, work.evm); err != nil {
-			return &newPayloadResult{err: err}
-		}
-		// EIP-7251 consolidations
-		if err := core.ProcessConsolidationQueue(&requests, work.evm); err != nil {
-			return &newPayloadResult{err: err}
-		}
+	requests, err := core.PostExecution(ctx, miner.chainConfig, work.header.Number, work.header.Time, allLogs, work.evm, uint32(work.tcount+1))
+	if err != nil {
+		return &newPayloadResult{err: err}
 	}
 	if requests != nil {
 		reqHash := types.CalcRequestsHash(requests)
@@ -515,7 +503,7 @@ func (miner *Miner) commitTransactions(ctx context.Context, env *environment, pl
 			continue
 		}
 		// Start executing the transaction
-		env.state.SetTxContext(tx.Hash(), env.tcount)
+		env.state.SetTxContext(tx.Hash(), env.tcount, uint32(env.tcount+1))
 
 		err := miner.commitTransaction(ctx, env, tx)
 		switch {
