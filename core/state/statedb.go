@@ -321,6 +321,11 @@ func (s *StateDB) Empty(addr common.Address) bool {
 	return so == nil || so.empty()
 }
 
+// Touch accesses the specific account without returning anything.
+func (s *StateDB) Touch(addr common.Address) {
+	s.getStateObject(addr)
+}
+
 // GetBalance retrieves the balance from the given address or 0 if object not found
 func (s *StateDB) GetBalance(addr common.Address) *uint256.Int {
 	stateObject := s.getStateObject(addr)

@@ -115,6 +115,10 @@ func (s *hookedStateDB) Exist(addr common.Address) bool {
 	return s.inner.Exist(addr)
 }
 
+func (s *hookedStateDB) Touch(addr common.Address) {
+	s.inner.Touch(addr)
+}
+
 func (s *hookedStateDB) Empty(addr common.Address) bool {
 	return s.inner.Empty(addr)
 }

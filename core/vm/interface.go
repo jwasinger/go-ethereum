@@ -64,6 +64,9 @@ type StateDB interface {
 	// Notably this also returns true for self-destructed accounts within the current transaction.
 	Exist(common.Address) bool
 
+	// Touch accesses the state without returning anything.
+	Touch(common.Address)
+
 	// IsNewContract reports whether the contract at the given address was deployed
 	// during the current transaction.
 	IsNewContract(addr common.Address) bool
