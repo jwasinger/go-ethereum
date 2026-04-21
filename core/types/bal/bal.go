@@ -158,6 +158,9 @@ func (c ConstructionBlockAccessList) Copy() ConstructionBlockAccessList {
 }
 
 func (c ConstructionBlockAccessList) AccumulateMutations(muts *StateMutations, idx uint16) {
+	if muts == nil {
+		return
+	}
 	for addr, mut := range muts.list {
 		if _, exist := c[addr]; !exist {
 			c[addr] = newConstructionAccountAccesses()
@@ -195,6 +198,9 @@ func (c ConstructionBlockAccessList) AccumulateMutations(muts *StateMutations, i
 }
 
 func (c ConstructionBlockAccessList) AccumulateReads(reads *StateAccessList) {
+	if reads == nil {
+		return
+	}
 	for addr, addrReads := range reads.list {
 		if _, ok := c[addr]; !ok {
 			c[addr] = newConstructionAccountAccesses()
