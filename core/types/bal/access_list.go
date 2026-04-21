@@ -42,6 +42,9 @@ func NewStateAccessList() *StateAccessList {
 // AddAccount records an access to the given account. It is a no-op if the
 // account is already present.
 func (s *StateAccessList) AddAccount(addr common.Address) {
+	if s == nil {
+		return
+	}
 	if _, exists := s.list[addr]; !exists {
 		s.list[addr] = make(StorageAccessList)
 	}
@@ -50,6 +53,9 @@ func (s *StateAccessList) AddAccount(addr common.Address) {
 // AddState records an access to the given storage slot. The owning account is
 // implicitly recorded as well.
 func (s *StateAccessList) AddState(addr common.Address, slot common.Hash) {
+	if s == nil {
+		return
+	}
 	slots, exists := s.list[addr]
 	if !exists {
 		slots = make(StorageAccessList)
@@ -60,6 +66,9 @@ func (s *StateAccessList) AddState(addr common.Address, slot common.Hash) {
 
 // Merge merges the entries from other into the receiver.
 func (s *StateAccessList) Merge(other *StateAccessList) {
+	if s == nil || other == nil {
+		return
+	}
 	for addr, otherSlots := range other.list {
 		slots, exists := s.list[addr]
 		if !exists {
