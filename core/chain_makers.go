@@ -337,13 +337,24 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		// create EVM for system calls
 		blockContext := NewEVMBlockContext(b.header, b.cm, &b.header.Coinbase)
 		evm := vm.NewEVM(blockContext, statedb, b.cm.config, vm.Config{})
+
+		mut := new(bal.StateMutations)
 		// EIP-7002
-		if _, _, err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+		withdrawalAccess, withdrawalMut, err := ProcessWithdrawalQueue(&requests, evm)
+		if err != nil {
 			panic(fmt.Sprintf("could not process withdrawal requests: %v", err))
 		}
+		mut.Merge(withdrawalMut)
 		// EIP-7251
-		if _, _, err := ProcessConsolidationQueue(&requests, evm); err != nil {
+		consolidationAccess, consolidationMut, err := ProcessConsolidationQueue(&requests, evm)
+		if err != nil {
 			panic(fmt.Sprintf("could not process consolidation requests: %v", err))
+		}
+		mut.Merge(consolidationMut)
+		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
+			b.accessList.AccumulateReads(withdrawalAccess)
+			b.accessList.AccumulateReads(consolidationAccess)
+			b.accessList.AccumulateMutations(mut, uint16(len(b.txs))+1)
 		}
 	}
 	return requests
@@ -414,9 +425,17 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 				preTxMutations.Merge(mutations)
 				b.accessList.AccumulateReads(accesses)
 			}
-		}
-		if isAmsterdam {
-			b.accessList.AccumulateMutations(preTxMutations, 0)
+
+			beaconRoot := common.Hash{}
+			if b.header.ParentBeaconRoot != nil {
+				beaconRoot = *b.header.ParentBeaconRoot
+			}
+			reads, writes := ProcessBeaconBlockRoot(beaconRoot, evm)
+			if isAmsterdam {
+				preTxMutations.Merge(writes)
+				b.accessList.AccumulateReads(reads)
+				b.accessList.AccumulateMutations(preTxMutations, 0)
+			}
 		}
 
 		// TODO: what about the parent beacon root, and post-block system contract (forget what it is rn)?

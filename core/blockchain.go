@@ -2246,6 +2246,7 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 		computedAccessListHash := computedAccessList.Hash()
 
 		if *block.Header().BlockAccessListHash != computedAccessListHash {
+			fmt.Printf("remote access list:\n%s\nlocal access list:\n%s\n", block.AccessList().JSONString(), computedAccessList.JSONString())
 			err := fmt.Errorf("block header access list hash mismatch with computed (header=%x computed=%x)", *block.Header().BlockAccessListHash, computedAccessListHash)
 			bc.reportBadBlock(block, res, err)
 			return nil, err
