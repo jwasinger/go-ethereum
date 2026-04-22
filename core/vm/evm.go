@@ -331,8 +331,8 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 			}
-			gas.Exhaust()
 			gasUsed.RegularGas += gas.RegularGas
+			gas.Exhaust()
 		}
 	}
 	return ret, gas, gasUsed, err
@@ -388,8 +388,8 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 			}
-			gas.Exhaust()
 			gasUsed.RegularGas += gas.RegularGas
+			gas.Exhaust()
 		}
 	}
 	return ret, gas, gasUsed, err
@@ -438,8 +438,8 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 			}
-			gas.Exhaust()
 			gasUsed.RegularGas += gas.RegularGas
+			gas.Exhaust()
 		}
 	}
 	return ret, gas, gasUsed, err
@@ -487,8 +487,8 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 				evm.Config.Tracer.OnGasChange(gas.RegularGas, 0, tracing.GasChangeCallFailedExecution)
 			}
-			gas.Exhaust()
 			gasUsed.RegularGas += gas.RegularGas
+			gas.Exhaust()
 		}
 	}
 	return ret, gas, gasUsed, err
