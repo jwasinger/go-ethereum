@@ -588,8 +588,11 @@ func (s *StateDB) deleteStateObject(addr common.Address) {
 // getStateObject retrieves a state object given by the address, returning nil if
 // the object is not found or was deleted in this execution context.
 func (s *StateDB) getStateObject(addr common.Address) *stateObject {
-	// Record state access regardless of whether the account exists.
-	s.stateReadList.AddAccount(addr)
+	if s.stateReadList != nil {
+		// if we are in Amsterdam, record state access regardless of whether
+		// the account exists.
+		s.stateReadList.AddAccount(addr)
+	}
 
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
