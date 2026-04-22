@@ -2258,8 +2258,10 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 			// attach the computed access list to the block so it gets persisted
 			// when the block is written to disk
 			block = block.WithAccessList(computedAccessList)
-		} else if err := computedAccessList.ValidateGasLimit(block.GasLimit()); err != nil {
-			// this shouldn't ever be possible
+		}
+		// Failing the access list max size validation should be impossible here
+		// better safe than sorry.
+		if err := computedAccessList.ValidateGasLimit(block.GasLimit()); err != nil {
 			err := fmt.Errorf("block access list validation failed: %v", err)
 			bc.reportBadBlock(block, res, err)
 			return nil, err

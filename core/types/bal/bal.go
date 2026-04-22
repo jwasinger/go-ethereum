@@ -19,10 +19,9 @@ package bal
 import (
 	"bytes"
 	"encoding/json"
-	"maps"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
+	"maps"
 )
 
 // ConstructionAccountAccesses contains post-block account state for mutations as well as
@@ -146,75 +145,103 @@ func (s *StateMutations) Set(addr common.Address, mut *AccountMutations) {
 	s.list[addr] = *mut
 }
 
-type ConstructionBlockAccessList map[common.Address]*ConstructionAccountAccesses
+type ConstructionBlockAccessList struct {
+	list             map[common.Address]*ConstructionAccountAccesses
+	transactionCount int
+}
 
-func (c ConstructionBlockAccessList) Copy() ConstructionBlockAccessList {
-	res := make(ConstructionBlockAccessList)
-	for addr, accountAccess := range c {
+func NewConstructionBlockAccessList() *ConstructionBlockAccessList {
+	return &ConstructionBlockAccessList{
+		make(map[common.Address]*ConstructionAccountAccesses),
+		0}
+}
+
+func (c *ConstructionBlockAccessList) Copy() *ConstructionBlockAccessList {
+	if c == nil {
+		return nil
+	}
+	res := NewConstructionBlockAccessList()
+	for addr, accountAccess := range c.list {
 		aaCopy := accountAccess.Copy()
-		res[addr] = &aaCopy
+		res.list[addr] = &aaCopy
 	}
 	return res
 }
 
-func (c ConstructionBlockAccessList) AccumulateMutations(muts *StateMutations, idx uint16) {
+// must be called after all txs are added
+func (c *ConstructionBlockAccessList) AddBlockFinalizeMutations(muts *StateMutations) {
+	c.addMutations(muts, c.transactionCount+1)
+}
+
+func (c *ConstructionBlockAccessList) AddBlockInitMutations(muts *StateMutations) {
+	c.addMutations(muts, 0)
+}
+
+func (c *ConstructionBlockAccessList) AddTransactionMutations(muts *StateMutations, txIdx int) {
+	c.transactionCount = max(c.transactionCount, txIdx)
+	c.addMutations(muts, c.transactionCount)
+}
+
+func (c *ConstructionBlockAccessList) addMutations(muts *StateMutations, index int) {
 	if muts == nil {
 		return
 	}
+	// TO
+	idx := uint16(index)
 	for addr, mut := range muts.list {
-		if _, exist := c[addr]; !exist {
-			c[addr] = newConstructionAccountAccesses()
+		if _, exist := c.list[addr]; !exist {
+			c.list[addr] = newConstructionAccountAccesses()
 		}
 		if mut.Nonce != nil {
-			if c[addr].NonceChanges == nil {
-				c[addr].NonceChanges = make(map[uint16]uint64)
+			if c.list[addr].NonceChanges == nil {
+				c.list[addr].NonceChanges = make(map[uint16]uint64)
 			}
-			c[addr].NonceChanges[idx] = *mut.Nonce
+			c.list[addr].NonceChanges[idx] = *mut.Nonce
 		}
 		if mut.Balance != nil {
-			if c[addr].BalanceChanges == nil {
-				c[addr].BalanceChanges = make(map[uint16]*uint256.Int)
+			if c.list[addr].BalanceChanges == nil {
+				c.list[addr].BalanceChanges = make(map[uint16]*uint256.Int)
 			}
-			c[addr].BalanceChanges[idx] = mut.Balance.Clone()
+			c.list[addr].BalanceChanges[idx] = mut.Balance.Clone()
 		}
 		if mut.Code != nil {
-			if c[addr].CodeChanges == nil {
-				c[addr].CodeChanges = make(map[uint16][]byte)
+			if c.list[addr].CodeChanges == nil {
+				c.list[addr].CodeChanges = make(map[uint16][]byte)
 			}
-			c[addr].CodeChanges[idx] = bytes.Clone(mut.Code)
+			c.list[addr].CodeChanges[idx] = bytes.Clone(mut.Code)
 		}
 		if len(mut.StorageWrites) > 0 {
 			for key, val := range mut.StorageWrites {
-				if c[addr].StorageWrites[key] == nil {
-					c[addr].StorageWrites[key] = make(map[uint16]common.Hash)
+				if c.list[addr].StorageWrites[key] == nil {
+					c.list[addr].StorageWrites[key] = make(map[uint16]common.Hash)
 				}
-				c[addr].StorageWrites[key][idx] = val
+				c.list[addr].StorageWrites[key][idx] = val
 
 				// delete the key from the tracked reads if it was previously read.
-				delete(c[addr].StorageReads, key)
+				delete(c.list[addr].StorageReads, key)
 			}
 		}
 	}
 }
 
-func (c ConstructionBlockAccessList) AccumulateReads(reads *StateAccessList) {
+func (c *ConstructionBlockAccessList) AddAccesses(reads *StateAccessList) {
 	if reads == nil {
 		return
 	}
 	for addr, addrReads := range reads.list {
-		if _, ok := c[addr]; !ok {
-			c[addr] = newConstructionAccountAccesses()
+		if _, ok := c.list[addr]; !ok {
+			c.list[addr] = newConstructionAccountAccesses()
 		}
 		for storageKey, _ := range addrReads {
-			if c[addr].StorageWrites != nil {
-				if _, ok := c[addr].StorageWrites[storageKey]; ok {
+			if c.list[addr].StorageWrites != nil {
+				if _, ok := c.list[addr].StorageWrites[storageKey]; ok {
 					continue
 				}
 			}
-			if c[addr].StorageReads == nil {
-				c[addr].StorageReads = make(map[common.Hash]struct{})
+			if c.list[addr].StorageReads == nil {
+				c.list[addr].StorageReads = make(map[common.Hash]struct{})
 			}
-			c[addr].StorageReads[storageKey] = struct{}{}
+			c.list[addr].StorageReads[storageKey] = struct{}{}
 		}
 	}
 }

@@ -93,15 +93,15 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		accesses, mutations := ProcessBeaconBlockRoot(*beaconRoot, evm)
 		if isAmsterdam {
-			computedAccessList.AccumulateMutations(mutations, 0)
-			computedAccessList.AccumulateReads(accesses)
+			computedAccessList.AddMutations(mutations, 0)
+			computedAccessList.AddAccesses(accesses)
 		}
 	}
 	if config.IsPrague(block.Number(), block.Time()) || config.IsUBT(block.Number(), block.Time()) {
 		accesses, mutations := ProcessParentBlockHash(block.ParentHash(), evm)
 		if isAmsterdam {
-			computedAccessList.AccumulateMutations(mutations, 0)
-			computedAccessList.AccumulateReads(accesses)
+			computedAccessList.AddMutations(mutations, 0)
+			computedAccessList.AddAccesses(accesses)
 		}
 	}
 
@@ -126,8 +126,8 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		allLogs = append(allLogs, receipt.Logs...)
 
 		if isAmsterdam {
-			computedAccessList.AccumulateMutations(mutations, uint16(i)+1)
-			computedAccessList.AccumulateReads(accesses)
+			computedAccessList.AddMutations(mutations, uint16(i)+1)
+			computedAccessList.AddAccesses(accesses)
 		}
 		spanEnd(nil)
 	}
@@ -140,9 +140,9 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	eip4895WithdrawalReads, eip4985WithdrawalMuts := p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body())
 	postMut.Merge(eip4985WithdrawalMuts)
 	if isAmsterdam {
-		computedAccessList.AccumulateMutations(postMut, uint16(len(block.Transactions()))+1)
-		computedAccessList.AccumulateReads(postReads)
-		computedAccessList.AccumulateReads(eip4895WithdrawalReads)
+		computedAccessList.AddMutations(postMut, uint16(len(block.Transactions()))+1)
+		computedAccessList.AddAccesses(postReads)
+		computedAccessList.AddAccesses(eip4895WithdrawalReads)
 	}
 
 	return &ProcessResult{

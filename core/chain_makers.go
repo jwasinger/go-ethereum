@@ -127,8 +127,8 @@ func (b *BlockGen) addTx(bc *BlockChain, vmConfig vm.Config, tx *types.Transacti
 	}
 	b.header.GasUsed = b.gasPool.Used()
 	if b.accessList != nil {
-		b.accessList.AccumulateMutations(txMut, uint16(len(b.txs)+1))
-		b.accessList.AccumulateReads(txAccesses)
+		b.accessList.AddMutations(txMut, uint16(len(b.txs)+1))
+		b.accessList.AddAccesses(txAccesses)
 	}
 
 	// Merge the tx-local access event into the "block-local" one, in order to collect
@@ -352,9 +352,9 @@ func (b *BlockGen) collectRequests(readonly bool) (requests [][]byte) {
 		}
 		mut.Merge(consolidationMut)
 		if b.cm.config.IsAmsterdam(b.header.Number, b.header.Time) {
-			b.accessList.AccumulateReads(withdrawalAccess)
-			b.accessList.AccumulateReads(consolidationAccess)
-			b.accessList.AccumulateMutations(mut, uint16(len(b.txs))+1)
+			b.accessList.AddAccesses(withdrawalAccess)
+			b.accessList.AddAccesses(consolidationAccess)
+			b.accessList.AddMutations(mut, uint16(len(b.txs))+1)
 		}
 	}
 	return requests
@@ -423,7 +423,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			accesses, mutations := ProcessParentBlockHash(b.header.ParentHash, evm)
 			if isAmsterdam {
 				preTxMutations.Merge(mutations)
-				b.accessList.AccumulateReads(accesses)
+				b.accessList.AddAccesses(accesses)
 			}
 
 			beaconRoot := common.Hash{}
@@ -433,8 +433,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			reads, writes := ProcessBeaconBlockRoot(beaconRoot, evm)
 			if isAmsterdam {
 				preTxMutations.Merge(writes)
-				b.accessList.AccumulateReads(reads)
-				b.accessList.AccumulateMutations(preTxMutations, 0)
+				b.accessList.AddAccesses(reads)
+				b.accessList.AddMutations(preTxMutations, 0)
 			}
 		}
 
@@ -455,8 +455,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 
 		if isAmsterdam {
 			createBAL = func(finalIdxReads *bal.StateAccessList, finalIdxMut *bal.StateMutations) *bal.BlockAccessList {
-				b.accessList.AccumulateMutations(finalIdxMut, uint16(len(b.txs))+1)
-				b.accessList.AccumulateReads(finalIdxReads)
+				b.accessList.AddMutations(finalIdxMut, uint16(len(b.txs))+1)
+				b.accessList.AddAccesses(finalIdxReads)
 				return b.accessList.ToEncodingObj()
 			}
 		}
