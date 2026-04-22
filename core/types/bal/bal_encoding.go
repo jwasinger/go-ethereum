@@ -104,10 +104,13 @@ func (e *BlockAccessList) String() string {
 }
 
 // TODO: check that no fields are nil in Validate (unless it's valid for them to be nil)
-// Validate returns an error if the contents of the access list are not ordered
+
+// Validate returns an error if:
+// * the contents of the access list are not ordered
 // according to the spec or any code changes are contained which exceed protocol
 // max code size.
-func (e BlockAccessList) Validate(blockTxCount int) error {
+// * the total accounts and storage slots in the access list exceed the protocol max
+func (e BlockAccessList) Validate(blockTxCount int, blockGasLimit uint64) error {
 	if !slices.IsSortedFunc(e, func(a, b AccountAccess) int {
 		return bytes.Compare(a.Address[:], b.Address[:])
 	}) {
@@ -122,13 +125,14 @@ func (e BlockAccessList) Validate(blockTxCount int) error {
 		}
 		addrs[addr] = struct{}{}
 	}
-
+	// validate individual entries
 	for _, entry := range e {
 		if err := entry.validate(blockTxCount); err != nil {
 			return err
 		}
 	}
-	return nil
+	// check that the total number of items doesn't exceed max
+	return e.ValidateGasLimit(blockGasLimit)
 }
 
 // ValidateGasLimit checks that the number of BAL items does not exceed the

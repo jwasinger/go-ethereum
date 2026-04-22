@@ -2246,18 +2246,23 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 		computedAccessListHash := computedAccessList.Hash()
 
 		if *block.Header().BlockAccessListHash != computedAccessListHash {
-			fmt.Printf("remote access list:\n%s\nlocal access list:\n%s\n", block.AccessList().JSONString(), computedAccessList.JSONString())
-			err := fmt.Errorf("block header access list hash mismatch with computed (header=%x computed=%x)", *block.Header().BlockAccessListHash, computedAccessListHash)
+			err := fmt.Errorf("block header access list hash mismatch (remote =%x local=%x)", *block.Header().BlockAccessListHash, computedAccessListHash)
 			bc.reportBadBlock(block, res, err)
 			return nil, err
 		}
 		// note that we don't validate that the computed BAL's size aligns with the gas
 		// limit here because it should be impossible case if the parameters in 7928
 		// are tuned correctly.
+
 		if block.AccessList() == nil {
 			// attach the computed access list to the block so it gets persisted
 			// when the block is written to disk
 			block = block.WithAccessList(computedAccessList)
+		} else if err := computedAccessList.ValidateGasLimit(block.GasLimit()); err != nil {
+			// this shouldn't ever be possible
+			err := fmt.Errorf("block access list validation failed: %v", err)
+			bc.reportBadBlock(block, res, err)
+			return nil, err
 		} else if block.AccessList().Hash() != computedAccessListHash {
 			err := fmt.Errorf("block access list hash mismatch (remote=%x computed=%x)", block.AccessList().Hash(), computedAccessListHash)
 			bc.reportBadBlock(block, res, err)

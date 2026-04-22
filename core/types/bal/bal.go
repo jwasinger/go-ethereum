@@ -274,12 +274,12 @@ func (a *AccountMutations) Copy() *AccountMutations {
 }
 
 // Copy returns a deep copy of the access list
-func (e BlockAccessList) Copy() BlockAccessList {
+func (e BlockAccessList) Copy() *BlockAccessList {
 	var res BlockAccessList
 	for _, accountAccess := range e {
 		res = append(res, accountAccess.Copy())
 	}
-	return res
+	return &res
 }
 
 // Eq returns whether the calling instance is equal to the provided one.

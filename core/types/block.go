@@ -527,8 +527,7 @@ func (b *Block) WithBody(body Body) *Block {
 
 // WithAccessList returns a copy of the block with the given access list embedded.
 func (b *Block) WithAccessList(accessList *bal.BlockAccessList) *Block {
-	alCopy := accessList.Copy()
-	return b.WithAccessListUnsafe(&alCopy)
+	return b.WithAccessListUnsafe(accessList.Copy())
 }
 
 // WithAccessListUnsafe returns a copy of the block with the given access list
