@@ -54,6 +54,8 @@ type Database interface {
 	// Reader returns a state reader associated with the specified state root.
 	Reader(root common.Hash) (Reader, error)
 
+	ReaderEIP7928(stateRoot common.Hash, accessList map[common.Address][]common.Hash, threads int) (Reader, error)
+
 	// Iteratee returns a state iteratee associated with the specified state root,
 	// through which the account iterator and storage iterator can be created.
 	Iteratee(root common.Hash) (Iteratee, error)

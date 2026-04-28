@@ -94,6 +94,10 @@ func (db *UBTDatabase) ReadersWithCacheStats(stateRoot common.Hash) (Reader, Rea
 	return ra, rb, nil
 }
 
+func (db *UBTDatabase) ReaderEIP7928(stateRoot common.Hash, accessList map[common.Address][]common.Hash, threads int) (Reader, error) {
+	panic("not implemented")
+}
+
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *UBTDatabase) OpenTrie(root common.Hash) (Trie, error) {
 	return bintrie.NewBinaryTrie(root, db.triedb)

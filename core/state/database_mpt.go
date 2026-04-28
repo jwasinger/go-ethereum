@@ -100,6 +100,21 @@ func (db *MPTDatabase) Reader(stateRoot common.Hash) (Reader, error) {
 	return newReader(db.codedb.Reader(), sr), nil
 }
 
+// ReaderEIP7928 creates a state reader with the manner of Block-level accessList.
+func (db *MPTDatabase) ReaderEIP7928(stateRoot common.Hash, accessList map[common.Address][]common.Hash, threads int) (Reader, error) {
+	base, err := db.StateReader(stateRoot)
+	if err != nil {
+		return nil, err
+	}
+	// Construct the state reader with native cache and associated statistics
+	r := newStateReaderWithStats(newStateReaderWithCache(base))
+
+	// Construct the state reader with background prefetching
+	pr := newPrefetchStateReader(r, accessList, threads)
+
+	return newReader(db.codedb.Reader(), pr), nil
+}
+
 // ReadersWithCacheStats creates a pair of state readers that share the same
 // underlying state reader and internal state cache, while maintaining separate
 // statistics respectively.

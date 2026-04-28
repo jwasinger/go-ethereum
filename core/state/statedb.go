@@ -65,6 +65,14 @@ func (m *mutation) isDelete() bool {
 	return m.typ == deletion
 }
 
+type BlockStateTransition interface {
+	CommitWithUpdate(block uint64, deleteEmptyObjects bool, noStorageWiping bool) (common.Hash, *StateUpdate, error)
+	Commit(block uint64, deleteEmptyObjects bool, noStorageWiping bool) (common.Hash, error)
+	IntermediateRoot(deleteEmpty bool) common.Hash
+	Error() error
+	Preimages() map[common.Hash][]byte
+}
+
 // StateDB structs within the ethereum protocol are used to store anything
 // within the merkle trie. StateDBs take care of caching and storing
 // nested states. It's the general query interface to retrieve:

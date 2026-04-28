@@ -142,7 +142,7 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 
 // ValidateState validates the various changes that happen after a state transition,
 // such as amount of used gas, the receipt roots and the state root itself.
-func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateDB, res *ProcessResult, stateless bool) error {
+func (v *BlockValidator) ValidateState(block *types.Block, statedb state.BlockStateTransition, res *ProcessResult, stateless bool) error {
 	if res == nil {
 		return errors.New("nil ProcessResult value")
 	}

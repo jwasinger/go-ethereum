@@ -145,8 +145,12 @@ func (s *StateMutations) Eq(other *StateMutations) bool {
 	return true
 }
 
-func (s *StateMutations) Set(addr common.Address, mut *AccountMutations) {
-	s.list[addr] = *mut
+func (s *StateMutations) Get(addr common.Address) AccountMutations {
+	return s.list[addr]
+}
+
+func (s *StateMutations) Set(addr common.Address, mut AccountMutations) {
+	s.list[addr] = mut
 }
 
 type ConstructionBlockAccessList struct {
@@ -304,15 +308,6 @@ func (a *AccountMutations) Copy() *AccountMutations {
 	return res
 }
 
-// Copy returns a deep copy of the access list
-func (e BlockAccessList) Copy() *BlockAccessList {
-	var res BlockAccessList
-	for _, accountAccess := range e {
-		res = append(res, accountAccess.Copy())
-	}
-	return &res
-}
-
 // Eq returns whether the calling instance is equal to the provided one.
 func (a *AccountMutations) Eq(other *AccountMutations) bool {
 	if a.Balance != nil || other.Balance != nil {
@@ -346,3 +341,207 @@ func (a *AccountMutations) Eq(other *AccountMutations) bool {
 	}
 	return true
 }
+
+// AccessListReader exposes utilities to read state mutations and accesses from an access list
+// TODO: expose this an an interface?
+type AccessListReader map[common.Address]*AccountAccess
+
+func NewAccessListReader(bal BlockAccessList) (reader AccessListReader) {
+	reader = make(AccessListReader)
+	for _, accountAccess := range bal {
+		reader[accountAccess.Address] = &accountAccess
+	}
+	return
+}
+
+func (a AccessListReader) Accesses() (accesses StateAccessList) {
+	accesses = StateAccessList{make(map[common.Address]StorageAccessList)}
+	for addr, acctAccess := range a {
+		if len(acctAccess.StorageReads) > 0 {
+			accesses.list[addr] = make(StorageAccessList)
+			for _, key := range acctAccess.StorageReads {
+				accesses.list[addr][key.ToHash()] = struct{}{}
+			}
+		} else if len(acctAccess.CodeChanges) == 0 && len(acctAccess.StorageChanges) == 0 && len(acctAccess.BalanceChanges) == 0 && len(acctAccess.NonceChanges) == 0 {
+			accesses.list[addr] = make(StorageAccessList)
+		}
+	}
+	return
+}
+
+// TODO: these methods should return the mutations accrued before the execution of the given index
+
+// TODO: strip the storage mutations from the returned result
+// the returned object should be able to be modified
+func (a AccessListReader) accountMutationsAt(addr common.Address, idx int) (res *AccountMutations) {
+	acct, exist := a[addr]
+	if !exist {
+		return nil
+	}
+
+	res = &AccountMutations{}
+	// TODO: remove the reverse iteration here to clean the code up
+
+	for i := len(acct.BalanceChanges) - 1; i >= 0; i-- {
+		if acct.BalanceChanges[i].TxIdx == uint32(idx) {
+			res.Balance = acct.BalanceChanges[i].Balance
+		}
+		if acct.BalanceChanges[i].TxIdx < uint32(idx) {
+			break
+		}
+	}
+
+	for i := len(acct.CodeChanges) - 1; i >= 0; i-- {
+		if acct.CodeChanges[i].TxIndex == uint32(idx) {
+			res.Code = bytes.Clone(acct.CodeChanges[i].Code)
+			break
+		}
+		if acct.CodeChanges[i].TxIndex < uint32(idx) {
+			break
+		}
+	}
+
+	for i := len(acct.NonceChanges) - 1; i >= 0; i-- {
+		if acct.NonceChanges[i].TxIdx == uint32(idx) {
+			res.Nonce = new(uint64)
+			*res.Nonce = acct.NonceChanges[i].Nonce
+			break
+		}
+		if acct.NonceChanges[i].TxIdx < uint32(idx) {
+			break
+		}
+	}
+
+	for i := len(acct.StorageChanges) - 1; i >= 0; i-- {
+		if res.StorageWrites == nil {
+			res.StorageWrites = make(map[common.Hash]common.Hash)
+		}
+		slotWrites := acct.StorageChanges[i]
+
+		for j := len(slotWrites.Accesses) - 1; j >= 0; j-- {
+			if slotWrites.Accesses[j].TxIdx == uint32(idx) {
+				res.StorageWrites[slotWrites.Slot.ToHash()] = slotWrites.Accesses[j].ValueAfter.ToHash()
+				break
+			}
+			if slotWrites.Accesses[j].TxIdx < uint32(idx) {
+				break
+			}
+		}
+		if len(res.StorageWrites) == 0 {
+			res.StorageWrites = nil
+		}
+	}
+
+	if res.Code == nil && res.Nonce == nil && len(res.StorageWrites) == 0 && res.Balance == nil {
+		return nil
+	}
+	return res
+}
+
+func (a AccessListReader) AccountMutations(addr common.Address, idx int) (res *AccountMutations) {
+	diff, exist := a[addr]
+	if !exist {
+		return nil
+	}
+
+	res = &AccountMutations{}
+
+	for i := 0; i < len(diff.BalanceChanges) && diff.BalanceChanges[i].TxIdx < uint32(idx); i++ {
+		res.Balance = diff.BalanceChanges[i].Balance.Clone()
+	}
+
+	for i := 0; i < len(diff.CodeChanges) && diff.CodeChanges[i].TxIndex < uint32(idx); i++ {
+		res.Code = bytes.Clone(diff.CodeChanges[i].Code)
+	}
+
+	for i := 0; i < len(diff.NonceChanges) && diff.NonceChanges[i].TxIdx < uint32(idx); i++ {
+		res.Nonce = new(uint64)
+		*res.Nonce = diff.NonceChanges[i].Nonce
+	}
+
+	if len(diff.StorageChanges) > 0 {
+		res.StorageWrites = make(map[common.Hash]common.Hash)
+		for _, slotWrites := range diff.StorageChanges {
+			for i := 0; i < len(slotWrites.Accesses) && slotWrites.Accesses[i].TxIdx < uint32(idx); i++ {
+				res.StorageWrites[slotWrites.Slot.ToHash()] = slotWrites.Accesses[i].ValueAfter.ToHash()
+			}
+		}
+	}
+
+	if res.Code == nil && res.Nonce == nil && len(res.StorageWrites) == 0 && res.Balance == nil {
+		return nil
+	}
+	return res
+}
+
+// Mutations returns the aggregate state mutations from [0, idx)
+func (a AccessListReader) Mutations(idx int) *StateMutations {
+	res := StateMutations{make(map[common.Address]AccountMutations)}
+	for addr := range a {
+		if mut := a.AccountMutations(addr, idx); mut != nil {
+			res.list[addr] = *mut
+		}
+	}
+	return &res
+}
+
+// MutationsAt returns the state mutations from an index
+func (a AccessListReader) MutationsAt(idx int) *StateMutations {
+	res := StateMutations{make(map[common.Address]AccountMutations)}
+	for addr := range a {
+		if mut := a.accountMutationsAt(addr, idx); mut != nil {
+			res.list[addr] = *mut
+		}
+	}
+	return &res
+}
+
+type StorageKeys map[common.Address][]common.Hash
+
+// StorageKeys returns the set of accounts and storage keys mutated in the access list.
+// If reads is set, the un-mutated accounts/keys are included in the result.
+func (a AccessListReader) StorageKeys(reads bool) (keys StorageKeys) {
+	keys = make(StorageKeys)
+	for addr, acct := range a {
+		for _, storageChange := range acct.StorageChanges {
+			keys[addr] = append(keys[addr], storageChange.Slot.ToHash())
+		}
+		if !(reads && len(acct.StorageReads) > 0) {
+			continue
+		}
+		for _, storageRead := range acct.StorageReads {
+			keys[addr] = append(keys[addr], storageRead.ToHash())
+		}
+	}
+	return
+}
+
+// Storage returns the value of a storage key at the start of executing an index.
+// If the slot has no mutations in the access list, it returns nil.
+func (a AccessListReader) Storage(addr common.Address, key common.Hash, idx int) (val *common.Hash) {
+	storageMuts := a.AccountMutations(addr, idx)
+	if storageMuts != nil {
+		res, ok := storageMuts.StorageWrites[key]
+		if ok {
+			return &res
+		}
+	}
+	return nil
+}
+
+// Copy returns a deep copy of the access list
+func (e BlockAccessList) Copy() *BlockAccessList {
+	var res BlockAccessList
+	for _, accountAccess := range e {
+		res = append(res, accountAccess.Copy())
+	}
+	return &res
+}
+
+type BALExecutionMode int
+
+const (
+	BALExecutionOptimized BALExecutionMode = iota
+	BALExecutionNoBatchIO
+	BALExecutionSequential
+)
