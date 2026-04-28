@@ -14,19 +14,15 @@ func (obj *AccountAccess) EncodeRLP(_w io.Writer) error {
 	_tmp1 := w.List()
 	for _, _tmp2 := range obj.StorageChanges {
 		_tmp3 := w.List()
-		if _tmp2.Slot == nil {
-			w.Write(rlp.EmptyString)
-		} else {
-			w.WriteUint256(_tmp2.Slot)
+		if err := _tmp2.Slot.EncodeRLP(w); err != nil {
+			return err
 		}
 		_tmp4 := w.List()
 		for _, _tmp5 := range _tmp2.Accesses {
 			_tmp6 := w.List()
 			w.WriteUint64(uint64(_tmp5.TxIdx))
-			if _tmp5.ValueAfter == nil {
-				w.Write(rlp.EmptyString)
-			} else {
-				w.WriteUint256(_tmp5.ValueAfter)
+			if err := _tmp5.ValueAfter.EncodeRLP(w); err != nil {
+				return err
 			}
 			w.ListEnd(_tmp6)
 		}
@@ -36,10 +32,8 @@ func (obj *AccountAccess) EncodeRLP(_w io.Writer) error {
 	w.ListEnd(_tmp1)
 	_tmp7 := w.List()
 	for _, _tmp8 := range obj.StorageReads {
-		if _tmp8 == nil {
-			w.Write(rlp.EmptyString)
-		} else {
-			w.WriteUint256(_tmp8)
+		if err := _tmp8.EncodeRLP(w); err != nil {
+			return err
 		}
 	}
 	w.ListEnd(_tmp7)
@@ -99,11 +93,11 @@ func (obj *AccountAccess) DecodeRLP(dec *rlp.Stream) error {
 					return err
 				}
 				// Slot:
-				var _tmp4 uint256.Int
-				if err := dec.ReadUint256(&_tmp4); err != nil {
+				_tmp4 := new(EncodedStorage)
+				if err := _tmp4.DecodeRLP(dec); err != nil {
 					return err
 				}
-				_tmp3.Slot = &_tmp4
+				_tmp3.Slot = _tmp4
 				// Accesses:
 				var _tmp5 []encodingStorageWrite
 				if _, err := dec.List(); err != nil {
@@ -122,11 +116,11 @@ func (obj *AccountAccess) DecodeRLP(dec *rlp.Stream) error {
 						}
 						_tmp6.TxIdx = _tmp7
 						// ValueAfter:
-						var _tmp8 uint256.Int
-						if err := dec.ReadUint256(&_tmp8); err != nil {
+						_tmp8 := new(EncodedStorage)
+						if err := _tmp8.DecodeRLP(dec); err != nil {
 							return err
 						}
-						_tmp6.ValueAfter = &_tmp8
+						_tmp6.ValueAfter = _tmp8
 						if err := dec.ListEnd(); err != nil {
 							return err
 						}
@@ -148,16 +142,16 @@ func (obj *AccountAccess) DecodeRLP(dec *rlp.Stream) error {
 		}
 		_tmp0.StorageChanges = _tmp2
 		// StorageReads:
-		var _tmp9 []*uint256.Int
+		var _tmp9 []*EncodedStorage
 		if _, err := dec.List(); err != nil {
 			return err
 		}
 		for dec.MoreDataInList() {
-			var _tmp10 uint256.Int
-			if err := dec.ReadUint256(&_tmp10); err != nil {
+			_tmp10 := new(EncodedStorage)
+			if err := _tmp10.DecodeRLP(dec); err != nil {
 				return err
 			}
-			_tmp9 = append(_tmp9, &_tmp10)
+			_tmp9 = append(_tmp9, _tmp10)
 		}
 		if err := dec.ListEnd(); err != nil {
 			return err

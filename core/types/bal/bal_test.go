@@ -116,15 +116,13 @@ func makeTestAccountAccess(sort bool) AccountAccess {
 		nonces        []encodingAccountNonce
 	)
 	for i := 0; i < 5; i++ {
-		slotBytes := testrand.Hash()
 		slot := encodingSlotWrites{
-			Slot: new(uint256.Int).SetBytes(slotBytes[:]),
+			Slot: NewEncodedStorageFromHash(testrand.Hash()),
 		}
 		for j := 0; j < 3; j++ {
-			valueBytes := testrand.Hash()
 			slot.Accesses = append(slot.Accesses, encodingStorageWrite{
 				TxIdx:      uint32(i*3 + j),
-				ValueAfter: new(uint256.Int).SetBytes(valueBytes[:]),
+				ValueAfter: NewEncodedStorageFromHash(testrand.Hash()),
 			})
 		}
 		if sort {
@@ -136,7 +134,7 @@ func makeTestAccountAccess(sort bool) AccountAccess {
 	}
 	if sort {
 		slices.SortFunc(storageWrites, func(a, b encodingSlotWrites) int {
-			return bytes.Compare(a.Slot.Bytes(), b.Slot.Bytes())
+			return bytes.Compare(a.Slot.inner.Bytes(), b.Slot.inner.Bytes())
 		})
 	}
 
@@ -173,9 +171,9 @@ func makeTestAccountAccess(sort bool) AccountAccess {
 		})
 	}
 
-	var encodedStorageReads []*uint256.Int
+	var encodedStorageReads []*EncodedStorage
 	for _, slot := range storageReads {
-		encodedStorageReads = append(encodedStorageReads, new(uint256.Int).SetBytes(slot[:]))
+		encodedStorageReads = append(encodedStorageReads, NewEncodedStorageFromHash(slot))
 	}
 	return AccountAccess{
 		Address:        [20]byte(testrand.Bytes(20)),
@@ -220,8 +218,7 @@ func TestBlockAccessListCopy(t *testing.T) {
 	// Make sure the mutations on copy won't affect the origin
 	for i := range *cpyCpy {
 		for j := 0; j < len((*cpyCpy)[i].StorageReads); j++ {
-			slotBytes := testrand.Hash()
-			(*cpyCpy)[i].StorageReads[j] = new(uint256.Int).SetBytes(slotBytes[:])
+			(*cpyCpy)[i].StorageReads[j] = NewEncodedStorageFromHash(testrand.Hash())
 		}
 	}
 	if !reflect.DeepEqual(list, *cpy) {
