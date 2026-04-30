@@ -500,22 +500,26 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 				return common.Hash{}
 			}
 			s.deletions[mutatedAddr] = struct{}{}
+			s.accountDeleted++
 		} else {
 			acct, code := s.updateAccount(mutatedAddr)
 
-			if code != nil {
+			if len(code) > 0 {
 				codeHash := crypto.Keccak256Hash(code)
 				acct.CodeHash = codeHash.Bytes()
 				if err := s.stateTrie.UpdateContractCode(mutatedAddr, codeHash, code); err != nil {
 					s.setError(err)
 					return common.Hash{}
 				}
+				s.codeUpdated++
+				s.codeUpdateBytes += int64(len(code))
 			}
 			if err := s.stateTrie.UpdateAccount(mutatedAddr, acct, len(code)); err != nil {
 				s.setError(err)
 				return common.Hash{}
 			}
 			s.postStates[mutatedAddr] = acct
+			s.accountUpdated++
 		}
 	}
 
