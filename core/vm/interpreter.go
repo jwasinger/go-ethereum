@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -222,7 +223,11 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			dynamicCost, err = operation.dynamicGas(evm, contract, stack, mem, memorySize)
 			cost += dynamicCost.RegularGas // for tracing
 			if err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
+				if errors.Is(err, ErrOutOfGas) {
+					return nil, err
+				} else {
+					return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
+				}
 			}
 			// for tracing: this gas consumption event is emitted below in the debug section.
 			if contract.Gas.RegularGas < dynamicCost.RegularGas {
