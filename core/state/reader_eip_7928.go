@@ -362,3 +362,13 @@ func (r *readerTracker) TouchStorage(addr common.Address, slot common.Hash) {
 	}
 	list[slot] = struct{}{}
 }
+
+// GetStateStats forwards stats from the wrapped *stateReaderWithStats so the
+// reader-aggregator type assertion at reader.go:553 succeeds. Without this,
+// account/storage cache hit/miss counts emit zero on BAL blocks.
+func (r *prefetchStateReader) GetStateStats() StateReaderStats {
+	if stater, ok := r.StateReader.(StateReaderStater); ok {
+		return stater.GetStateStats()
+	}
+	return StateReaderStats{}
+}
