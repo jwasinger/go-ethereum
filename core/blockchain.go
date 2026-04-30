@@ -652,34 +652,40 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	writeTime := time.Since(writeStart)
 	var stats ExecuteStats
 
-	/*
-		// TODO: implement the gathering of this data
-			stats.AccountReads = statedb.AccountReads     // Account reads are complete(in processing)
-			stats.StorageReads = statedb.StorageReads     // Storage reads are complete(in processing)
-			stats.AccountUpdates = statedb.AccountUpdates // Account updates are complete(in validation)
-			stats.StorageUpdates = statedb.StorageUpdates // Storage updates are complete(in validation)
-			stats.AccountHashes = statedb.AccountHashes   // Account hashes are complete(in validation)
-			stats.CodeReads = statedb.CodeReads
+	// Counts: aggregated from per-tx workers + pre-tx + post-tx state in the
+	// parallel processor (read counters), plus BAL state-root computation
+	// (account/code/storage write counters via stateTransition.WriteCounts).
+	stats.StateCounts = res.Counts
+	balWrites := stateTransition.WriteCounts()
+	stats.StateCounts.Add(&balWrites)
 
-			stats.AccountLoaded = statedb.AccountLoaded
-			stats.AccountUpdated = statedb.AccountUpdated
-			stats.AccountDeleted = statedb.AccountDeleted
-			stats.StorageLoaded = statedb.StorageLoaded
-			stats.StorageUpdated = int(statedb.StorageUpdated.Load())
-			stats.StorageDeleted = int(statedb.StorageDeleted.Load())
-			stats.CodeLoaded = statedb.CodeLoaded
-			stats.CodeLoadBytes = statedb.CodeLoadBytes
+	// Time durations under parallel execution use wall-clock semantics.
+	// Per-tx duration sums (CPU-time) are intentionally not plumbed: they
+	// would conflict with mgas/sec accounting against TotalTime.
+	stats.Execution = res.ExecTime // wall-clock parallel execution
+	stats.ExecWall = res.ExecTime
+	stats.PostProcess = res.PostProcessTime
 
-		stats.Execution = ptime - (statedb.AccountReads + statedb.StorageReads + statedb.CodeReads)          // The time spent on EVM processing
-		stats.Validation = vtime - (statedb.AccountHashes + statedb.AccountUpdates + statedb.StorageUpdates) // The time spent on block validation
-	*/
+	// Map BALStateTransitionMetrics (already wall-clock-correct) onto schema
+	// fields used by logSlow's StateHashMs computation. The sum
+	// AccountUpdate+StateUpdate+StateHash is the parallel state-root compute
+	// time, matching reportBALMetrics's stateRootComputeTimer.
+	if m := res.StateTransitionMetrics; m != nil {
+		stats.AccountHashes = m.AccountUpdate + m.StateUpdate + m.StateHash
+		stats.AccountCommits = m.AccountCommits
+		stats.StorageCommits = m.StorageCommits
+		stats.DatabaseCommit = m.TrieDBCommits
+		stats.Prefetch = m.StatePrefetch
+	}
+	// AccountReads, StorageReads, CodeReads, AccountUpdates, StorageUpdates
+	// remain zero: no wall-clock equivalent under parallel execution. Their
+	// sum-over-tx interpretation conflicts with mgas/sec accounting, so the
+	// serialized-time meaning is honored only via stats.Execution.
 
-	// Update the metrics touched during block commit
-	stats.AccountCommits = stateTransition.Metrics().AccountCommits
-	stats.StorageCommits = stateTransition.Metrics().StorageCommits
-
-	// stats.StateReadCacheStats = whichReader.GetStats()
-	// ^ TODO fix this
+	// Cache stats from the shared prefetch reader (accumulates centrally).
+	if r, ok := prefetchReader.(state.ReaderStater); ok {
+		stats.StateReadCacheStats = r.GetStats()
+	}
 
 	elapsed := time.Since(startTime) + 1 // prevent zero division
 	stats.TotalTime = elapsed
@@ -2451,17 +2457,7 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 	stats.AccountHashes = statedb.AccountHashes   // Account hashes are complete(in validation)
 	stats.CodeReads = statedb.CodeReads
 
-	stats.AccountLoaded = statedb.AccountLoaded
-	stats.AccountUpdated = statedb.AccountUpdated
-	stats.AccountDeleted = statedb.AccountDeleted
-	stats.StorageLoaded = statedb.StorageLoaded
-	stats.StorageUpdated = int(statedb.StorageUpdated.Load())
-	stats.StorageDeleted = int(statedb.StorageDeleted.Load())
-
-	stats.CodeLoaded = statedb.CodeLoaded
-	stats.CodeLoadBytes = statedb.CodeLoadBytes
-	stats.CodeUpdated = statedb.CodeUpdated
-	stats.CodeUpdateBytes = statedb.CodeUpdateBytes
+	stats.StateCounts = statedb.SnapshotCounts()
 
 	stats.Execution = ptime - (statedb.AccountReads + statedb.StorageReads + statedb.CodeReads)          // The time spent on EVM processing
 	stats.Validation = vtime - (statedb.AccountHashes + statedb.AccountUpdates + statedb.StorageUpdates) // The time spent on block validation

@@ -63,15 +63,17 @@ func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
 	return &s.metrics
 }
 
-// WriteCounts returns a partial StateCounts populated only with the storage-
-// write counters tracked during the parallel state-root computation. The
-// account-update/code-update counters (AccountUpdated, AccountDeleted,
-// CodeUpdated, CodeUpdateBytes) are not tracked by BAL state transition and
-// stay at zero; treat as a known gap in BAL counter coverage.
+// WriteCounts returns the state-mutation counts tracked during the parallel
+// state-root computation: account update/delete, storage update/delete (atomic
+// loads), and code update count/bytes.
 func (s *BALStateTransition) WriteCounts() StateCounts {
 	return StateCounts{
-		StorageUpdated: s.storageUpdated.Load(),
-		StorageDeleted: s.storageDeleted.Load(),
+		AccountUpdated:  int(s.accountUpdated),
+		AccountDeleted:  int(s.accountDeleted),
+		StorageUpdated:  s.storageUpdated.Load(),
+		StorageDeleted:  s.storageDeleted.Load(),
+		CodeUpdated:     int(s.codeUpdated),
+		CodeUpdateBytes: int(s.codeUpdateBytes),
 	}
 }
 
