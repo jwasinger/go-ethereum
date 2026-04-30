@@ -576,3 +576,11 @@ func (r *reader) PrefetchReadTimes() (account, storage time.Duration) {
 	}
 	return 0, 0
 }
+
+// WaitPrefetch blocks until the wrapped prefetcher (if any) finishes its
+// task list. No-op for non-prefetch readers.
+func (r *reader) WaitPrefetch() {
+	if pr, ok := r.StateReader.(interface{ Wait() error }); ok {
+		_ = pr.Wait()
+	}
+}

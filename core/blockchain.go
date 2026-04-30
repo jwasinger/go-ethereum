@@ -683,6 +683,9 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 
 	// Sum read times across per-tx execution, BAL state-transition, and
 	// prefetcher async fetches. Sum-of-CPU-time, not wall-clock.
+	if w, ok := prefetchReader.(interface{ WaitPrefetch() }); ok {
+		w.WaitPrefetch() // ensure all prefetcher reads are accounted for
+	}
 	var prefetchAccountReads, prefetchStorageReads time.Duration
 	if pr, ok := prefetchReader.(interface {
 		PrefetchReadTimes() (time.Duration, time.Duration)
