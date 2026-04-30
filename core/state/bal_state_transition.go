@@ -41,10 +41,15 @@ type BALStateTransition struct {
 	tries     sync.Map //map[common.Address]Trie
 	deletions map[common.Address]struct{}
 
-	accountDeleted int64
-	accountUpdated int64
-	storageDeleted atomic.Int64
-	storageUpdated atomic.Int64
+	// Storage counters use atomic.Int64 because they're written from per-address
+	// goroutines (lines 440, 444). The other counters are written single-threaded
+	// inside IntermediateRoot's serial mutation loop, so plain int64 is race-free.
+	accountDeleted  int64
+	accountUpdated  int64
+	storageDeleted  atomic.Int64
+	storageUpdated  atomic.Int64
+	codeUpdated     int64
+	codeUpdateBytes int64
 
 	stateUpdate *stateUpdate
 
@@ -56,6 +61,18 @@ type BALStateTransition struct {
 
 func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
 	return &s.metrics
+}
+
+// WriteCounts returns a partial StateCounts populated only with the storage-
+// write counters tracked during the parallel state-root computation. The
+// account-update/code-update counters (AccountUpdated, AccountDeleted,
+// CodeUpdated, CodeUpdateBytes) are not tracked by BAL state transition and
+// stay at zero; treat as a known gap in BAL counter coverage.
+func (s *BALStateTransition) WriteCounts() StateCounts {
+	return StateCounts{
+		StorageUpdated: s.storageUpdated.Load(),
+		StorageDeleted: s.storageDeleted.Load(),
+	}
 }
 
 type BALStateTransitionMetrics struct {
