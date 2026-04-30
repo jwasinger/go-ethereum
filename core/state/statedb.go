@@ -223,6 +223,24 @@ func (s *StateDB) WithReader(reader Reader) *StateDB {
 	return cpy
 }
 
+// SnapshotCounts returns a value-copy of the state-mutation counters as a
+// plain-int StateCounts. Atomic fields are read via Load(); the result is
+// safe to copy, pass through channels, and aggregate via StateCounts.Add.
+func (s *StateDB) SnapshotCounts() StateCounts {
+	return StateCounts{
+		AccountLoaded:   s.AccountLoaded,
+		AccountUpdated:  s.AccountUpdated,
+		AccountDeleted:  s.AccountDeleted,
+		StorageLoaded:   s.StorageLoaded,
+		StorageUpdated:  s.StorageUpdated.Load(),
+		StorageDeleted:  s.StorageDeleted.Load(),
+		CodeLoaded:      s.CodeLoaded,
+		CodeLoadBytes:   s.CodeLoadBytes,
+		CodeUpdated:     s.CodeUpdated,
+		CodeUpdateBytes: s.CodeUpdateBytes,
+	}
+}
+
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
 // state trie concurrently while the state is mutated so that when we reach the
 // commit phase, most of the needed data is already hot.
