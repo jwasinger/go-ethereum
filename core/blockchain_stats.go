@@ -28,7 +28,9 @@ import (
 
 // ExecuteStats includes all the statistics of a block execution in details.
 type ExecuteStats struct {
-	// State read times
+	// State read times. For BAL blocks these are sum-of-CPU-time across
+	// per-tx, pre-tx, post-tx, BAL state-transition and prefetcher paths;
+	// can exceed TotalTime by design. Sequential blocks: wall-clock.
 	AccountReads   time.Duration // Time spent on the account reads
 	StorageReads   time.Duration // Time spent on the storage reads
 	AccountHashes  time.Duration // Time spent on the account trie hash
