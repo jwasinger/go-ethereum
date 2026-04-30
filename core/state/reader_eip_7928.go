@@ -64,6 +64,8 @@ package state
 
 import (
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -86,6 +88,11 @@ type prefetchStateReader struct {
 	done      chan struct{}
 	term      chan struct{}
 	closeOnce sync.Once
+
+	// Async-fetch read-time accumulators (atomic because process() runs
+	// across N goroutines).
+	accountReadNS atomic.Int64
+	storageReadNS atomic.Int64
 }
 
 func newPrefetchStateReader(reader StateReader, accessList bal.StorageKeys, nThreads int) *prefetchStateReader {
@@ -180,9 +187,13 @@ func (r *prefetchStateReader) process(start, limit int) {
 					return
 				default:
 					if j == 0 {
+						accountReadStart := time.Now()
 						r.StateReader.Account(t.addr)
+						r.accountReadNS.Add(time.Since(accountReadStart).Nanoseconds())
 					} else {
+						storageReadStart := time.Now()
 						r.StateReader.Storage(t.addr, t.slots[j-1])
+						r.storageReadNS.Add(time.Since(storageReadStart).Nanoseconds())
 					}
 				}
 			}
@@ -371,4 +382,11 @@ func (r *prefetchStateReader) GetStateStats() StateReaderStats {
 		return stater.GetStateStats()
 	}
 	return StateReaderStats{}
+}
+
+// PrefetchReadTimes returns the accumulated wall-time-of-each-call durations
+// for asynchronous account/storage prefetches. Sum-of-CPU-time across worker
+// goroutines; not wall-clock total prefetch time.
+func (r *prefetchStateReader) PrefetchReadTimes() (account, storage time.Duration) {
+	return time.Duration(r.accountReadNS.Load()), time.Duration(r.storageReadNS.Load())
 }
