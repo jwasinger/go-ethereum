@@ -290,3 +290,41 @@ func TestPrefetchStateReaderForwardsStats(t *testing.T) {
 		t.Fatalf("forward mismatch: got %+v, want %+v", gotStats, stats)
 	}
 }
+
+// TestReaderForwardsPrefetchReadTimes locks down that the *reader aggregator
+// (the type returned by ReaderEIP7928) exposes PrefetchReadTimes via the
+// inner *prefetchStateReader. Without the forwarding method on *reader,
+// callers that hold a Reader interface would not see the prefetcher's
+// accumulated read times even though the prefetcher tracks them.
+func TestReaderForwardsPrefetchReadTimes(t *testing.T) {
+	stub := newRefStateReader()
+	cached := newStateReaderWithCache(stub)
+	withStats := newStateReaderWithStats(cached)
+	prefetch := newPrefetchStateReaderInternal(withStats, nil, 1)
+
+	// Seed timer values directly on the prefetcher.
+	prefetch.accountReadNS.Store(123)
+	prefetch.storageReadNS.Store(456)
+
+	// Wrap in *reader the way ReaderEIP7928 does (with a nil code reader for
+	// brevity; PrefetchReadTimes only inspects the state side).
+	r := newReader(nil, prefetch)
+
+	a, s := r.PrefetchReadTimes()
+	if a != 123 {
+		t.Errorf("account: got %v, want 123", a)
+	}
+	if s != 456 {
+		t.Errorf("storage: got %v, want 456", s)
+	}
+}
+
+// TestReaderPrefetchReadTimesNonPrefetch verifies the safe zero fallback when
+// the wrapped state reader doesn't expose PrefetchReadTimes (sequential path).
+func TestReaderPrefetchReadTimesNonPrefetch(t *testing.T) {
+	r := newReader(nil, newRefStateReader())
+	a, s := r.PrefetchReadTimes()
+	if a != 0 || s != 0 {
+		t.Errorf("expected (0, 0), got (%v, %v)", a, s)
+	}
+}

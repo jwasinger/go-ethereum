@@ -20,6 +20,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/overlay"
@@ -562,4 +563,16 @@ func (r *reader) GetStats() ReaderStats {
 		CodeStats:  r.GetCodeStats(),
 		StateStats: r.GetStateStats(),
 	}
+}
+
+// PrefetchReadTimes returns the prefetcher's accumulated read times if the
+// underlying state reader exposes them (e.g. *prefetchStateReader). Returns
+// zero if the wrapped reader doesn't track these (sequential paths, tests).
+func (r *reader) PrefetchReadTimes() (account, storage time.Duration) {
+	if pr, ok := r.StateReader.(interface {
+		PrefetchReadTimes() (time.Duration, time.Duration)
+	}); ok {
+		return pr.PrefetchReadTimes()
+	}
+	return 0, 0
 }
