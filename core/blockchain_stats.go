@@ -328,11 +328,13 @@ func (s *ExecuteStats) reportBALMetrics() {
 	accountCommitTimer.Update(s.AccountCommits) // Account commits are complete, we can mark them
 	storageCommitTimer.Update(s.StorageCommits) // Storage commits are complete, we can mark them
 
-	stateTriePrefetchTimer.Update(s.balTransitionStats.StatePrefetch)
-	accountTriesUpdateTimer.Update(s.balTransitionStats.AccountUpdate)
-	stateTrieUpdateTimer.Update(s.balTransitionStats.StateUpdate)
-	stateTrieHashTimer.Update(s.balTransitionStats.StateHash)
-	stateRootComputeTimer.Update(s.balTransitionStats.AccountUpdate + s.balTransitionStats.StateUpdate + s.balTransitionStats.StateHash)
+	if m := s.balTransitionStats; m != nil {
+		stateTriePrefetchTimer.Update(m.StatePrefetch)
+		accountTriesUpdateTimer.Update(m.AccountUpdate)
+		stateTrieUpdateTimer.Update(m.StateUpdate)
+		stateTrieHashTimer.Update(m.StateHash)
+		stateRootComputeTimer.Update(m.AccountUpdate + m.StateUpdate + m.StateHash)
+	}
 
 	//blockExecutionTimer.Update(s.Execution)                 // The time spent on EVM processing
 	// ^basically impossible to get this metric with parallel execution
