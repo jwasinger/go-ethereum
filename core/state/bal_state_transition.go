@@ -42,14 +42,14 @@ type BALStateTransition struct {
 	deletions map[common.Address]struct{}
 
 	// Storage counters use atomic.Int64 because they're written from per-address
-	// goroutines (lines 440, 444). The other counters are written single-threaded
-	// inside IntermediateRoot's serial mutation loop, so plain int64 is race-free.
-	accountDeleted  int64
-	accountUpdated  int64
+	// goroutines. The others are written single-threaded inside IntermediateRoot's
+	// serial mutation loop, so plain int matches StateCounts' int fields.
+	accountDeleted  int
+	accountUpdated  int
 	storageDeleted  atomic.Int64
 	storageUpdated  atomic.Int64
-	codeUpdated     int64
-	codeUpdateBytes int64
+	codeUpdated     int
+	codeUpdateBytes int
 
 	// Read-time accumulators for state-root recomputation reads. Atomic
 	// because s.reader.Account/Storage is called from per-address goroutines.
@@ -71,16 +71,15 @@ func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
 }
 
 // WriteCounts returns the state-mutation counts tracked during the parallel
-// state-root computation: account update/delete, storage update/delete (atomic
-// loads), and code update count/bytes.
+// state-root computation.
 func (s *BALStateTransition) WriteCounts() StateCounts {
 	return StateCounts{
-		AccountUpdated:  int(s.accountUpdated),
-		AccountDeleted:  int(s.accountDeleted),
+		AccountUpdated:  s.accountUpdated,
+		AccountDeleted:  s.accountDeleted,
 		StorageUpdated:  s.storageUpdated.Load(),
 		StorageDeleted:  s.storageDeleted.Load(),
-		CodeUpdated:     int(s.codeUpdated),
-		CodeUpdateBytes: int(s.codeUpdateBytes),
+		CodeUpdated:     s.codeUpdated,
+		CodeUpdateBytes: s.codeUpdateBytes,
 	}
 }
 
@@ -373,9 +372,9 @@ func (s *BALStateTransition) CommitWithUpdate(block uint64, deleteEmptyObjects b
 		return common.Hash{}, nil, err
 	}
 
-	accountUpdatedMeter.Mark(s.accountUpdated)
+	accountUpdatedMeter.Mark(int64(s.accountUpdated))
 	storageUpdatedMeter.Mark(s.storageUpdated.Load())
-	accountDeletedMeter.Mark(s.accountDeleted)
+	accountDeletedMeter.Mark(int64(s.accountDeleted))
 	storageDeletedMeter.Mark(s.storageDeleted.Load())
 	accountTrieUpdatedMeter.Mark(int64(accountTrieNodesUpdated))
 	accountTrieDeletedMeter.Mark(int64(accountTrieNodesDeleted))
@@ -534,7 +533,7 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 					return common.Hash{}
 				}
 				s.codeUpdated++
-				s.codeUpdateBytes += int64(len(code))
+				s.codeUpdateBytes += len(code)
 			}
 			if err := s.stateTrie.UpdateAccount(mutatedAddr, acct, len(code)); err != nil {
 				s.setError(err)
