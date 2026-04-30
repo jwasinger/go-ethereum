@@ -53,7 +53,7 @@ func TestStateCountsAdd(t *testing.T) {
 		CodeUpdated:     900,
 		CodeUpdateBytes: 1000,
 	}
-	a.Add(&b)
+	a.Add(b)
 	want := state.StateCounts{
 		AccountLoaded:   101,
 		AccountUpdated:  202,

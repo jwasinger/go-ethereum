@@ -183,7 +183,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 	// would otherwise be discarded; this captures system-contract reads and
 	// the engine.Finalize state mutations.
 	postTxCounts := postTxState.SnapshotCounts()
-	aggCounts.Add(&postTxCounts)
+	aggCounts.Add(postTxCounts)
 
 	// Fold post-tx statedb reads into the aggregate (system contracts,
 	// withdrawal queue, consolidation queue).
@@ -267,7 +267,7 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxReads ba
 						cumulativeStateGas += res.txState
 						results = append(results, res)
 						accesses.Merge(res.stateReads)
-						aggCounts.Add(&res.counts)
+						aggCounts.Add(res.counts)
 						aggAccountReads += res.accountReads
 						aggStorageReads += res.storageReads
 						aggCodeReads += res.codeReads

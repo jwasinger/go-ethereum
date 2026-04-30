@@ -657,7 +657,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	// (account/code/storage write counters via stateTransition.WriteCounts).
 	stats.StateCounts = res.Counts
 	balWrites := stateTransition.WriteCounts()
-	stats.StateCounts.Add(&balWrites)
+	stats.StateCounts.Add(balWrites)
 
 	// Time durations under parallel execution use wall-clock semantics.
 	// Per-tx duration sums (CPU-time) are intentionally not plumbed: they

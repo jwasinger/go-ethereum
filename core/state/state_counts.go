@@ -43,9 +43,10 @@ type StateCounts struct {
 }
 
 // Add merges other into c. Plain integer addition — no atomics here, since
-// StateCounts is the snapshot type. Callers must ensure other is no longer
-// being mutated when Add is invoked.
-func (c *StateCounts) Add(other *StateCounts) {
+// StateCounts is the snapshot type. The receiver is the only mutated party;
+// other is taken by value (the struct is small and value semantics matches
+// the snapshot thesis stated above).
+func (c *StateCounts) Add(other StateCounts) {
 	c.AccountLoaded += other.AccountLoaded
 	c.AccountUpdated += other.AccountUpdated
 	c.AccountDeleted += other.AccountDeleted
