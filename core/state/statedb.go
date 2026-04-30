@@ -241,6 +241,16 @@ func (s *StateDB) SnapshotCounts() StateCounts {
 	}
 }
 
+// SnapshotReads returns a value-copy of the {Account, Storage, Code} read
+// durations accumulated on this StateDB.
+func (s *StateDB) SnapshotReads() ReadDurations {
+	return ReadDurations{
+		Account: s.AccountReads,
+		Storage: s.StorageReads,
+		Code:    s.CodeReads,
+	}
+}
+
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
 // state trie concurrently while the state is mutated so that when we reach the
 // commit phase, most of the needed data is already hot.

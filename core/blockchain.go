@@ -689,9 +689,9 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		prefetchAccountReads, prefetchStorageReads = pr.PrefetchReadTimes()
 	}
 	balAccountReads, balStorageReads := stateTransition.ReadTimes()
-	stats.AccountReads = res.PerTxAccountReads + prefetchAccountReads + balAccountReads
-	stats.StorageReads = res.PerTxStorageReads + prefetchStorageReads + balStorageReads
-	stats.CodeReads = res.PerTxCodeReads
+	stats.AccountReads = res.Reads.Account + prefetchAccountReads + balAccountReads
+	stats.StorageReads = res.Reads.Storage + prefetchStorageReads + balStorageReads
+	stats.CodeReads = res.Reads.Code
 
 	// Cache stats from the shared prefetch reader (accumulates centrally).
 	if r, ok := prefetchReader.(state.ReaderStater); ok {

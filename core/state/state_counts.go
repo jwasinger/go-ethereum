@@ -16,19 +16,28 @@
 
 package state
 
+import "time"
+
+// ReadDurations groups the {Account, Storage, Code} state-read times that are
+// aggregated across pre-tx, per-tx and post-tx statedbs in the BAL parallel
+// path. Sum-of-CPU-time, not wall-clock.
+type ReadDurations struct {
+	Account time.Duration
+	Storage time.Duration
+	Code    time.Duration
+}
+
+// Add merges other into r.
+func (r *ReadDurations) Add(other ReadDurations) {
+	r.Account += other.Account
+	r.Storage += other.Storage
+	r.Code += other.Code
+}
+
 // StateCounts holds count-only statistics gathered during a block's state
-// transition. It is the snapshot/aggregation type: all fields are plain ints,
-// safe to copy and pass by value through channels and struct fields.
-//
-// StateDB still uses atomic counters internally (for concurrent worker
-// updates); the conversion to plain ints happens at the snapshot boundary
-// in (*StateDB).SnapshotCounts. This separation keeps the live atomics
-// scoped to the mutation surface and lets the rest of the pipeline use
-// vet-clean value semantics.
-//
-// Only counts live here — time.Duration fields (AccountReads, StorageReads,
-// etc.) stay on StateDB directly, since their parallel-execution semantics
-// don't fit the simple Add merge pattern.
+// transition. Plain-int snapshot type, safe to copy through channels.
+// Atomic counters on StateDB are converted at the snapshot boundary in
+// SnapshotCounts. Read durations live in ReadDurations (separate type).
 type StateCounts struct {
 	AccountLoaded   int   // accounts retrieved from the database during the state transition
 	AccountUpdated  int   // accounts updated during the state transition
