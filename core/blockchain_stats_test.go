@@ -26,6 +26,18 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+// TestReadDurationsAdd locks down the read-duration merge primitive used to
+// aggregate per-tx, pre-tx and post-tx reads in the BAL parallel path.
+func TestReadDurationsAdd(t *testing.T) {
+	a := state.ReadDurations{Account: 1 * time.Millisecond, Storage: 2 * time.Millisecond, Code: 3 * time.Millisecond}
+	b := state.ReadDurations{Account: 10 * time.Millisecond, Storage: 20 * time.Millisecond, Code: 30 * time.Millisecond}
+	a.Add(b)
+	want := state.ReadDurations{Account: 11 * time.Millisecond, Storage: 22 * time.Millisecond, Code: 33 * time.Millisecond}
+	if a != want {
+		t.Fatalf("Add mismatch: got %+v, want %+v", a, want)
+	}
+}
+
 // TestStateCountsAdd locks down the count merge primitive used to aggregate
 // per-tx, pre-tx and post-tx counters in the BAL parallel path.
 func TestStateCountsAdd(t *testing.T) {
