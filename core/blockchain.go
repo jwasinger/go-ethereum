@@ -677,10 +677,6 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		stats.DatabaseCommit = m.TrieDBCommits
 		stats.Prefetch = m.StatePrefetch
 	}
-	// Refresh BAL read-time cache: commitAccount runs storage reads during
-	// writeBlockWithState, after the first Metrics() snapshot.
-	stateTransition.Metrics()
-
 	// Sum read times across per-tx execution, BAL state-transition, and
 	// prefetcher async fetches. Sum-of-CPU-time, not wall-clock.
 	if w, ok := prefetchReader.(interface{ WaitPrefetch() }); ok {
@@ -692,13 +688,10 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	}); ok {
 		prefetchAccountReads, prefetchStorageReads = pr.PrefetchReadTimes()
 	}
-	stats.AccountReads = res.PerTxAccountReads + prefetchAccountReads
-	stats.StorageReads = res.PerTxStorageReads + prefetchStorageReads
+	balAccountReads, balStorageReads := stateTransition.ReadTimes()
+	stats.AccountReads = res.PerTxAccountReads + prefetchAccountReads + balAccountReads
+	stats.StorageReads = res.PerTxStorageReads + prefetchStorageReads + balStorageReads
 	stats.CodeReads = res.PerTxCodeReads
-	if m := res.StateTransitionMetrics; m != nil {
-		stats.AccountReads += m.AccountReadTime
-		stats.StorageReads += m.StorageReadTime
-	}
 
 	// Cache stats from the shared prefetch reader (accumulates centrally).
 	if r, ok := prefetchReader.(state.ReaderStater); ok {

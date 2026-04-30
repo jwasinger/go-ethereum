@@ -64,10 +64,18 @@ type BALStateTransition struct {
 	err error
 }
 
+// Metrics returns the cached commit/hash-phase timings. Read-time atomics
+// are exposed separately via ReadTimes; that decoupling avoids the
+// snapshot-staleness pitfall when commitAccount runs more reads after
+// Metrics is first called.
 func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
-	s.metrics.AccountReadTime = time.Duration(s.accountReadNS.Load())
-	s.metrics.StorageReadTime = time.Duration(s.storageReadNS.Load())
 	return &s.metrics
+}
+
+// ReadTimes returns the current accumulated read times from atomic counters.
+// Always live; safe to call at any point after IntermediateRoot/Commit work.
+func (s *BALStateTransition) ReadTimes() (account, storage time.Duration) {
+	return time.Duration(s.accountReadNS.Load()), time.Duration(s.storageReadNS.Load())
 }
 
 // WriteCounts returns the state-mutation counts tracked during the parallel
@@ -96,11 +104,6 @@ type BALStateTransitionMetrics struct {
 	SnapshotCommits time.Duration
 	TrieDBCommits   time.Duration
 	TotalCommitTime time.Duration
-
-	// State-root recomputation read times. Sum of CPU time across the per-
-	// address goroutines that call s.reader.Account/Storage during commit.
-	AccountReadTime time.Duration
-	StorageReadTime time.Duration
 }
 
 func NewBALStateTransition(block *types.Block, prefetchReader Reader, db Database, parentRoot common.Hash) (*BALStateTransition, error) {
