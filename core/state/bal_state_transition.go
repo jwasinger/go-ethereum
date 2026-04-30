@@ -86,11 +86,10 @@ func (s *BALStateTransition) WriteCounts() StateCounts {
 
 type BALStateTransitionMetrics struct {
 	// trie hashing metrics
-	AccountUpdate         time.Duration
-	StatePrefetch         time.Duration
-	StateUpdate           time.Duration
-	StateHash             time.Duration
-	OriginStorageLoadTime time.Duration
+	AccountUpdate time.Duration
+	StatePrefetch time.Duration
+	StateUpdate   time.Duration
+	StateHash     time.Duration
 
 	// commit metrics
 	AccountCommits  time.Duration
@@ -522,6 +521,11 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 		} else {
 			acct, code := s.updateAccount(mutatedAddr)
 
+			// Use len(code) > 0 (not code != nil) to match the non-BAL semantic
+			// at statedb.go (obj.dirtyCode && len(obj.code) > 0). In devnet-3
+			// BAL access lists, an empty []byte is non-nil but encodes "no code
+			// install"; treating it as a code mutation would over-count and
+			// call UpdateContractCode with an empty payload.
 			if len(code) > 0 {
 				codeHash := crypto.Keccak256Hash(code)
 				acct.CodeHash = codeHash.Bytes()
