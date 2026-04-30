@@ -677,11 +677,12 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		stats.DatabaseCommit = m.TrieDBCommits
 		stats.Prefetch = m.StatePrefetch
 	}
-	// Read durations: sum across all three sources (per-tx execution, BAL
-	// state-transition recomputation, prefetcher async fetches). This is
-	// sum-of-CPU-time across parallel workers, not wall-clock — it can
-	// exceed TotalTime, which is the intended interpretation under parallel
-	// execution: "total CPU-time spent reading state across the block".
+	// Refresh BAL read-time cache: commitAccount runs storage reads during
+	// writeBlockWithState, after the first Metrics() snapshot.
+	stateTransition.Metrics()
+
+	// Sum read times across per-tx execution, BAL state-transition, and
+	// prefetcher async fetches. Sum-of-CPU-time, not wall-clock.
 	var prefetchAccountReads, prefetchStorageReads time.Duration
 	if pr, ok := prefetchReader.(interface {
 		PrefetchReadTimes() (time.Duration, time.Duration)
