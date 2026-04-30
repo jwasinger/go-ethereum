@@ -51,6 +51,11 @@ type BALStateTransition struct {
 	codeUpdated     int64
 	codeUpdateBytes int64
 
+	// Read-time accumulators for state-root recomputation reads. Atomic
+	// because s.reader.Account/Storage is called from per-address goroutines.
+	accountReadNS atomic.Int64
+	storageReadNS atomic.Int64
+
 	stateUpdate *stateUpdate
 
 	metrics   BALStateTransitionMetrics
@@ -60,6 +65,8 @@ type BALStateTransition struct {
 }
 
 func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
+	s.metrics.AccountReadTime = time.Duration(s.accountReadNS.Load())
+	s.metrics.StorageReadTime = time.Duration(s.storageReadNS.Load())
 	return &s.metrics
 }
 
@@ -91,6 +98,11 @@ type BALStateTransitionMetrics struct {
 	SnapshotCommits time.Duration
 	TrieDBCommits   time.Duration
 	TotalCommitTime time.Duration
+
+	// State-root recomputation read times. Sum of CPU time across the per-
+	// address goroutines that call s.reader.Account/Storage during commit.
+	AccountReadTime time.Duration
+	StorageReadTime time.Duration
 }
 
 func NewBALStateTransition(block *types.Block, prefetchReader Reader, db Database, parentRoot common.Hash) (*BALStateTransition, error) {
@@ -220,7 +232,9 @@ func (s *BALStateTransition) commitAccount(addr common.Address) (*accountUpdate,
 	for key, value := range s.diffs[addr].StorageWrites {
 		hash := crypto.Keccak256Hash(key[:])
 		op.storages[hash] = encode(value)
+		storageReadStart := time.Now()
 		storage, err := s.reader.Storage(addr, key)
+		s.storageReadNS.Add(time.Since(storageReadStart).Nanoseconds())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -416,7 +430,9 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 			defer wg.Done()
 
 			// 1 (c): update each mutated account, producing the post-block state object by applying the state mutations to the prestate (retrieved in 1a).
+			accountReadStart := time.Now()
 			acct, err := s.reader.Account(address)
+			s.accountReadNS.Add(time.Since(accountReadStart).Nanoseconds())
 			if err != nil {
 				s.setError(err)
 				return
