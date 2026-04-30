@@ -270,17 +270,17 @@ func buildSlowBlockLog(s *ExecuteStats, block *types.Block) slowBlockLog {
 	// Populate the parallel-execution extension only for BAL-processed blocks.
 	if m := s.balTransitionStats; m != nil {
 		logEntry.BAL = &slowBlockBAL{
-			ExecWallMs:       durationToMs(s.ExecWall),
-			PostProcessMs:    durationToMs(s.PostProcess),
-			PrefetchMs:       durationToMs(s.Prefetch),
-			StatePrefetchMs:  durationToMs(m.StatePrefetch),
-			AccountUpdateMs:  durationToMs(m.AccountUpdate),
-			StateUpdateMs:    durationToMs(m.StateUpdate),
-			StateHashMs:      durationToMs(m.StateHash),
-			AccountCommitMs:  durationToMs(m.AccountCommits),
-			StorageCommitMs:  durationToMs(m.StorageCommits),
-			TrieDBCommitMs:   durationToMs(m.TrieDBCommits),
-			SnapshotCommitMs: durationToMs(m.SnapshotCommits),
+			ExecWallMs:       durationToMs(s.ExecWall),       // wall-clock parallel transaction execution
+			PostProcessMs:    durationToMs(s.PostProcess),    // post-tx system contracts (withdrawals, consolidations, finalize)
+			PrefetchMs:       durationToMs(s.Prefetch),       // BAL state prefetcher (alias of state_prefetch_ms)
+			StatePrefetchMs:  durationToMs(m.StatePrefetch),  // async state-load time during state-root computation
+			AccountUpdateMs:  durationToMs(m.AccountUpdate),  // account trie update phase
+			StateUpdateMs:    durationToMs(m.StateUpdate),    // state trie update phase
+			StateHashMs:      durationToMs(m.StateHash),      // state-root hash computation
+			AccountCommitMs:  durationToMs(m.AccountCommits), // account trie commit to disk
+			StorageCommitMs:  durationToMs(m.StorageCommits), // storage trie commit to disk
+			TrieDBCommitMs:   durationToMs(m.TrieDBCommits),  // trie database commit
+			SnapshotCommitMs: durationToMs(m.SnapshotCommits), // state snapshot commit
 		}
 	}
 	return logEntry
