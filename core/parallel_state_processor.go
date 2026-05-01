@@ -23,11 +23,13 @@ type ProcessResultWithMetrics struct {
 	// the time it took to execute all txs in the block
 	ExecTime        time.Duration
 	PostProcessTime time.Duration
-	// Counts is the aggregate of per-tx, pre-tx and post-tx state-mutation
-	// counts. Plain-int snapshot, safe to copy.
+	// Counts is the per-StateDB sum of state-mutation counters across pre-tx,
+	// per-tx and post-tx phases. The caller may override AccountLoaded and
+	// StorageLoaded with deduplicated counts derived from block.AccessList()
+	// (per-StateDB sums over-count addresses touched by multiple phases).
 	Counts state.StateCounts
-	// Reads is the aggregate of per-tx, pre-tx and post-tx state-read times.
-	// Sum-of-CPU-time, not wall-clock.
+	// Reads is the sum of per-StateDB read times across pre-tx, per-tx and
+	// post-tx phases. Sum-of-CPU-time, not wall-clock.
 	Reads state.ReadDurations
 }
 
