@@ -1902,3 +1902,86 @@ func TestStandardTraceBadBlockToFile(t *testing.T) {
 		t.Fatal("want error for non-existent bad block, have none")
 	}
 }
+
+// TestTraceCallOutOfGasMemoryExpansion exercises an opcode-level trace of a
+// CALL whose argsLength induces a memory expansion that the invoker cannot
+// afford, so the dynamic gas check inside the CALL gas function returns
+// ErrOutOfGas before the call is dispatched.
+func TestTraceCallOutOfGasMemoryExpansion(t *testing.T) {
+	t.Parallel()
+
+	accounts := newAccounts(1)
+	contract := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+	target := common.HexToAddress("0x000000000000000000000000000000000000c0de")
+
+	// CALL stack layout (top -> bottom):
+	//   gas, addr, value, argsOffset, argsLength, retOffset, retLength
+	// We push them in reverse so the top of the stack ends up at gas. The
+	// argsLength is 0x100000 (1 MiB), which forces a memory expansion whose
+	// quadratic cost (~2.2M gas) far exceeds the gas budget supplied to the
+	// transaction below — gasCallIntrinsic will therefore return ErrOutOfGas
+	// at its dynamic gas check.
+	code := []byte{
+		byte(vm.PUSH1), 0x00, // retLength
+		byte(vm.PUSH1), 0x00, // retOffset
+		byte(vm.PUSH3), 0x10, 0x00, 0x00, // argsLength = 0x100000 (1 MiB)
+		byte(vm.PUSH1), 0x00, // argsOffset
+		byte(vm.PUSH1), 0x00, // value
+		byte(vm.PUSH20),
+		target[0], target[1], target[2], target[3], target[4],
+		target[5], target[6], target[7], target[8], target[9],
+		target[10], target[11], target[12], target[13], target[14],
+		target[15], target[16], target[17], target[18], target[19],
+		byte(vm.PUSH3), 0xFF, 0xFF, 0xFF, // gas forwarded to the callee
+		byte(vm.CALL),
+		byte(vm.STOP),
+	}
+
+	genesis := &core.Genesis{
+		Config: params.TestChainConfig,
+		Alloc: types.GenesisAlloc{
+			accounts[0].addr: {Balance: big.NewInt(params.Ether)},
+			contract: {
+				Nonce: 1,
+				Code:  code,
+			},
+		},
+	}
+	backend := newTestBackend(t, 1, genesis, func(i int, b *core.BlockGen) {})
+	defer backend.teardown()
+
+	api := NewAPI(backend)
+	gas := hexutil.Uint64(100_000)
+	result, err := api.TraceCall(context.Background(), ethapi.TransactionArgs{
+		From: &accounts[0].addr,
+		To:   &contract,
+		Gas:  &gas,
+	}, rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber), nil)
+	if err != nil {
+		t.Fatalf("failed to trace call: %v", err)
+	}
+
+	var traced *logger.ExecutionResult
+	if err := json.Unmarshal(result.(json.RawMessage), &traced); err != nil {
+		t.Fatalf("failed to unmarshal trace result: %v", err)
+	}
+
+	expectedLogs := []string{
+		`{"pc":0,"op":"PUSH1","gas":79000,"gasCost":3,"depth":1,"stack":[]}`,
+		`{"pc":2,"op":"PUSH1","gas":78997,"gasCost":3,"depth":1,"stack":["0x0"]}`,
+		`{"pc":4,"op":"PUSH3","gas":78994,"gasCost":3,"depth":1,"stack":["0x0","0x0"]}`,
+		`{"pc":8,"op":"PUSH1","gas":78991,"gasCost":3,"depth":1,"stack":["0x0","0x0","0x100000"]}`,
+		`{"pc":10,"op":"PUSH1","gas":78988,"gasCost":3,"depth":1,"stack":["0x0","0x0","0x100000","0x0"]}`,
+		`{"pc":12,"op":"PUSH20","gas":78985,"gasCost":3,"depth":1,"stack":["0x0","0x0","0x100000","0x0","0x0"]}`,
+		`{"pc":33,"op":"PUSH3","gas":78982,"gasCost":3,"depth":1,"stack":["0x0","0x0","0x100000","0x0","0x0","0xc0de"]}`,
+		`{"pc":37,"op":"CALL","gas":78979,"gasCost":100,"depth":1,"error":"out of gas","stack":["0x0","0x0","0x100000","0x0","0x0","0xc0de","0xffffff"]}`,
+	}
+	if len(traced.StructLogs) != len(expectedLogs) {
+		t.Fatalf("unexpected structLogs count: have %d want %d", len(traced.StructLogs), len(expectedLogs))
+	}
+	for i, got := range traced.StructLogs {
+		if string(got) != expectedLogs[i] {
+			t.Errorf("structLog[%d] mismatch:\nhave: %s\nwant: %s", i, string(got), expectedLogs[i])
+		}
+	}
+}
