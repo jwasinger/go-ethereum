@@ -652,12 +652,17 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	writeTime := time.Since(writeStart)
 	var stats ExecuteStats
 
-	// Counts: aggregated from per-tx workers + pre-tx + post-tx state in the
-	// parallel processor (read counters), plus BAL state-root computation
-	// (account/code/storage write counters via stateTransition.WriteCounts).
+	// Counts: write counts come from the BAL state transition; read counts
+	// for accounts/storage come from the BAL access list itself (deduplicated).
+	// CodeLoaded/CodeLoadBytes still sum per-tx worker contributions because
+	// the BAL doesn't track code-fetch events distinctly — accept slight
+	// over-counting there.
 	stats.StateCounts = res.Counts
-	balWrites := stateTransition.WriteCounts()
-	stats.StateCounts.Add(balWrites)
+	stats.StateCounts.Add(stateTransition.WriteCounts())
+	if al := block.AccessList(); al != nil {
+		stats.StateCounts.AccountLoaded = al.UniqueAccountCount()
+		stats.StateCounts.StorageLoaded = al.UniqueStorageSlotCount()
+	}
 
 	// Time durations under parallel execution use wall-clock semantics.
 	// Per-tx duration sums (CPU-time) are intentionally not plumbed: they
