@@ -653,16 +653,17 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	var stats ExecuteStats
 
 	// Counts: write counts come from the BAL state transition; read counts
-	// for accounts/storage come from the BAL access list itself (deduplicated).
-	// CodeLoaded/CodeLoadBytes still sum per-tx worker contributions because
-	// the BAL doesn't track code-fetch events distinctly — accept slight
-	// over-counting there.
+	// for accounts/storage come from the BAL access list (deduplicated);
+	// code-load counts come from a deduplicated address set tracked across
+	// all phase StateDBs by the parallel processor.
 	stats.StateCounts = res.Counts
 	stats.StateCounts.Add(stateTransition.WriteCounts())
 	if al := block.AccessList(); al != nil {
 		stats.StateCounts.AccountLoaded = al.UniqueAccountCount()
 		stats.StateCounts.StorageLoaded = al.UniqueStorageSlotCount()
 	}
+	stats.StateCounts.CodeLoaded = res.CodeLoaded
+	stats.StateCounts.CodeLoadBytes = res.CodeLoadBytes
 
 	// Time durations under parallel execution use wall-clock semantics.
 	// Per-tx duration sums (CPU-time) are intentionally not plumbed: they

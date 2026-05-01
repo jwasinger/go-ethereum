@@ -251,6 +251,25 @@ func (s *StateDB) SnapshotReads() ReadDurations {
 	}
 }
 
+// SnapshotCodeLoads returns the addresses whose contract code body was
+// fetched during this StateDB's lifetime, mapped to byte length. Used by the
+// BAL parallel pipeline to deduplicate code-load events across phase StateDBs.
+func (s *StateDB) SnapshotCodeLoads() map[common.Address]int {
+	if len(s.stateObjects) == 0 {
+		return nil
+	}
+	var m map[common.Address]int
+	for addr, obj := range s.stateObjects {
+		if l := len(obj.code); l > 0 {
+			if m == nil {
+				m = make(map[common.Address]int)
+			}
+			m[addr] = l
+		}
+	}
+	return m
+}
+
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
 // state trie concurrently while the state is mutated so that when we reach the
 // commit phase, most of the needed data is already hot.
