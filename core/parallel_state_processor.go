@@ -24,17 +24,14 @@ type ProcessResultWithMetrics struct {
 	// the time it took to execute all txs in the block
 	ExecTime        time.Duration
 	PostProcessTime time.Duration
-	// Counts is the per-StateDB sum of state-mutation counters across pre-tx,
-	// per-tx and post-tx phases. The caller may override AccountLoaded and
-	// StorageLoaded with deduplicated counts derived from block.AccessList()
-	// (per-StateDB sums over-count addresses touched by multiple phases).
+	// Counts sums state-mutation counters across pre-tx, per-tx and post-tx
+	// StateDBs. AccountLoaded/StorageLoaded are NOT deduplicated here — the
+	// caller overrides them from block.AccessList().
 	Counts state.StateCounts
-	// Reads is the sum of per-StateDB read times across pre-tx, per-tx and
-	// post-tx phases. Sum-of-CPU-time, not wall-clock.
+	// Reads sums per-StateDB read times (sum-of-CPU-time, not wall-clock).
 	Reads state.ReadDurations
-	// CodeLoaded is the deduplicated count of unique contract addresses whose
-	// code body was fetched during the block (across all phase StateDBs).
-	// CodeLoadBytes is the sum of those code lengths.
+	// CodeLoaded/CodeLoadBytes are deduplicated by contract address across
+	// all phase StateDBs.
 	CodeLoaded    int
 	CodeLoadBytes int
 }
@@ -184,9 +181,7 @@ func (p *ParallelStateProcessor) prepareExecResult(block *types.Block, tExecStar
 
 	tPostprocess := time.Since(tPostprocessStart)
 
-	// Fold post-tx statedb counts and reads into the aggregate. postTxState is
-	// local and would otherwise be discarded; this captures system-contract
-	// activity (withdrawal queue, consolidation queue) and engine.Finalize.
+	// Fold post-tx counts/reads in: postTxState is local and otherwise discarded.
 	aggCounts.Add(postTxState.SnapshotCounts())
 	aggReads.Add(postTxState.SnapshotReads())
 	for addr, l := range postTxState.SnapshotCodeLoads() {
@@ -230,14 +225,10 @@ type txExecResult struct {
 
 	stateReads bal.StateAccesses
 
-	// Per-tx state-mutation counts and read durations, snapshotted from the
-	// worker statedb just before send. Aggregated single-threaded in
-	// resultHandler.
-	counts state.StateCounts
-	reads  state.ReadDurations
-	// codeLoads is addr→codeLen for contracts whose code body was fetched
-	// in this tx. Deduped across all phases in resultHandler.
-	codeLoads map[common.Address]int
+	// Per-tx counts/reads/code-loads, aggregated single-threaded in resultHandler.
+	counts    state.StateCounts
+	reads     state.ReadDurations
+	codeLoads map[common.Address]int // addr → code len, deduped across phases
 }
 
 // resultHandler polls until all transactions have finished executing and the
@@ -251,13 +242,9 @@ func (p *ParallelStateProcessor) resultHandler(block *types.Block, preTxAccesses
 	var numTxComplete int
 
 	// Seed aggregates with the pre-tx contribution (BeaconRoot, ParentBlockHash).
-	// Per-tx fold below; post-tx fold in prepareExecResult.
 	accesses := preTxAccesses
 	aggCounts := preCounts
 	aggReads := preReads
-	// Dedup'd map of contract addresses whose code body was fetched by any
-	// phase StateDB. Address-keyed so multiple phases adding the same contract
-	// only count it once.
 	aggCodeLoads := make(map[common.Address]int)
 	for addr, l := range preCodeLoads {
 		aggCodeLoads[addr] = l
@@ -406,9 +393,7 @@ func (p *ParallelStateProcessor) processBlockPreTx(block *types.Block, statedb *
 	if !accessList.MutationsAt(0).Eq(mutations) {
 		return nil, state.StateCounts{}, state.ReadDurations{}, nil, fmt.Errorf("invalid block access list: mismatch between local/remote access list mutations at idx 0")
 	}
-	// Snapshot the pre-tx statedb's counts/reads/code-loads so system-contract
-	// activity (BeaconRoot, ParentBlockHash) contributes to the aggregate;
-	// sdb is local and would otherwise be discarded.
+	// Snapshot pre-tx counts/reads/code-loads: sdb is local and otherwise discarded.
 	return reads, sdb.SnapshotCounts(), sdb.SnapshotReads(), sdb.SnapshotCodeLoads(), nil
 }
 

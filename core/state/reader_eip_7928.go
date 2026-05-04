@@ -89,8 +89,7 @@ type prefetchStateReader struct {
 	term      chan struct{}
 	closeOnce sync.Once
 
-	// Async-fetch read-time accumulators (atomic because process() runs
-	// across N goroutines).
+	// Atomic — process() runs across N goroutines.
 	accountReadNS atomic.Int64
 	storageReadNS atomic.Int64
 }
@@ -374,9 +373,8 @@ func (r *readerTracker) TouchStorage(addr common.Address, slot common.Hash) {
 	list[slot] = struct{}{}
 }
 
-// GetStateStats forwards stats from the wrapped *stateReaderWithStats so the
-// (*reader).GetStateStats type assertion succeeds. Without this, account/
-// storage cache hit/miss counts emit zero on BAL blocks.
+// GetStateStats forwards stats from the wrapped reader; without this, BAL
+// blocks would emit zero cache hit/miss counts.
 func (r *prefetchStateReader) GetStateStats() StateReaderStats {
 	if stater, ok := r.StateReader.(StateReaderStater); ok {
 		return stater.GetStateStats()
@@ -384,9 +382,8 @@ func (r *prefetchStateReader) GetStateStats() StateReaderStats {
 	return StateReaderStats{}
 }
 
-// PrefetchReadTimes returns the accumulated wall-time-of-each-call durations
-// for asynchronous account/storage prefetches. Sum-of-CPU-time across worker
-// goroutines; not wall-clock total prefetch time.
+// PrefetchReadTimes returns sum-of-CPU-time across worker goroutines (not
+// wall-clock).
 func (r *prefetchStateReader) PrefetchReadTimes() (account, storage time.Duration) {
 	return time.Duration(r.accountReadNS.Load()), time.Duration(r.storageReadNS.Load())
 }

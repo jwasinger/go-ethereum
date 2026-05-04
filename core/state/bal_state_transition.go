@@ -41,20 +41,16 @@ type BALStateTransition struct {
 	tries     sync.Map //map[common.Address]Trie
 	deletions map[common.Address]struct{}
 
-	// Storage counters use atomic.Int64 because they're written from per-address
-	// goroutines. The others are written single-threaded inside IntermediateRoot's
-	// serial mutation loop, so plain int matches StateCounts' int fields.
+	// Storage/read counters are atomic — written from per-address goroutines.
+	// account/code counters are plain int — written single-threaded.
 	accountDeleted  int
 	accountUpdated  int
 	storageDeleted  atomic.Int64
 	storageUpdated  atomic.Int64
 	codeUpdated     int
 	codeUpdateBytes int
-
-	// Read-time accumulators for state-root recomputation reads. Atomic
-	// because s.reader.Account/Storage is called from per-address goroutines.
-	accountReadNS atomic.Int64
-	storageReadNS atomic.Int64
+	accountReadNS   atomic.Int64
+	storageReadNS   atomic.Int64
 
 	stateUpdate *stateUpdate
 
@@ -64,22 +60,16 @@ type BALStateTransition struct {
 	err error
 }
 
-// Metrics returns the cached commit/hash-phase timings. Read-time atomics
-// are exposed separately via ReadTimes; that decoupling avoids the
-// snapshot-staleness pitfall when commitAccount runs more reads after
-// Metrics is first called.
 func (s *BALStateTransition) Metrics() *BALStateTransitionMetrics {
 	return &s.metrics
 }
 
-// ReadTimes returns the current accumulated read times from atomic counters.
-// Always live; safe to call at any point after IntermediateRoot/Commit work.
+// ReadTimes returns the accumulated state-read times.
 func (s *BALStateTransition) ReadTimes() (account, storage time.Duration) {
 	return time.Duration(s.accountReadNS.Load()), time.Duration(s.storageReadNS.Load())
 }
 
-// WriteCounts returns the state-mutation counts tracked during the parallel
-// state-root computation.
+// WriteCounts returns the state-mutation counts from the parallel state-root pass.
 func (s *BALStateTransition) WriteCounts() StateCounts {
 	return StateCounts{
 		AccountUpdated:  s.accountUpdated,
@@ -523,11 +513,9 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 		} else {
 			acct, code := s.updateAccount(mutatedAddr)
 
-			// Use len(code) > 0 (not code != nil) to match the non-BAL semantic
-			// at statedb.go (obj.dirtyCode && len(obj.code) > 0). In devnet-3
-			// BAL access lists, an empty []byte is non-nil but encodes "no code
-			// install"; treating it as a code mutation would over-count and
-			// call UpdateContractCode with an empty payload.
+			// Empty []byte is non-nil but means "no code install" in devnet-3
+			// BAL access lists; matches the obj.dirtyCode && len(obj.code) > 0
+			// gate in statedb.go.
 			if len(code) > 0 {
 				codeHash := crypto.Keccak256Hash(code)
 				acct.CodeHash = codeHash.Bytes()

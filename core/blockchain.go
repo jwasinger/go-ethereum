@@ -652,10 +652,8 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	writeTime := time.Since(writeStart)
 	var stats ExecuteStats
 
-	// Counts: write counts come from the BAL state transition; read counts
-	// for accounts/storage come from the BAL access list (deduplicated);
-	// code-load counts come from a deduplicated address set tracked across
-	// all phase StateDBs by the parallel processor.
+	// AccountLoaded/StorageLoaded come from the BAL access list (deduplicated);
+	// per-StateDB sums would over-count addresses touched by multiple phases.
 	stats.StateCounts = res.Counts
 	stats.StateCounts.Add(stateTransition.WriteCounts())
 	if al := block.AccessList(); al != nil {
@@ -665,17 +663,10 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	stats.StateCounts.CodeLoaded = res.CodeLoaded
 	stats.StateCounts.CodeLoadBytes = res.CodeLoadBytes
 
-	// Time durations under parallel execution use wall-clock semantics.
-	// Per-tx duration sums (CPU-time) are intentionally not plumbed: they
-	// would conflict with mgas/sec accounting against TotalTime.
-	stats.Execution = res.ExecTime // wall-clock parallel execution
+	stats.Execution = res.ExecTime
 	stats.ExecWall = res.ExecTime
 	stats.PostProcess = res.PostProcessTime
 
-	// Map BALStateTransitionMetrics (already wall-clock-correct) onto schema
-	// fields used by logSlow's StateHashMs computation. The sum
-	// AccountUpdate+StateUpdate+StateHash is the parallel state-root compute
-	// time, matching reportBALMetrics's stateRootComputeTimer.
 	if m := res.StateTransitionMetrics; m != nil {
 		stats.AccountHashes = m.AccountUpdate + m.StateUpdate + m.StateHash
 		stats.AccountCommits = m.AccountCommits
@@ -683,10 +674,7 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 		stats.DatabaseCommit = m.TrieDBCommits
 		stats.Prefetch = m.StatePrefetch
 	}
-	// Sum read times across per-tx execution, BAL state-transition, and
-	// prefetcher async fetches. Sum-of-CPU-time, not wall-clock. No
-	// WaitPrefetch needed: state is already committed, so the prefetcher
-	// (bounded by BAL contents) has drained.
+	// Sum-of-CPU-time across per-tx, BAL state-transition, and prefetcher paths.
 	var prefetchAccountReads, prefetchStorageReads time.Duration
 	if pr, ok := prefetchReader.(interface {
 		PrefetchReadTimes() (time.Duration, time.Duration)
@@ -698,7 +686,6 @@ func (bc *BlockChain) processBlockWithAccessList(parentRoot common.Hash, block *
 	stats.StorageReads = res.Reads.Storage + prefetchStorageReads + balStorageReads
 	stats.CodeReads = res.Reads.Code
 
-	// Cache stats from the shared prefetch reader (accumulates centrally).
 	if r, ok := prefetchReader.(state.ReaderStater); ok {
 		stats.StateReadCacheStats = r.GetStats()
 	}

@@ -291,23 +291,17 @@ func TestPrefetchStateReaderForwardsStats(t *testing.T) {
 	}
 }
 
-// TestReaderForwardsPrefetchReadTimes locks down that the *reader aggregator
-// (the type returned by ReaderEIP7928) exposes PrefetchReadTimes via the
-// inner *prefetchStateReader. Without the forwarding method on *reader,
-// callers that hold a Reader interface would not see the prefetcher's
-// accumulated read times even though the prefetcher tracks them.
+// TestReaderForwardsPrefetchReadTimes locks down that *reader exposes the
+// inner prefetcher's read-time counters via PrefetchReadTimes.
 func TestReaderForwardsPrefetchReadTimes(t *testing.T) {
 	stub := newRefStateReader()
 	cached := newStateReaderWithCache(stub)
 	withStats := newStateReaderWithStats(cached)
 	prefetch := newPrefetchStateReaderInternal(withStats, nil, 1)
 
-	// Seed timer values directly on the prefetcher.
 	prefetch.accountReadNS.Store(123)
 	prefetch.storageReadNS.Store(456)
 
-	// Wrap in *reader the way ReaderEIP7928 does (with a nil code reader for
-	// brevity; PrefetchReadTimes only inspects the state side).
 	r := newReader(nil, prefetch)
 
 	a, s := r.PrefetchReadTimes()
@@ -319,8 +313,8 @@ func TestReaderForwardsPrefetchReadTimes(t *testing.T) {
 	}
 }
 
-// TestReaderPrefetchReadTimesNonPrefetch verifies the safe zero fallback when
-// the wrapped state reader doesn't expose PrefetchReadTimes (sequential path).
+// TestReaderPrefetchReadTimesNonPrefetch verifies the zero fallback when the
+// wrapped reader doesn't expose PrefetchReadTimes.
 func TestReaderPrefetchReadTimesNonPrefetch(t *testing.T) {
 	r := newReader(nil, newRefStateReader())
 	a, s := r.PrefetchReadTimes()

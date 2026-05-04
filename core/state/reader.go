@@ -565,9 +565,7 @@ func (r *reader) GetStats() ReaderStats {
 	}
 }
 
-// PrefetchReadTimes returns the prefetcher's accumulated read times if the
-// underlying state reader exposes them (e.g. *prefetchStateReader). Returns
-// zero if the wrapped reader doesn't track these (sequential paths, tests).
+// PrefetchReadTimes forwards to the wrapped prefetcher, or returns zero.
 func (r *reader) PrefetchReadTimes() (account, storage time.Duration) {
 	if pr, ok := r.StateReader.(interface {
 		PrefetchReadTimes() (time.Duration, time.Duration)
@@ -577,8 +575,7 @@ func (r *reader) PrefetchReadTimes() (account, storage time.Duration) {
 	return 0, 0
 }
 
-// WaitPrefetch blocks until the wrapped prefetcher (if any) finishes its
-// task list. No-op for non-prefetch readers.
+// WaitPrefetch blocks until the wrapped prefetcher drains; no-op otherwise.
 func (r *reader) WaitPrefetch() {
 	if pr, ok := r.StateReader.(interface{ Wait() error }); ok {
 		_ = pr.Wait()

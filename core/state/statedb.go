@@ -223,9 +223,8 @@ func (s *StateDB) WithReader(reader Reader) *StateDB {
 	return cpy
 }
 
-// ReadDurations groups the {Account, Storage, Code} state-read times that are
-// aggregated across pre-tx, per-tx and post-tx statedbs in the BAL parallel
-// path. Sum-of-CPU-time, not wall-clock.
+// ReadDurations groups the {Account, Storage, Code} state-read times.
+// Sum-of-CPU-time when aggregated across BAL phase statedbs.
 type ReadDurations struct {
 	Account time.Duration
 	Storage time.Duration
@@ -239,10 +238,8 @@ func (r *ReadDurations) Add(other ReadDurations) {
 	r.Code += other.Code
 }
 
-// StateCounts holds count-only statistics gathered during a block's state
-// transition. Plain-int snapshot type, safe to copy through channels.
-// Atomic counters on StateDB are converted at the snapshot boundary in
-// SnapshotCounts. Read durations live in ReadDurations (separate type).
+// StateCounts is a plain-int snapshot of state-mutation counters. Atomic
+// fields on StateDB are Load()'d at the SnapshotCounts boundary.
 type StateCounts struct {
 	AccountLoaded   int   // accounts retrieved from the database during the state transition
 	AccountUpdated  int   // accounts updated during the state transition
@@ -256,10 +253,7 @@ type StateCounts struct {
 	CodeUpdateBytes int   // total bytes of persisted code written
 }
 
-// Add merges other into c. Plain integer addition — no atomics here, since
-// StateCounts is the snapshot type. The receiver is the only mutated party;
-// other is taken by value (the struct is small and value semantics matches
-// the snapshot thesis stated above).
+// Add merges other into c.
 func (c *StateCounts) Add(other StateCounts) {
 	c.AccountLoaded += other.AccountLoaded
 	c.AccountUpdated += other.AccountUpdated
@@ -273,9 +267,7 @@ func (c *StateCounts) Add(other StateCounts) {
 	c.CodeUpdateBytes += other.CodeUpdateBytes
 }
 
-// SnapshotCounts returns a value-copy of the state-mutation counters as a
-// plain-int StateCounts. Atomic fields are read via Load(); the result is
-// safe to copy, pass through channels, and aggregate via StateCounts.Add.
+// SnapshotCounts returns a plain-int copy of the state-mutation counters.
 func (s *StateDB) SnapshotCounts() StateCounts {
 	return StateCounts{
 		AccountLoaded:   s.AccountLoaded,
@@ -291,8 +283,7 @@ func (s *StateDB) SnapshotCounts() StateCounts {
 	}
 }
 
-// SnapshotReads returns a value-copy of the {Account, Storage, Code} read
-// durations accumulated on this StateDB.
+// SnapshotReads returns the {Account, Storage, Code} read durations.
 func (s *StateDB) SnapshotReads() ReadDurations {
 	return ReadDurations{
 		Account: s.AccountReads,
@@ -301,9 +292,8 @@ func (s *StateDB) SnapshotReads() ReadDurations {
 	}
 }
 
-// SnapshotCodeLoads returns the addresses whose contract code body was
-// fetched during this StateDB's lifetime, mapped to byte length. Used by the
-// BAL parallel pipeline to deduplicate code-load events across phase StateDBs.
+// SnapshotCodeLoads returns addresses whose code body was fetched, mapped to
+// byte length. Used to deduplicate code-load events across BAL phase StateDBs.
 func (s *StateDB) SnapshotCodeLoads() map[common.Address]int {
 	if len(s.stateObjects) == 0 {
 		return nil

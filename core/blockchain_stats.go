@@ -28,9 +28,7 @@ import (
 
 // ExecuteStats includes all the statistics of a block execution in details.
 type ExecuteStats struct {
-	// State read times. For BAL blocks these are sum-of-CPU-time across
-	// per-tx, pre-tx, post-tx, BAL state-transition and prefetcher paths;
-	// can exceed TotalTime by design. Sequential blocks: wall-clock.
+	// State read times
 	AccountReads   time.Duration // Time spent on the account reads
 	StorageReads   time.Duration // Time spent on the storage reads
 	AccountHashes  time.Duration // Time spent on the account trie hash
@@ -40,8 +38,7 @@ type ExecuteStats struct {
 	StorageCommits time.Duration // Time spent on the storage trie commit
 	CodeReads      time.Duration // Time spent on the contract code read
 
-	// Embedded state-mutation counts. Field promotion preserves access as
-	// s.AccountLoaded etc. Note StorageUpdated/StorageDeleted are int64 here
+	// State-mutation counts. StorageUpdated/StorageDeleted are int64
 	// (snapshot from atomic.Int64 on StateDB).
 	state.StateCounts
 
@@ -55,9 +52,7 @@ type ExecuteStats struct {
 	TotalTime       time.Duration // The total time spent on block execution
 	MgasPerSecond   float64       // The million gas processed per second
 
-	// BAL extension durations — set by processBlockWithAccessList for blocks
-	// processed via the parallel BAL path. Surfaced in the slow-block log's
-	// optional `bal` block.
+	// BAL parallel-path durations, surfaced under slowBlockLog.BAL.
 	ExecWall    time.Duration // Wall-clock parallel transaction execution
 	PostProcess time.Duration // Post-tx finalization (system contracts, requests)
 	Prefetch    time.Duration // BAL state prefetching
@@ -123,9 +118,7 @@ type slowBlockLog struct {
 	StateReads  slowBlockReads  `json:"state_reads"`
 	StateWrites slowBlockWrites `json:"state_writes"`
 	Cache       slowBlockCache  `json:"cache"`
-	// BAL is the parallel-execution extension. Present iff the block was
-	// processed via the BAL parallel path. Cross-client consumers can use its
-	// presence to distinguish parallel-executed blocks from sequential ones.
+	// BAL is set only for blocks processed via the parallel BAL path.
 	BAL *slowBlockBAL `json:"bal,omitempty"`
 }
 
@@ -187,31 +180,18 @@ type slowBlockCodeCacheEntry struct {
 	MissBytes int64   `json:"miss_bytes"`
 }
 
-// slowBlockBAL is the parallel-execution extension surfaced under the
-// optional "bal" field of slowBlockLog. It carries timings that are
-// well-defined under parallel execution but don't fit the sequential schema.
+// slowBlockBAL holds parallel-execution timings that don't fit the sequential schema.
 type slowBlockBAL struct {
-	// ExecWallMs is wall-clock parallel transaction execution.
-	ExecWallMs float64 `json:"exec_wall_ms"`
-	// PostProcessMs is post-tx system contracts (withdrawals, consolidations, finalize).
-	PostProcessMs float64 `json:"post_process_ms"`
-	// PrefetchMs is the BAL state prefetcher (alias of state_prefetch_ms).
-	PrefetchMs float64 `json:"prefetch_ms"`
-	// StatePrefetchMs is async state-load time during state-root computation.
-	StatePrefetchMs float64 `json:"state_prefetch_ms"`
-	// AccountUpdateMs is the account trie update phase.
-	AccountUpdateMs float64 `json:"account_update_ms"`
-	// StateUpdateMs is the state trie update phase.
-	StateUpdateMs float64 `json:"state_update_ms"`
-	// StateHashMs is state-root hash computation.
-	StateHashMs float64 `json:"state_hash_ms"`
-	// AccountCommitMs is the account trie commit to disk.
-	AccountCommitMs float64 `json:"account_commit_ms"`
-	// StorageCommitMs is the storage trie commit to disk.
-	StorageCommitMs float64 `json:"storage_commit_ms"`
-	// TrieDBCommitMs is the trie database commit.
-	TrieDBCommitMs float64 `json:"triedb_commit_ms"`
-	// SnapshotCommitMs is the state snapshot commit.
+	ExecWallMs       float64 `json:"exec_wall_ms"`
+	PostProcessMs    float64 `json:"post_process_ms"`
+	PrefetchMs       float64 `json:"prefetch_ms"`
+	StatePrefetchMs  float64 `json:"state_prefetch_ms"`
+	AccountUpdateMs  float64 `json:"account_update_ms"`
+	StateUpdateMs    float64 `json:"state_update_ms"`
+	StateHashMs      float64 `json:"state_hash_ms"`
+	AccountCommitMs  float64 `json:"account_commit_ms"`
+	StorageCommitMs  float64 `json:"storage_commit_ms"`
+	TrieDBCommitMs   float64 `json:"triedb_commit_ms"`
 	SnapshotCommitMs float64 `json:"snapshot_commit_ms"`
 }
 
@@ -221,9 +201,8 @@ func durationToMs(d time.Duration) float64 {
 	return float64(d.Nanoseconds()) / 1e6
 }
 
-// buildSlowBlockLog constructs the slow-block log JSON struct from execution
-// statistics. Pure function — no side effects, no logging — to make the JSON
-// shape directly testable.
+// buildSlowBlockLog builds the slow-block JSON payload. Split out from logSlow
+// so the JSON shape is directly testable.
 func buildSlowBlockLog(s *ExecuteStats, block *types.Block) slowBlockLog {
 	logEntry := slowBlockLog{
 		Level: "warn",
@@ -278,7 +257,6 @@ func buildSlowBlockLog(s *ExecuteStats, block *types.Block) slowBlockLog {
 			},
 		},
 	}
-	// Populate the parallel-execution extension only for BAL-processed blocks.
 	if m := s.balTransitionStats; m != nil {
 		logEntry.BAL = &slowBlockBAL{
 			ExecWallMs:       durationToMs(s.ExecWall),
