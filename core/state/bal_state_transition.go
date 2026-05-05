@@ -513,10 +513,7 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 		} else {
 			acct, code := s.updateAccount(mutatedAddr)
 
-			// Empty []byte is non-nil but means "no code install" in devnet-3
-			// BAL access lists; matches the obj.dirtyCode && len(obj.code) > 0
-			// gate in statedb.go.
-			if len(code) > 0 {
+			if code != nil {
 				codeHash := crypto.Keccak256Hash(code)
 				acct.CodeHash = codeHash.Bytes()
 				if err := s.stateTrie.UpdateContractCode(mutatedAddr, codeHash, code); err != nil {
