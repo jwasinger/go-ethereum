@@ -135,7 +135,7 @@ type executableDataMarshaling struct {
 	BlobGasUsed     *hexutil.Uint64
 	ExcessBlobGas   *hexutil.Uint64
 	SlotNumber      *hexutil.Uint64
-	BlockAccessList hexBlockAccessList
+	BlockAccessList *hexBlockAccessList
 }
 
 // StatelessPayloadStatusV1 is the result of a stateless payload execution.
