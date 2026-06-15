@@ -208,7 +208,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	// Update the state with pending changes.
 	var root []byte
 	if evm.ChainConfig().IsByzantium(blockNumber) {
-		bal = evm.StateDB.Finalise(true)
+		bal = evm.StateDB.Finalise(true).AccessList()
 	} else {
 		root = statedb.IntermediateRoot(evm.ChainConfig().IsEIP158(blockNumber)).Bytes()
 	}
@@ -313,7 +313,7 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM, blockAccessList
 	if evm.StateDB.AccessEvents() != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
-	blockAccessList.Merge(evm.StateDB.Finalise(true))
+	blockAccessList.Merge(evm.StateDB.Finalise(true).AccessList())
 }
 
 // ProcessParentBlockHash stores the parent block hash in the history storage contract
@@ -346,7 +346,7 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM, blockAccessList *
 	if evm.StateDB.AccessEvents() != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
-	blockAccessList.Merge(evm.StateDB.Finalise(true))
+	blockAccessList.Merge(evm.StateDB.Finalise(true).AccessList())
 }
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.
@@ -385,11 +385,11 @@ func processRequestsSystemCall(requests *[][]byte, rules params.Rules, evm *vm.E
 	if evm.StateDB.AccessEvents() != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
-	bal := evm.StateDB.Finalise(true)
+	res := evm.StateDB.Finalise(true)
 	if err != nil {
 		return fmt.Errorf("system call failed to execute: %v", err)
 	}
-	blockAccessList.Merge(bal)
+	blockAccessList.Merge(res.AccessList())
 
 	if len(ret) == 0 {
 		return nil // skip empty output

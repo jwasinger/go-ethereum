@@ -60,13 +60,22 @@ func (miner *Miner) maxBlobsPerBlock(time uint64) int {
 // environment is the worker's current environment and holds all
 // information of the sealing block generation.
 type environment struct {
-	signer   types.Signer
-	state    *state.StateDB // apply state changes here
-	tcount   int            // tx count in cycle
-	size     uint64         // size of the block we are building
-	gasPool  *core.GasPool  // available gas used to pack transactions
-	coinbase common.Address
-	evm      *vm.EVM
+	signer types.Signer
+	state  *state.StateDB // apply state changes here
+	// baseState is a pristine copy of the parent state, captured before any
+	// pre-execution system calls or transactions mutate `state`. It carries no
+	// loaded state objects, so a reader layered on top of it (see
+	// state.NewReaderWithAccessList) is authoritative for every lookup. The
+	// parallel builder copies it — rather than the ever-growing `state` — for
+	// each speculative execution, serving the effects of the already-committed
+	// prefix through the block access list instead of through an accumulating
+	// statedb copy. It is only populated when the parallel builder is enabled.
+	baseState *state.StateDB
+	tcount    int           // tx count in cycle
+	size      uint64        // size of the block we are building
+	gasPool   *core.GasPool // available gas used to pack transactions
+	coinbase  common.Address
+	evm       *vm.EVM
 
 	header   *types.Header
 	txs      []*types.Transaction
@@ -332,6 +341,10 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 
 // makeEnv creates a new environment for the sealing block.
 func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, witness bool) (*environment, error) {
+	// baseState is declared before the `state` variable below shadows the
+	// state package, so the package-qualified type stays in scope here.
+	var baseState *state.StateDB
+
 	// Retrieve the parent state to execute on top.
 	state, err := miner.chain.StateAtForkBoundary(parent, header)
 	if err != nil {
@@ -344,19 +357,30 @@ func (miner *Miner) makeEnv(parent *types.Header, header *types.Header, coinbase
 			return nil, err
 		}
 	}
+	// Capture a pristine snapshot of the parent state for the parallel builder
+	// before the prefetcher attaches or any pre-execution mutates `state`. At
+	// this point no state objects are loaded, mirroring the import path's
+	// `startingState := statedb.Copy()` taken ahead of pre-execution
+	// (core/parallel_state_processor.go). Pre-execution and committed
+	// transactions are reflected through the block access list, not baked into
+	// this copy, so it stays cheap to clone per speculative execution.
+	if miner.config.ParallelBuild && miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
+		baseState = state.Copy()
+	}
 	state.StartPrefetcher("miner", bundle)
 
 	// Note the passed coinbase may be different with header.Coinbase.
 	return &environment{
-		signer:   types.MakeSigner(miner.chainConfig, header.Number, header.Time),
-		state:    state,
-		size:     uint64(header.Size()),
-		coinbase: coinbase,
-		gasPool:  core.NewGasPool(header.GasLimit),
-		header:   header,
-		bal:      bal.NewConstructionBlockAccessList(),
-		witness:  state.Witness(),
-		evm:      vm.NewEVM(core.NewEVMBlockContext(header, miner.chain, &coinbase), state, miner.chainConfig, vm.Config{}),
+		signer:    types.MakeSigner(miner.chainConfig, header.Number, header.Time),
+		state:     state,
+		baseState: baseState,
+		size:      uint64(header.Size()),
+		coinbase:  coinbase,
+		gasPool:   core.NewGasPool(header.GasLimit),
+		header:    header,
+		bal:       bal.NewConstructionBlockAccessList(),
+		witness:   state.Witness(),
+		evm:       vm.NewEVM(core.NewEVMBlockContext(header, miner.chain, &coinbase), state, miner.chainConfig, vm.Config{}),
 	}, nil
 }
 
@@ -590,6 +614,15 @@ func (miner *Miner) fillTransactions(ctx context.Context, interrupt *atomic.Int3
 			delete(normalBlobTxs, account)
 			prioBlobTxs[account] = txs
 		}
+	}
+	// If the conflict-aware parallel builder is enabled and applicable, hand
+	// off to it. Locally-sourced (prioritised) transactions are packed first,
+	// exactly as in the sequential path, then the remaining remote ones.
+	if miner.useParallelBuild(env) {
+		if err := miner.fillTransactionsParallel(ctx, interrupt, env, prioPlainTxs, prioBlobTxs); err != nil {
+			return err
+		}
+		return miner.fillTransactionsParallel(ctx, interrupt, env, normalPlainTxs, normalBlobTxs)
 	}
 	// Fill the block with all available pending transactions.
 	if len(prioPlainTxs) > 0 || len(prioBlobTxs) > 0 {
