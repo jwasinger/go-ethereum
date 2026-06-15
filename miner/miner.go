@@ -50,6 +50,21 @@ type Config struct {
 	GasPrice            *big.Int       // Minimum gas price for mining a transaction
 	Recommit            time.Duration  // The time interval for miner to re-create mining work.
 	MaxBlobsPerBlock    int            // Maximum number of blobs per block (0 for unset uses protocol default)
+
+	// ParallelBuild enables the optional conflict-aware payload builder. When
+	// set (and the chain is at or past the Amsterdam fork, where block access
+	// lists are constructed), the miner repeatedly speculatively executes a
+	// batch of the most profitable candidate transactions in parallel, packs
+	// the subset whose state accesses do not conflict, and leaves conflicting
+	// transactions in the pool for subsequent rounds. It falls back to the
+	// sequential builder when not applicable.
+	ParallelBuild bool
+
+	// ParallelBatchSize is the number of most-profitable candidate
+	// transactions (N) considered in each speculative round of the parallel
+	// builder. A value of 0 selects defaultParallelBatchSize. Ignored unless
+	// ParallelBuild is set.
+	ParallelBatchSize int
 }
 
 // DefaultConfig contains default settings for miner.

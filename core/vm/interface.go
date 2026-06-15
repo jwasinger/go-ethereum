@@ -98,6 +98,6 @@ type StateDB interface {
 	AccessEvents() *state.AccessEvents
 
 	// Finalise must be invoked at the end of a transaction
-	Finalise(bool) *bal.ConstructionBlockAccessList
+	Finalise(bool) *bal.FinaliseResult
 	SetTxContext(thash common.Hash, ti int, blockAccessIndex uint32)
 }

@@ -109,6 +109,20 @@ func (gp *GasPool) CumulativeUsed() uint64 {
 	return gp.cumulativeUsed
 }
 
+// CumulativeRegular returns the cumulative regular-dimension gas charged
+// (EIP-8037). For a pool that has only had a single transaction charged against
+// a fresh instance, this equals that transaction's regular gas contribution.
+func (gp *GasPool) CumulativeRegular() uint64 {
+	return gp.cumulativeRegular
+}
+
+// CumulativeState returns the cumulative state-dimension gas charged
+// (EIP-8037). For a pool that has only had a single transaction charged against
+// a fresh instance, this equals that transaction's state gas contribution.
+func (gp *GasPool) CumulativeState() uint64 {
+	return gp.cumulativeState
+}
+
 // Used returns the amount of consumed gas.
 func (gp *GasPool) Used() uint64 {
 	// After 8037, return max(sum_regular, sum_state)
