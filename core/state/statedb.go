@@ -132,6 +132,14 @@ type StateDB struct {
 	// Per-transaction state access footprint for EIP-7928
 	stateAccessList *bal.ConstructionBlockAccessList
 
+	// coinbase is the fee recipient of the enclosing block, as announced
+	// via Prepare. coinbaseRead tracks whether the coinbase account was
+	// read in the scope of the current transaction's EVM execution, as
+	// opposed to being touched only by the implicit transaction-fee payment
+	// at the end of the state transition.
+	coinbase     common.Address
+	coinbaseRead bool
+
 	// Block access index (0 for pre-execution, 1..n for transactions, n+1 for post-execution)
 	blockAccessIndex uint32
 
@@ -458,6 +466,14 @@ func (s *StateDB) HasSelfDestructed(addr common.Address) bool {
 
 // AddBalance adds amount to the account associated with addr.
 func (s *StateDB) AddBalance(addr common.Address, amount *uint256.Int, reason tracing.BalanceChangeReason) uint256.Int {
+	if reason == tracing.BalanceIncreaseRewardTransactionFee {
+		// The transaction-fee payment at the end of the state transition
+		// implicitly resolves the coinbase account, which is not considered
+		// a read of the coinbase by the transaction's execution itself.
+		// Restore the read marker to whatever EVM execution left it at.
+		prev := s.coinbaseRead
+		defer func() { s.coinbaseRead = prev }()
+	}
 	stateObject := s.getOrNewStateObject(addr)
 	if stateObject == nil {
 		return uint256.Int{}
@@ -603,6 +619,9 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	// Record state access regardless of whether the account exists.
 	if s.stateAccessList != nil {
 		s.stateAccessList.AccountRead(addr)
+		if addr == s.coinbase {
+			s.coinbaseRead = true
+		}
 	}
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
@@ -707,6 +726,8 @@ func (s *StateDB) Copy() *StateDB {
 		thash:                s.thash,
 		txIndex:              s.txIndex,
 		blockAccessIndex:     s.blockAccessIndex,
+		coinbase:             s.coinbase,
+		coinbaseRead:         s.coinbaseRead,
 		logs:                 make(map[common.Hash][]*types.Log, len(s.logs)),
 		logSize:              s.logSize,
 		preimages:            maps.Clone(s.preimages),
@@ -813,7 +834,12 @@ func (s *StateDB) LogsForBurnAccounts() []*types.Log {
 // Finalise finalises the state by removing the destructed objects and clears
 // the journal as well as the refunds. Finalise, however, will not push any updates
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
-func (s *StateDB) Finalise(deleteEmptyObjects bool) *bal.ConstructionBlockAccessList {
+//
+// The returned object wraps the per-transaction construction access list,
+// annotated with whether the coinbase account was read during EVM execution
+// (and not only modified by the transaction-fee payment). It is nil if access
+// list construction is not active (pre-Amsterdam).
+func (s *StateDB) Finalise(deleteEmptyObjects bool) *bal.FinaliseResult {
 	addressesToPrefetch := make([]common.Address, 0, len(s.journal.mutations))
 	for addr, state := range s.journal.mutations {
 		obj, exist := s.stateObjects[addr]
@@ -892,7 +918,10 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) *bal.ConstructionBlockAccess
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
 
-	return s.stateAccessList
+	if s.stateAccessList == nil {
+		return nil
+	}
+	return bal.NewFinaliseResult(s.stateAccessList, s.coinbaseRead)
 }
 
 // IntermediateRoot computes the current root hash of the state trie.
@@ -1493,6 +1522,12 @@ func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, d
 
 	if rules.IsAmsterdam {
 		s.stateAccessList = bal.NewConstructionBlockAccessList()
+
+		// Reset the coinbase read tracker at the transaction boundary.
+		// Like the access list itself, coinbase read tracking is only
+		// performed for blocks post-Amsterdam.
+		s.coinbase = coinbase
+		s.coinbaseRead = false
 	}
 }
 
