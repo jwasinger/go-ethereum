@@ -22,11 +22,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	stdmath "math"
-	"math/big"
-	"os"
-	"reflect"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -44,6 +39,10 @@ import (
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
+	stdmath "math"
+	"math/big"
+	"os"
+	"reflect"
 )
 
 // A BlockTest checks handling of entire blocks.
@@ -297,6 +296,7 @@ See https://ethereum-tests.readthedocs.io/en/latest/blockchain-ref.html
 */
 func (t *BlockTest) insertBlocks(blockchain *core.BlockChain) ([]btBlock, error) {
 	validBlocks := make([]btBlock, 0)
+
 	// insert the test blocks, which will execute all transactions
 	for bi, b := range t.json.Blocks {
 		cb, err := b.decode()
