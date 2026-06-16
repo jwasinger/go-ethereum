@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"os"
 	"reflect"
+	"runtime"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -321,8 +322,11 @@ validating that they match exactly blocks in the test which:
 */
 func (t *BlockTest) insertBlocks(blockchain *core.BlockChain) ([]btBlock, error) {
 	var (
-		pool            *txpool.TxPool
-		config          = miner.Config{}
+		pool   *txpool.TxPool
+		config = miner.Config{
+			ParallelBuild:     true,
+			ParallelBatchSize: runtime.NumCPU(),
+		}
 		consensusEngine = beacon.New(ethash.NewFaker())
 		builder         = miner.NewWithoutBackend(blockchain, pool, config, consensusEngine)
 		validBlocks     = make([]btBlock, 0)
