@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
@@ -1445,5 +1446,72 @@ func TestStateDBCopyUBT(t *testing.T) {
 	}
 	if got, want := cpy.GetBalance(addr), uint256.NewInt(2_000); got.Cmp(want) != 0 {
 		t.Fatalf("copy balance did not update: got %s, want %s", got, want)
+	}
+}
+
+// TestFinaliseCoinbaseRead verifies that StateDB.Finalise reports whether the
+// coinbase account was read during EVM execution, ignoring the implicit
+// access caused by the transaction-fee payment.
+func TestFinaliseCoinbaseRead(t *testing.T) {
+	var (
+		coinbase = common.HexToAddress("0xc0ffee0000000000000000000000000000000000")
+		other    = common.HexToAddress("0x0000000000000000000000000000000000001234")
+		rules    = params.Rules{IsAmsterdam: true}
+	)
+	newState := func() *StateDB {
+		s, _ := New(types.EmptyRootHash, NewDatabaseForTesting())
+		return s
+	}
+
+	// Case 1: the coinbase is never accessed during execution, only credited
+	// with the transaction fee afterwards. This must not count as a read.
+	s := newState()
+	s.Prepare(rules, common.Address{}, coinbase, nil, nil, nil)
+	s.GetBalance(other)
+	s.AddBalance(coinbase, uint256.NewInt(1), tracing.BalanceIncreaseRewardTransactionFee)
+	if res := s.Finalise(true); res == nil {
+		t.Fatal("expected non-nil finalise result post-Amsterdam")
+	} else if res.CoinbaseRead() {
+		t.Fatal("fee payment alone should not mark the coinbase as read")
+	} else if res.AccessList() == nil {
+		t.Fatal("expected access list to be wrapped in the result")
+	}
+
+	// Case 2: the coinbase balance is read during execution.
+	s = newState()
+	s.Prepare(rules, common.Address{}, coinbase, nil, nil, nil)
+	s.GetBalance(coinbase)
+	s.AddBalance(coinbase, uint256.NewInt(1), tracing.BalanceIncreaseRewardTransactionFee)
+	if res := s.Finalise(true); !res.CoinbaseRead() {
+		t.Fatal("balance read should mark the coinbase as read")
+	}
+
+	// Case 3: value is transferred to the coinbase during execution.
+	s = newState()
+	s.Prepare(rules, common.Address{}, coinbase, nil, nil, nil)
+	s.AddBalance(coinbase, uint256.NewInt(1), tracing.BalanceChangeTransfer)
+	if res := s.Finalise(true); !res.CoinbaseRead() {
+		t.Fatal("value transfer should mark the coinbase as read")
+	}
+
+	// Case 4: the read marker must reset at the transaction boundary.
+	s = newState()
+	s.Prepare(rules, common.Address{}, coinbase, nil, nil, nil)
+	s.GetBalance(coinbase)
+	s.Finalise(true)
+	s.Prepare(rules, common.Address{}, coinbase, nil, nil, nil)
+	s.GetBalance(other)
+	if res := s.Finalise(true); res.CoinbaseRead() {
+		t.Fatal("coinbase read marker should reset between transactions")
+	}
+
+	// Case 5: pre-Amsterdam, no result is returned at all.
+	s = newState()
+	s.Prepare(params.Rules{}, common.Address{}, coinbase, nil, nil, nil)
+	s.GetBalance(coinbase)
+	if res := s.Finalise(true); res != nil {
+		t.Fatal("expected nil finalise result pre-Amsterdam")
+	} else if res.CoinbaseRead() || res.AccessList() != nil {
+		t.Fatal("nil result accessors should be zero-valued")
 	}
 }

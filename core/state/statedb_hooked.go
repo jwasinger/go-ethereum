@@ -234,7 +234,7 @@ func (s *hookedStateDB) LogsForBurnAccounts() []*types.Log {
 	return s.inner.LogsForBurnAccounts()
 }
 
-func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) *bal.ConstructionBlockAccessList {
+func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) *bal.FinaliseResult {
 	if s.hooks.OnBalanceChange == nil && s.hooks.OnNonceChangeV2 == nil && s.hooks.OnNonceChange == nil && s.hooks.OnCodeChangeV2 == nil && s.hooks.OnCodeChange == nil {
 		// Short circuit if no relevant hooks are set.
 		return s.inner.Finalise(deleteEmptyObjects)

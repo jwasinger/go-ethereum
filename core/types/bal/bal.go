@@ -71,6 +71,47 @@ type ConstructionBlockAccessList struct {
 	Accounts map[common.Address]*ConstructionAccountAccess
 }
 
+// FinaliseResult wraps the access list constructed for a single transaction
+// (or system call), along with extra metadata gathered during execution which
+// is relevant for access-list handling but not encoded in the list itself.
+type FinaliseResult struct {
+	accessList *ConstructionBlockAccessList
+
+	// coinbaseRead indicates whether the coinbase account was read in the
+	// scope of EVM execution (e.g. BALANCE/EXTCODE* targeting the coinbase,
+	// or a value transfer to it), as opposed to being touched only by the
+	// implicit transaction-fee payment at the end of the state transition.
+	coinbaseRead bool
+}
+
+// NewFinaliseResult wraps the given access list with the supplied execution
+// metadata.
+func NewFinaliseResult(accessList *ConstructionBlockAccessList, coinbaseRead bool) *FinaliseResult {
+	return &FinaliseResult{
+		accessList:   accessList,
+		coinbaseRead: coinbaseRead,
+	}
+}
+
+// AccessList returns the wrapped access list. It is nil-safe and returns nil
+// if the result itself is nil (e.g. pre-Amsterdam).
+func (r *FinaliseResult) AccessList() *ConstructionBlockAccessList {
+	if r == nil {
+		return nil
+	}
+	return r.accessList
+}
+
+// CoinbaseRead reports whether the coinbase account was read during EVM
+// execution, rather than merely being modified by the transaction-fee
+// payment. It is nil-safe and returns false if the result itself is nil.
+func (r *FinaliseResult) CoinbaseRead() bool {
+	if r == nil {
+		return false
+	}
+	return r.coinbaseRead
+}
+
 // NewConstructionBlockAccessList instantiates an empty access list.
 func NewConstructionBlockAccessList() *ConstructionBlockAccessList {
 	return &ConstructionBlockAccessList{
